@@ -655,8 +655,24 @@ const useStore = create<Store>((set, get) => ({
     }
   },
   resetGoalData: async () => {
+    const prev = get().user;
+    // Preserve API key and language across resets — those are app settings, not goal data
+    const apiKey = prev?.settings?.apiKey;
+    const language = prev?.settings?.language || "en";
     set({
-      user: null,
+      user: apiKey ? {
+        id: `user-${Date.now()}`,
+        name: "",
+        goalRaw: "",
+        createdAt: new Date().toISOString(),
+        settings: {
+          enableMoodLogging: false,
+          enableNewsFeed: false,
+          theme: "light" as const,
+          language: language as "en" | "zh",
+          apiKey,
+        },
+      } : null,
       goals: [],
       roadmap: null,
       goalBreakdown: null,
