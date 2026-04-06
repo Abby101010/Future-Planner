@@ -219,6 +219,25 @@ const zh: Translations = {
     languageTitle: "语言",
     languageDesc: "选择你偏好的界面语言。",
     languageLabel: "界面语言",
+    // 行为画像
+    behaviorProfileTitle: "你的行为画像",
+    behaviorProfileDesc: "这是 AI 从你的习惯和行为模式中学到的内容。你可以编辑任何条目来纠正它，也可以添加新条目。更改会直接保存到 AI 的记忆中。",
+    behaviorProfileEmpty: "还没有检测到行为模式。AI 会随着你使用应用逐渐建立你的画像。",
+    behaviorProfileLoading: "正在加载你的画像...",
+    behaviorProfileSaved: "画像已保存 — AI 会使用你的更新。",
+    behaviorProfileAdd: "添加条目",
+    behaviorProfileSave: "保存更改",
+    behaviorProfileCategory: "类别",
+    behaviorProfileCategories: {
+      "Schedule": "时间安排",
+      "Preferences": "偏好",
+      "Work capacity": "工作能力",
+      "Motivation": "动力",
+      "Patterns": "行为模式",
+      "Constraints": "限制条件",
+      "Strengths": "优势",
+      "Struggles": "困难",
+    } as Record<string, string>,
   },
 
   // ── 心情记录 ──

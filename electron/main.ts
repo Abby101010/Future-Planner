@@ -7,7 +7,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { handleAIRequest } from "./ai-handler";
 import { getScheduleContext, summarizeScheduleForAI, listDeviceCalendars, getDeviceCalendarEvents } from "./calendar";
-import { loadMemory, saveMemory, getMemorySummary, ensureManagerReady } from "./memory";
+import { loadMemory, saveMemory, getMemorySummary, ensureManagerReady, getBehaviorProfile, saveBehaviorProfile } from "./memory";
 import {
   captureSignal,
   captureSnooze,
@@ -508,6 +508,26 @@ function setupIPC() {
         payload.estimatedMinutes,
         payload.actualMinutes
       );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // Get human-readable behavior profile for settings UI
+  ipcMain.handle("memory:behavior-profile", () => {
+    try {
+      const entries = getBehaviorProfile();
+      return { ok: true, data: entries };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // Save user-edited behavior profile back to memory
+  ipcMain.handle("memory:save-behavior-profile", (_event, payload) => {
+    try {
+      saveBehaviorProfile(payload.entries);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };

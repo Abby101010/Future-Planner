@@ -170,3 +170,30 @@ export async function clearMemory(): Promise<{ ok: boolean }> {
   const result = await window.electronAPI.invoke("memory:clear");
   return result as { ok: boolean };
 }
+
+// ── Behavior Profile ────────────────────────────────────
+
+export interface BehaviorProfileEntry {
+  id: string;
+  category: string;
+  text: string;
+  source: "observed" | "user-edited";
+}
+
+/** Get the AI's human-readable behavior profile of the user */
+export async function getBehaviorProfile(): Promise<{
+  ok: boolean;
+  data?: BehaviorProfileEntry[];
+  error?: string;
+}> {
+  const result = await window.electronAPI.invoke("memory:behavior-profile");
+  return result as { ok: boolean; data?: BehaviorProfileEntry[]; error?: string };
+}
+
+/** Save user-edited behavior profile entries back to the AI memory */
+export async function saveBehaviorProfile(
+  entries: Array<{ category: string; text: string }>
+): Promise<{ ok: boolean; error?: string }> {
+  const result = await window.electronAPI.invoke("memory:save-behavior-profile", { entries });
+  return result as { ok: boolean; error?: string };
+}

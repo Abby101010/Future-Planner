@@ -1693,3 +1693,134 @@ export function getMemorySummary(memory: MemoryStore): MemorySummary {
     reflectionCount: memory.reflectionCount,
   };
 }
+
+// ── Behavior Profile (human-readable, editable) ─────────
+
+export interface BehaviorProfileEntry {
+  id: string;
+  category: string;
+  text: string;
+  source: "observed" | "user-edited";
+}
+
+/**
+ * Generate a plain-language behavior profile from all memory layers.
+ * Returns entries the user can read, understand, and edit.
+ */
+export function getBehaviorProfile(): BehaviorProfileEntry[] {
+  const mgr = getManager();
+  const entries: BehaviorProfileEntry[] = [];
+
+  // 1. High-confidence facts → readable sentences
+  const facts = mgr.getAllHighConfidenceFacts();
+  const categoryLabels: Record<string, string> = {
+    schedule: "Schedule",
+    preference: "Preferences",
+    capacity: "Work capacity",
+    motivation: "Motivation",
+    pattern: "Patterns",
+    constraint: "Constraints",
+    strength: "Strengths",
+    struggle: "Struggles",
+  };
+
+  for (const f of facts) {
+    entries.push({
+      id: `fact-${f.id}`,
+      category: categoryLabels[f.category] || f.category,
+      text: f.value,
+      source: f.source === "explicit" ? "user-edited" : "observed",
+    });
+  }
+
+  // 2. Behavioral insights (peak hours, skip patterns, etc.)
+  const behavioralInsights = buildBehavioralInsights(mgr);
+  const dayInsights = buildDayOfWeekInsights(mgr);
+  const timingInsights = buildTimingInsights(mgr.getStore());
+  const allInsights = [...behavioralInsights, ...dayInsights, ...timingInsights];
+
+  for (let i = 0; i < allInsights.length; i++) {
+    // Clean up internal symbols/formatting
+    let text = allInsights[i];
+    text = text.replace(/^[⚠️🟢🟡⚪👍👎↔️•\s]+/, "").trim();
+    entries.push({
+      id: `insight-${i}`,
+      category: "Patterns",
+      text,
+      source: "observed",
+    });
+  }
+
+  // 3. Top semantic preferences
+  const prefs = mgr.getStore().preferences
+    .sort((a, b) => b.frequency - a.frequency)
+    .slice(0, 15);
+
+  for (const p of prefs) {
+    const prefix = p.weight > 0.3 ? "Likes" : p.weight < -0.3 ? "Dislikes" : "Neutral about";
+    entries.push({
+      id: `pref-${p.id}`,
+      category: "Preferences",
+      text: `${prefix}: ${p.text}`,
+      source: "observed",
+    });
+  }
+
+  // Deduplicate by text similarity (exact match)
+  const seen = new Set<string>();
+  const unique: BehaviorProfileEntry[] = [];
+  for (const e of entries) {
+    const key = e.text.toLowerCase().trim();
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(e);
+    }
+  }
+
+  return unique;
+}
+
+/**
+ * Save user-edited behavior profile entries back to memory.
+ * Each entry becomes an explicit fact with high confidence.
+ */
+export function saveBehaviorProfile(
+  entries: Array<{ category: string; text: string }>
+): void {
+  const mgr = getManager();
+  const categoryMap: Record<string, FactCategory> = {
+    "Schedule": "schedule",
+    "Preferences": "preference",
+    "Work capacity": "capacity",
+    "Motivation": "motivation",
+    "Patterns": "pattern",
+    "Constraints": "constraint",
+    "Strengths": "strength",
+    "Struggles": "struggle",
+  };
+
+  // Remove old user-edited facts from the JSON store, then save + reload
+  const raw = loadMemory();
+  raw.facts = raw.facts.filter((f) => f.source !== "explicit");
+  saveMemory(raw);
+
+  // Re-init manager so indices are clean
+  _manager = null;
+  const freshMgr = getManager();
+
+  // Insert each user-edited entry as an explicit fact
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const factCategory = categoryMap[e.category] || "preference";
+    freshMgr.upsertFact(
+      factCategory,
+      `user_profile_${i}`,
+      e.text,
+      "User edited in settings",
+      "explicit"
+    );
+  }
+
+  // Persist
+  saveMemory(freshMgr.getStore());
+}

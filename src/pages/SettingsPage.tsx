@@ -2,12 +2,13 @@
    NorthStar — Settings page
    ────────────────────────────────────────────────────────── */
 
-import { useState } from "react";
-import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, LANGUAGE_OPTIONS } from "../i18n";
 import type { Language } from "../i18n";
-import { triggerReflection, clearMemory } from "../services/memory";
+import { triggerReflection, clearMemory, getBehaviorProfile, saveBehaviorProfile } from "../services/memory";
+import type { BehaviorProfileEntry } from "../services/memory";
 import "./SettingsPage.css";
 
 export default function SettingsPage() {
@@ -19,6 +20,37 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const [reflectResult, setReflectResult] = useState<string | null>(null);
+
+  // ── Behavior profile state ──
+  const [profileEntries, setProfileEntries] = useState<BehaviorProfileEntry[]>([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+
+  const PROFILE_CATEGORIES = [
+    "Schedule", "Preferences", "Work capacity", "Motivation",
+    "Patterns", "Constraints", "Strengths", "Struggles",
+  ];
+
+  const loadProfile = useCallback(async () => {
+    setProfileLoading(true);
+    try {
+      const res = await getBehaviorProfile();
+      if (res.ok && res.data) {
+        setProfileEntries(res.data);
+      }
+    } catch {
+      // Ignore errors — profile is optional
+    } finally {
+      setProfileLoading(false);
+      setProfileLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!profileLoaded) loadProfile();
+  }, [profileLoaded, loadProfile]);
 
   if (!user) {
     return (
@@ -252,6 +284,128 @@ export default function SettingsPage() {
 
           {reflectResult && (
             <p className="memory-reflect-result">{reflectResult}</p>
+          )}
+        </section>
+
+        {/* Behavior Profile */}
+        <section className="settings-section card animate-fade-in">
+          <div className="settings-section-header">
+            <User size={18} />
+            <h3>{t.settings.behaviorProfileTitle}</h3>
+          </div>
+          <p className="settings-desc">
+            {t.settings.behaviorProfileDesc}
+          </p>
+
+          {profileLoading && (
+            <p className="settings-desc" style={{ fontStyle: "italic" }}>
+              {t.settings.behaviorProfileLoading}
+            </p>
+          )}
+
+          {!profileLoading && profileEntries.length === 0 && (
+            <p className="settings-desc" style={{ fontStyle: "italic" }}>
+              {t.settings.behaviorProfileEmpty}
+            </p>
+          )}
+
+          {!profileLoading && profileEntries.length > 0 && (
+            <div className="behavior-profile-list">
+              {profileEntries.map((entry, i) => (
+                <div key={entry.id} className="behavior-profile-entry">
+                  <div className="behavior-profile-entry-header">
+                    <select
+                      className="input behavior-profile-category-select"
+                      value={entry.category}
+                      onChange={(e) => {
+                        const updated = [...profileEntries];
+                        updated[i] = { ...updated[i], category: e.target.value };
+                        setProfileEntries(updated);
+                        setProfileDirty(true);
+                      }}
+                    >
+                      {PROFILE_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {(t.settings.behaviorProfileCategories as Record<string, string>)[cat] || cat}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="btn btn-ghost btn-sm behavior-profile-remove"
+                      onClick={() => {
+                        setProfileEntries(profileEntries.filter((_, j) => j !== i));
+                        setProfileDirty(true);
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <input
+                    className="input behavior-profile-text"
+                    value={entry.text}
+                    onChange={(e) => {
+                      const updated = [...profileEntries];
+                      updated[i] = { ...updated[i], text: e.target.value, source: "user-edited" };
+                      setProfileEntries(updated);
+                      setProfileDirty(true);
+                    }}
+                    placeholder="Describe a pattern or preference..."
+                  />
+                  {entry.source === "observed" && (
+                    <span className="behavior-profile-badge">AI observed</span>
+                  )}
+                  {entry.source === "user-edited" && (
+                    <span className="behavior-profile-badge behavior-profile-badge--edited">You edited</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="behavior-profile-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setProfileEntries([
+                  ...profileEntries,
+                  {
+                    id: `new-${Date.now()}`,
+                    category: "Preferences",
+                    text: "",
+                    source: "user-edited",
+                  },
+                ]);
+                setProfileDirty(true);
+              }}
+            >
+              <Plus size={14} />
+              {t.settings.behaviorProfileAdd}
+            </button>
+
+            {profileDirty && (
+              <button
+                className="btn btn-primary"
+                onClick={async () => {
+                  // Only save entries that have text
+                  const toSave = profileEntries
+                    .filter((e) => e.text.trim())
+                    .map((e) => ({ category: e.category, text: e.text.trim() }));
+                  await saveBehaviorProfile(toSave);
+                  setProfileDirty(false);
+                  setProfileSaved(true);
+                  // Refresh memory summary since we changed facts
+                  refreshMemorySummary();
+                  setTimeout(() => setProfileSaved(false), 3000);
+                }}
+              >
+                <Save size={14} />
+                {t.settings.behaviorProfileSave}
+              </button>
+            )}
+          </div>
+
+          {profileSaved && (
+            <p className="behavior-profile-saved">{t.settings.behaviorProfileSaved}</p>
           )}
         </section>
 

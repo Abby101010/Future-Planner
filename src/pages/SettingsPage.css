@@ -256,3 +256,125 @@
   font-size: 0.85rem;
   color: var(--accent);
 }
+
+/* ── Behavior Profile Section ── */
+
+.behavior-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.behavior-profile-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-input);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  transition: border-color var(--transition-fast);
+}
+
+.behavior-profile-entry:focus-within {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.behavior-profile-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.behavior-profile-category-select {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.behavior-profile-category-select:focus {
+  border-color: var(--accent);
+}
+
+.behavior-profile-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.behavior-profile-entry:hover .behavior-profile-remove {
+  opacity: 1;
+}
+
+.behavior-profile-remove:hover {
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--red);
+}
+
+.behavior-profile-text {
+  width: 100%;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+}
+
+.behavior-profile-text::placeholder {
+  color: var(--text-muted);
+}
+
+.behavior-profile-badge {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  align-self: flex-start;
+}
+
+.behavior-profile-badge--edited {
+  background: rgba(251, 191, 36, 0.12);
+  color: #b45309;
+}
+
+.behavior-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.behavior-profile-saved {
+  font-size: 0.8rem;
+  color: var(--green, #22c55e);
+  animation: bp-fade-in 0.2s ease-out;
+}
+
+@keyframes bp-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

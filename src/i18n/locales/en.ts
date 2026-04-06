@@ -217,6 +217,25 @@ const en = {
     languageTitle: "Language",
     languageDesc: "Choose your preferred interface language.",
     languageLabel: "Interface Language",
+    // Behavior Profile
+    behaviorProfileTitle: "Your Behavior Profile",
+    behaviorProfileDesc: "This is what the AI has learned about your habits and patterns. You can edit any entry to correct it, or add new ones. Changes are saved directly to the AI's memory.",
+    behaviorProfileEmpty: "No behavior patterns detected yet. The AI will build your profile as you use the app.",
+    behaviorProfileLoading: "Loading your profile...",
+    behaviorProfileSaved: "Profile saved — the AI will use your updates.",
+    behaviorProfileAdd: "Add entry",
+    behaviorProfileSave: "Save changes",
+    behaviorProfileCategory: "Category",
+    behaviorProfileCategories: {
+      "Schedule": "Schedule",
+      "Preferences": "Preferences",
+      "Work capacity": "Work capacity",
+      "Motivation": "Motivation",
+      "Patterns": "Patterns",
+      "Constraints": "Constraints",
+      "Strengths": "Strengths",
+      "Struggles": "Struggles",
+    } as Record<string, string>,
   },
 
   // ── Mood Logger ──
