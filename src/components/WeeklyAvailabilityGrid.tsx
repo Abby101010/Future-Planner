@@ -41,7 +41,10 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
 
   // ── Drag state (refs to avoid re-renders mid-drag) ──
   const dragging = useRef(false);
-  const dragMode = useRef<"paint" | "erase">("paint");
+  // Drag mode determined by the first cell:
+  //   "paint-1" = empty→light grey,  "paint-2" = light→dark,
+  //   "paint-3" = dark→darkest,      "erase" = darkest→empty
+  const dragMode = useRef<"paint-1" | "paint-2" | "paint-3" | "erase">("paint-1");
   const dragVisited = useRef<Set<string>>(new Set());
   // Keep a mutable ref to the latest value so drag callbacks see fresh data
   const valueRef = useRef(value);
@@ -55,25 +58,40 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
   const getBlockFromRef = (day: number, hour: number) =>
     valueRef.current.find((b) => b.day === day && b.hour === hour);
 
-  // ── Drag apply: paint or erase a single cell ──
+  // ── Drag apply: set cell to the target importance for this drag ──
   const applyDrag = useCallback(
     (day: number, hour: number) => {
       const key = `${day}-${hour}`;
       if (dragVisited.current.has(key)) return;
       dragVisited.current.add(key);
 
-      if (dragMode.current === "paint") {
-        const existing = getBlockFromRef(day, hour);
-        if (!existing) {
-          const next = [...valueRef.current, { day, hour, importance: 1 as 1 | 2 | 3, label: "" }];
-          valueRef.current = next;
-          onChange(next);
-        }
-      } else {
+      const mode = dragMode.current;
+
+      if (mode === "erase") {
         const next = valueRef.current.filter((b) => !(b.day === day && b.hour === hour));
         valueRef.current = next;
         onChange(next);
+        return;
       }
+
+      // Target importance: paint-1→1, paint-2→2, paint-3→3
+      const targetImportance = (mode === "paint-1" ? 1 : mode === "paint-2" ? 2 : 3) as 1 | 2 | 3;
+      const existing = getBlockFromRef(day, hour);
+
+      if (!existing) {
+        // Empty cell → set to target importance
+        const next = [...valueRef.current, { day, hour, importance: targetImportance, label: "" }];
+        valueRef.current = next;
+        onChange(next);
+      } else if (existing.importance < targetImportance) {
+        // Existing cell below target → promote it
+        const next = valueRef.current.map((b) =>
+          b.day === day && b.hour === hour ? { ...b, importance: targetImportance } : b,
+        );
+        valueRef.current = next;
+        onChange(next);
+      }
+      // If already at or above target, leave it alone
     },
     [onChange],
   );
@@ -84,7 +102,22 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
       const existing = getBlockFromRef(day, hour);
       dragging.current = true;
       dragVisited.current = new Set();
-      dragMode.current = existing ? "erase" : "paint";
+
+      // Determine mode from the starting cell's current state:
+      //   empty → paint to level 1 (light grey)
+      //   level 1 → paint to level 2 (dark grey)
+      //   level 2 → paint to level 3 (darkest)
+      //   level 3 → erase
+      if (!existing) {
+        dragMode.current = "paint-1";
+      } else if (existing.importance === 1) {
+        dragMode.current = "paint-2";
+      } else if (existing.importance === 2) {
+        dragMode.current = "paint-3";
+      } else {
+        dragMode.current = "erase";
+      }
+
       applyDrag(day, hour);
     },
     [applyDrag],
@@ -103,32 +136,13 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
     dragVisited.current = new Set();
   }, []);
 
-  // ── Single-click: cycle importance (only when NOT dragging multiple) ──
+  // ── Single-click: no-op since pointerDown handles it, but needed
+  //    to prevent default browser behavior during drag ──
   const handleClick = useCallback(
-    (day: number, hour: number) => {
-      // If drag visited more than 1 cell, skip the click cycle
-      if (dragVisited.current.size > 1) return;
-      const existing = getBlockFromRef(day, hour);
-      if (!existing) {
-        // Already painted by pointerDown, nothing more
-        return;
-      }
-      if (existing.importance < 3) {
-        const next = valueRef.current.map((b) =>
-          b.day === day && b.hour === hour
-            ? { ...b, importance: (b.importance + 1) as 1 | 2 | 3 }
-            : b,
-        );
-        valueRef.current = next;
-        onChange(next);
-      } else {
-        // Already erased by pointerDown in erase mode, or cycle back to 0
-        const next = valueRef.current.filter((b) => !(b.day === day && b.hour === hour));
-        valueRef.current = next;
-        onChange(next);
-      }
+    (_day: number, _hour: number) => {
+      // pointerDown already applied the action for single-click
     },
-    [onChange],
+    [],
   );
 
   // ── Right-click: label editor ──
@@ -170,8 +184,8 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
     >
       <div className="avail-grid-hint">
         {language === "zh"
-          ? "点击或拖拽选择空闲时间 · 多次点击提升优先级 · 右键添加描述"
-          : "Click or drag to select · Click again = higher priority · Right-click to label"}
+          ? "点击或拖拽选择时间 · 再次拖拽已选区域提升优先级 · 右键添加描述"
+          : "Click or drag to select · Drag again over selected to increase priority · Right-click to label"}
       </div>
 
       <div className="avail-grid-scroll">
