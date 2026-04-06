@@ -656,6 +656,7 @@ const useStore = create<Store>((set, get) => ({
   },
   resetGoalData: async () => {
     set({
+      user: null,
       goals: [],
       roadmap: null,
       goalBreakdown: null,
@@ -668,6 +669,7 @@ const useStore = create<Store>((set, get) => ({
       homeChatMessages: [],
       vacationMode: null,
       nudges: [],
+      currentView: "onboarding",
     });
     await get().saveToDisk();
   },

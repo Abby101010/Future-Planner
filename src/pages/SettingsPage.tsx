@@ -73,7 +73,6 @@ export default function SettingsPage() {
     if (window.confirm(t.settings.resetConfirm)) {
       await useStore.getState().resetGoalData();
       clearMemory();
-      setView("dashboard");
     }
   };
 
