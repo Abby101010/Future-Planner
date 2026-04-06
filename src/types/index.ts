@@ -13,8 +13,18 @@ export interface UserProfile {
   timeAvailable?: string;
   constraints?: string;
   moodBaseline?: string;
+  onboardingComplete?: boolean;
+  weeklyAvailability?: TimeBlock[];
   createdAt: string;
   settings: UserSettings;
+}
+
+/** A single time block in the weekly availability grid */
+export interface TimeBlock {
+  day: number;        // 0=Mon, 1=Tue, ... 6=Sun
+  hour: number;       // 0-23
+  importance: 1 | 2 | 3;  // saturation level: 1=light, 2=medium, 3=high
+  label: string;      // brief description of what this time is for
 }
 
 export interface UserSettings {

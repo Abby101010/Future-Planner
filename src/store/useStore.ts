@@ -618,7 +618,12 @@ const useStore = create<Store>((set, get) => ({
         if (d.goalBreakdown || d.roadmap || (d.goals as Goal[] | undefined)?.length) {
           set({ currentView: "dashboard" });
         } else if (d.user) {
-          set({ currentView: "dashboard" });
+          const u = d.user as UserProfile;
+          if (u.onboardingComplete) {
+            set({ currentView: "dashboard" });
+          } else {
+            set({ currentView: "onboarding" });
+          }
         }
       }
       // Also load memory summary

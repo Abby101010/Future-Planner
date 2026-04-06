@@ -68,6 +68,19 @@ const en = {
     generatingTime: "This takes about 15-30 seconds",
     confirmButton: "Yes, build my goal plan!",
     confirmHint: "Or keep chatting to refine your goal",
+    // New onboarding steps
+    intentTitle: "What brings you here?",
+    intentDesc: "Tell me what you'd like to accomplish with NorthStar. This helps me understand how to help you best.",
+    intentPlaceholder: 'e.g. "I want to learn Japanese" or "Get better at time management"',
+    skipForNow: "Skip for now",
+    availabilityTitle: "When are you free?",
+    availabilityDesc: "Mark the times you're typically available each week. This helps NorthStar plan tasks at the right times.",
+    looksGood: "Looks good",
+    doneTitle: "You're all set!",
+    doneDesc: "Head to your dashboard to start adding goals and planning your week.",
+    yourGoal: "Your goal",
+    timeBlocks: "Availability",
+    goToDashboard: "Go to Dashboard",
   },
 
   // ── Dashboard ──

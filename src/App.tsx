@@ -41,7 +41,6 @@ function App() {
     currentView === "tasks" ||
     currentView === "calendar" ||
     currentView === "roadmap" ||
-    currentView === "onboarding" ||
     currentView === "settings" ||
     currentView.startsWith("goal-plan-");
 

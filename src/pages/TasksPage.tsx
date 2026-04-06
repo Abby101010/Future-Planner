@@ -126,7 +126,8 @@ export default function TasksPage() {
         deviceIntegrations,
         goals,
         confirmedToday,
-        vacationMode
+        vacationMode,
+        user?.weeklyAvailability
       );
       setTodayLog(log);
       addDailyLog(log);

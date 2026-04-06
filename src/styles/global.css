@@ -173,11 +173,11 @@ a:hover { color: var(--accent-hover); }
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: #333333;
   color: white;
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: #444444;
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }

@@ -80,7 +80,8 @@ export async function generateDailyTasks(
   deviceIntegrations?: DeviceIntegrations,
   goals?: Goal[],
   confirmedQuickTasks?: DailyTask[],
-  vacationMode?: { active: boolean; startDate: string; endDate: string } | null
+  vacationMode?: { active: boolean; startDate: string; endDate: string } | null,
+  weeklyAvailability?: import("../types").TimeBlock[]
 ): Promise<DailyLog> {
   // Check if today is a vacation day
   const isVacationDay = vacationMode?.active &&
@@ -177,6 +178,7 @@ export async function generateDailyTasks(
       category: t.category,
     })),
     todayCalendarEvents: todayEvents,
+    weeklyAvailability: weeklyAvailability || [],
   });
   return result as DailyLog;
 }

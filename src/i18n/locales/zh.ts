@@ -70,6 +70,19 @@ const zh: Translations = {
     generatingTime: "大约需要 15-30 秒",
     confirmButton: "好的，生成我的目标计划！",
     confirmHint: "或者继续聊天来完善你的目标",
+    // 新的引导步骤
+    intentTitle: "你想用北极星做什么？",
+    intentDesc: "告诉我你想实现什么目标，这能帮我更好地为你服务。",
+    intentPlaceholder: '例如："我想学日语" 或 "提高时间管理能力"',
+    skipForNow: "暂时跳过",
+    availabilityTitle: "你通常什么时候有空？",
+    availabilityDesc: "标记你每周通常空闲的时间段，这能帮北极星在合适的时间安排任务。",
+    looksGood: "看起来不错",
+    doneTitle: "准备就绪！",
+    doneDesc: "前往主页开始添加目标，规划你的一周。",
+    yourGoal: "你的目标",
+    timeBlocks: "可用时间",
+    goToDashboard: "前往主页",
   },
 
   // ── 主页 ──
