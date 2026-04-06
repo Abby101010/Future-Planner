@@ -127,6 +127,7 @@ const en = {
     cognitiveWeight: "Cognitive load",
     weightPts: "pts",
     goalTasks: "From your goal plans",
+    bonusTasks: "Bonus — if you have extra energy",
   },
 
   // ── Home (chat-centric dashboard) ──

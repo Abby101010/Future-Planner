@@ -27,14 +27,27 @@ export type RequestType =
 function getClient(
   loadData: () => Record<string, unknown>
 ): Anthropic | null {
-  let apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    const data = loadData();
-    const user = data.user as Record<string, unknown> | undefined;
-    const settings = user?.settings as Record<string, unknown> | undefined;
-    apiKey = settings?.apiKey as string | undefined;
+  // Prefer the key the user saved in Settings/Onboarding over any env var.
+  // This prevents a stale .env key from silently overriding the user's choice.
+  let apiKey: string | undefined;
+  const data = loadData();
+  const user = data.user as Record<string, unknown> | undefined;
+  const settings = user?.settings as Record<string, unknown> | undefined;
+  apiKey = settings?.apiKey as string | undefined;
+
+  if (apiKey) {
+    console.log("[ai-handler] API key from user settings:", `${apiKey.substring(0, 10)}...`);
+  } else {
+    apiKey = process.env.ANTHROPIC_API_KEY || undefined;
+    if (apiKey) {
+      console.log("[ai-handler] API key from env variable");
+    }
   }
-  if (!apiKey) return null;
+
+  if (!apiKey) {
+    console.log("[ai-handler] No API key found");
+    return null;
+  }
   return new Anthropic({ apiKey });
 }
 
@@ -465,10 +478,13 @@ DECISION LOGIC:
 3. If task is URGENT (deadline today, time-sensitive) → suggest TODAY but WARN about overload
 4. If user already has 5+ tasks → suggest TOMORROW unless urgent
 
+IMPORTANT: The "description" field must be 1-2 sentences MAX. Be ultra-concise.
+Do NOT write a paragraph. Think of it as a calendar entry subtitle, not an essay.
+
 OUTPUT FORMAT (JSON):
 {
   "title": "...",
-  "description": "...",
+  "description": "One to two sentences only. Brief and actionable.",
   "suggested_date": "YYYY-MM-DD",
   "duration_minutes": 30,
   "cognitive_weight": 2,
@@ -548,7 +564,9 @@ export async function handleAIRequest(
     );
 
     if (!result.success) {
-      throw new Error("AI request failed. Please try again.");
+      const detail = result.error || "Unknown error";
+      console.error(`[ai-handler] AI request "${type}" failed:`, detail);
+      throw new Error(`AI request failed: ${detail}`);
     }
 
     return result.data;
@@ -1244,7 +1262,12 @@ Today's date: ${new Date().toISOString().split("T")[0]}`,
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
   const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    console.error("[ai-handler] classify-goal: failed to parse AI response:", cleaned.slice(0, 500));
+    throw new Error("AI returned invalid JSON for goal classification. Please try again.");
+  }
 }
 
 // ── Goal Plan Chat ──────────────────────────────────────

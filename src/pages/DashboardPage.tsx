@@ -19,6 +19,7 @@ import {
   Trash2,
   CheckCircle2,
   XCircle,
+  Pencil,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
@@ -685,6 +686,13 @@ export default function DashboardPage() {
                   pendingTask={pt}
                   onConfirm={() => confirmPendingTask(pt.id)}
                   onReject={() => removePendingTask(pt.id)}
+                  onUpdateAnalysis={(updates) => {
+                    if (pt.analysis) {
+                      updatePendingTask(pt.id, {
+                        analysis: { ...pt.analysis, ...updates },
+                      });
+                    }
+                  }}
                 />
               ))}
             </div>
@@ -755,12 +763,18 @@ function PendingTaskCard({
   pendingTask,
   onConfirm,
   onReject,
+  onUpdateAnalysis,
 }: {
   pendingTask: PendingTask;
   onConfirm: () => void;
   onReject: () => void;
+  onUpdateAnalysis: (updates: Partial<NonNullable<PendingTask["analysis"]>>) => void;
 }) {
   const t = useT();
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [editDesc, setEditDesc] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
 
   if (pendingTask.status === "analyzing") {
     return (
@@ -786,9 +800,67 @@ function PendingTaskCard({
     <div className="pending-card pending-card-ready">
       <div className="pending-card-header">
         <CheckCircle2 size={14} className="pending-ready-icon" />
-        <span className="pending-card-title">{a.title}</span>
+        {editingTitle ? (
+          <input
+            className="input pending-edit-input pending-edit-title"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            onBlur={() => {
+              if (editTitle.trim()) onUpdateAnalysis({ title: editTitle.trim() });
+              setEditingTitle(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (editTitle.trim()) onUpdateAnalysis({ title: editTitle.trim() });
+                setEditingTitle(false);
+              }
+              if (e.key === "Escape") setEditingTitle(false);
+            }}
+            autoFocus
+          />
+        ) : (
+          <span
+            className="pending-card-title pending-editable"
+            onClick={() => { setEditTitle(a.title); setEditingTitle(true); }}
+            title="Click to edit"
+          >
+            {a.title}
+            <Pencil size={11} className="pending-edit-icon" />
+          </span>
+        )}
       </div>
-      {a.description && <p className="pending-card-desc">{a.description}</p>}
+      {a.description && (
+        editingDesc ? (
+          <textarea
+            className="input pending-edit-input pending-edit-desc"
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            onBlur={() => {
+              onUpdateAnalysis({ description: editDesc.trim() });
+              setEditingDesc(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onUpdateAnalysis({ description: editDesc.trim() });
+                setEditingDesc(false);
+              }
+              if (e.key === "Escape") setEditingDesc(false);
+            }}
+            rows={2}
+            autoFocus
+          />
+        ) : (
+          <p
+            className="pending-card-desc pending-editable"
+            onClick={() => { setEditDesc(a.description); setEditingDesc(true); }}
+            title="Click to edit"
+          >
+            {a.description}
+            <Pencil size={11} className="pending-edit-icon" />
+          </p>
+        )
+      )}
       <div className="pending-card-meta">
         <span className="badge badge-accent">{a.category}</span>
         <span className={`badge ${weightColors[a.cognitiveWeight] || ""}`}>
@@ -801,7 +873,6 @@ function PendingTaskCard({
           <Calendar size={12} /> {a.suggestedDate}
         </span>
       </div>
-      <p className="pending-card-reasoning">{a.reasoning}</p>
       {a.conflictsWithExisting.length > 0 && (
         <p className="pending-card-conflict">
           ⚠️ {t.home.conflicts}: {a.conflictsWithExisting.join(", ")}

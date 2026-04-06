@@ -129,6 +129,7 @@ const zh: Translations = {
     cognitiveWeight: "认知负荷",
     weightPts: "分",
     goalTasks: "来自目标计划",
+    bonusTasks: "额外任务 — 如果还有精力",
   },
 
   // ── 首页（聊天为主） ──

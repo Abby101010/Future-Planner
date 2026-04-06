@@ -9,6 +9,7 @@
   flex-direction: column;
   padding-top: var(--titlebar-height);
   flex-shrink: 0;
+  user-select: none;
 }
 
 .sidebar-brand {

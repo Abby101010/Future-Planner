@@ -390,23 +390,62 @@ export default function TasksPage() {
           )}
 
           {/* Today's AI-curated tasks (THE primary task list) */}
-          {todayLog && (
-            <div className="tasks-list">
-              {todayLog.tasks.map((task, i) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  isOneThing={task.id === (todayLog as { one_thing?: string }).one_thing}
-                  onToggle={() => toggleTask(task.id)}
-                  onSnooze={() => snoozeTask(task.id)}
-                  onSkip={() => skipTask(task.id)}
-                  onStartTimer={() => startTaskTimer(task.id)}
-                  onStopTimer={() => stopTaskTimer(task.id)}
-                  index={i}
-                />
-              ))}
-            </div>
-          )}
+          {todayLog && (() => {
+            const dailyTasks = todayLog.tasks.filter((task) => task.priority === "must-do" || task.priority === "should-do");
+            const bonusTasks = todayLog.tasks.filter((task) => task.priority === "bonus");
+            return (
+              <>
+                {/* Daily Tasks */}
+                {dailyTasks.length > 0 && (
+                  <div className="tasks-list">
+                    {dailyTasks.map((task, i) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        isOneThing={task.id === (todayLog as { one_thing?: string }).one_thing}
+                        onToggle={() => toggleTask(task.id)}
+                        onSnooze={() => snoozeTask(task.id)}
+                        onSkip={() => skipTask(task.id)}
+                        onStartTimer={() => startTaskTimer(task.id)}
+                        onStopTimer={() => stopTaskTimer(task.id)}
+                        index={i}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Bonus Tasks — extra tasks if energy allows */}
+                {bonusTasks.length > 0 && (
+                  <>
+                    <div className="bonus-tasks-divider">
+                      <span>✨ {t.dashboard.bonusTasks || "Bonus — if you have extra energy"}</span>
+                    </div>
+                    <div className="tasks-list tasks-list-bonus">
+                      {bonusTasks.map((task, i) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          isOneThing={false}
+                          onToggle={() => toggleTask(task.id)}
+                          onSnooze={() => snoozeTask(task.id)}
+                          onSkip={() => skipTask(task.id)}
+                          onStartTimer={() => startTaskTimer(task.id)}
+                          onStopTimer={() => stopTaskTimer(task.id)}
+                          index={i}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {dailyTasks.length === 0 && bonusTasks.length === 0 && (
+                  <div className="tasks-empty">
+                    <p>{t.dashboard.noTasks}</p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {/* Goal plan tasks for today (only if not already covered by AI tasks) */}
           {pendingGoalTasks.length > 0 && !todayLog && (

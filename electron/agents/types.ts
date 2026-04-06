@@ -94,6 +94,7 @@ export type CoordinatorTaskType =
 export interface CoordinatorResult<T = unknown> {
   success: boolean;
   data: T;
+  error?: string;                     // human-readable error when success=false
   research?: ResearchResult;
   agentTrace: AgentProgressEvent[];   // full trace of what happened
   totalTokensUsed?: number;

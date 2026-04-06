@@ -1321,6 +1321,8 @@
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
 }
 
 .pending-card-status {
@@ -1374,4 +1376,50 @@
   gap: var(--space-sm);
   padding-top: var(--space-sm);
   border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+/* ── Editable pending fields ── */
+
+.pending-editable {
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s ease;
+  border-radius: var(--radius-sm);
+}
+
+.pending-editable:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.pending-edit-icon {
+  opacity: 0;
+  margin-left: 6px;
+  color: var(--text-muted);
+  transition: opacity 0.15s ease;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.pending-editable:hover .pending-edit-icon {
+  opacity: 0.6;
+}
+
+.pending-edit-input {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  width: 100%;
+}
+
+.pending-edit-title {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.pending-edit-desc {
+  resize: none;
+  margin-bottom: var(--space-sm);
 }

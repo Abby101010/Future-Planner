@@ -91,6 +91,31 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* Bonus tasks divider */
+.bonus-tasks-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0 var(--space-xs);
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+.bonus-tasks-divider::before,
+.bonus-tasks-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+}
+
+.tasks-list-bonus .task-card {
+  opacity: 0.75;
+  border-left: 2px dashed rgba(99, 102, 241, 0.2);
+}
+.tasks-list-bonus .task-card:hover {
+  opacity: 1;
+}
+
 /* ── Vacation Mode ─────────────────────────────────────── */
 
 .vacation-banner {

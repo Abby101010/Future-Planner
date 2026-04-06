@@ -128,16 +128,20 @@ export async function coordinateRequest(
       agentTrace: trace,
     };
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "unknown error";
+    console.error(`[coordinator] Task "${taskType}" failed:`, err);
+
     emit({
       agentId: "coordinator",
       status: "error",
-      message: `Failed: ${err instanceof Error ? err.message : "unknown error"}`,
+      message: `Failed: ${errorMessage}`,
       timestamp: new Date().toISOString(),
     });
 
     return {
       success: false,
       data: null,
+      error: errorMessage,
       research: researchResult,
       agentTrace: trace,
     };

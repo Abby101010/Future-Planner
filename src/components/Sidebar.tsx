@@ -9,7 +9,6 @@ import {
   Star,
   CalendarDays,
   Heart,
-  MessageSquare,
   Target,
   CheckSquare,
 } from "lucide-react";
@@ -45,7 +44,6 @@ export default function Sidebar() {
     { icon: <CheckSquare size={18} />, label: t.sidebar.tasks, view: "tasks" },
     { icon: <CalendarDays size={18} />, label: t.sidebar.calendar, view: "calendar" },
     { icon: <Map size={18} />, label: t.sidebar.roadmap, view: "roadmap" },
-    { icon: <MessageSquare size={18} />, label: t.sidebar.goalCoach, view: "onboarding" },
     {
       icon: <Heart size={18} />,
       label: t.sidebar.wellbeing,

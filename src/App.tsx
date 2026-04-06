@@ -21,20 +21,9 @@ function App() {
   const { currentView, loadFromDisk, user } = useStore();
   const language = user?.settings?.language || "en";
 
-  const { resetGoalData } = useStore();
-
   useEffect(() => {
-    loadFromDisk().then(() => {
-      // One-time reset: clear all goals and task data (keep user profile)
-      // Remove this block after first run
-      const resetDone = localStorage.getItem("northstar_reset_v1");
-      if (!resetDone) {
-        resetGoalData().then(() => {
-          localStorage.setItem("northstar_reset_v1", "true");
-        });
-      }
-    });
-  }, [loadFromDisk, resetGoalData]);
+    loadFromDisk();
+  }, [loadFromDisk]);
 
   const showSidebar =
     currentView === "dashboard" ||

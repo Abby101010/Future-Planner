@@ -521,34 +521,85 @@ const useStore = create<Store>((set, get) => ({
   confirmPendingTask: (id) => {
     const task = get().pendingTasks.find((t) => t.id === id);
     if (!task || !task.analysis) return;
-    // Move the pending task into the today log as a DailyTask
+
     const todayLog = get().todayLog;
+    const today = new Date().toISOString().split("T")[0];
+
+    // ── Cognitive budget enforcement (psychological principles) ──
+    // Max 12 cognitive points/day, max 5 daily tasks, 3-hour deep-work ceiling
+    const existingTasks = todayLog?.tasks || [];
+    const currentWeight = existingTasks.reduce((sum, t) => sum + (t.cognitiveWeight || 3), 0);
+    const currentMinutes = existingTasks.reduce((sum, t) => sum + (t.durationMinutes || 30), 0);
+    const dailyTaskCount = existingTasks.filter((t) => t.priority === "must-do" || t.priority === "should-do").length;
+
+    const maxBudget = 12;
+    const maxDailyTasks = 5; // decision fatigue threshold
+    const maxDeepMinutes = 180; // 3-hour ceiling
+
+    // Determine if this should be a daily task or bonus
+    // If adding it would exceed cognitive budget, task count, or deep-work time → bonus
+    const taskWeight = task.analysis.cognitiveWeight || 3;
+    const taskMinutes = task.analysis.durationMinutes || 30;
+    const isScheduledToday = task.analysis.suggestedDate === today;
+
+    let finalPriority = task.analysis.priority;
+
+    if (isScheduledToday) {
+      const wouldExceedBudget = (currentWeight + taskWeight) > maxBudget;
+      const wouldExceedTasks = dailyTaskCount >= maxDailyTasks;
+      const wouldExceedTime = (currentMinutes + taskMinutes) > maxDeepMinutes;
+
+      if (wouldExceedBudget || wouldExceedTasks || wouldExceedTime) {
+        // Downgrade to bonus — don't overload the user
+        finalPriority = "bonus";
+      }
+    }
+
+    const newTask: import("../types").DailyTask = {
+      id: `task-confirmed-${Date.now()}`,
+      title: task.analysis.title,
+      description: task.analysis.description,
+      durationMinutes: task.analysis.durationMinutes,
+      cognitiveWeight: task.analysis.cognitiveWeight,
+      priority: finalPriority,
+      category: task.analysis.category,
+      whyToday: task.analysis.reasoning,
+      progressContribution: "Quick task added via chat",
+      completed: false,
+      isMomentumTask: false,
+    };
+
     if (todayLog) {
-      const newTask: import("../types").DailyTask = {
-        id: `task-confirmed-${Date.now()}`,
-        title: task.analysis.title,
-        description: task.analysis.description,
-        durationMinutes: task.analysis.durationMinutes,
-        cognitiveWeight: task.analysis.cognitiveWeight,
-        priority: task.analysis.priority,
-        category: task.analysis.category,
-        whyToday: task.analysis.reasoning,
-        progressContribution: "Quick task added via chat",
-        completed: false,
-        isMomentumTask: false,
-      };
       const updated = { ...todayLog, tasks: [...todayLog.tasks, newTask] };
       set({ todayLog: updated });
       set((s) => ({
         dailyLogs: s.dailyLogs.map((l) => (l.id === todayLog.id ? updated : l)),
       }));
+    } else {
+      // No today log yet — create a minimal one
+      const newLog: import("../types").DailyLog = {
+        id: `log-${Date.now()}`,
+        userId: get().user?.id || "",
+        date: today,
+        tasks: [newTask],
+        heatmapEntry: { date: today, completionLevel: 0, currentStreak: 0, totalActiveDays: 0, longestStreak: 0 },
+        notificationBriefing: "",
+        milestoneCelebration: null,
+        progress: { overallPercent: 0, milestonePercent: 0, currentMilestone: "", projectedCompletion: "", daysAheadOrBehind: 0 },
+        yesterdayRecap: null,
+        encouragement: "",
+        createdAt: new Date().toISOString(),
+      };
+      set({ todayLog: newLog });
+      set((s) => ({ dailyLogs: [...s.dailyLogs, newLog] }));
     }
-    // Mark as confirmed and remove
+
+    // Remove from pending
     set((s) => ({
       pendingTasks: s.pendingTasks.filter((t) => t.id !== id),
     }));
     get().saveToDisk();
-    recordSignal("task_confirmed", "quick_task", task.analysis.title).catch(() => {});
+    recordSignal("task_confirmed", "quick_task", `${task.analysis.title} [${finalPriority}]`).catch(() => {});
   },
 
   // ── Home Chat ──
@@ -569,63 +620,69 @@ const useStore = create<Store>((set, get) => ({
   loadFromDisk: async () => {
     try {
       const data = await window.electronAPI.invoke("store:load");
-      if (data && typeof data === "object") {
-        const d = data as Record<string, unknown>;
-        if (d.user) {
-          const u = d.user as UserProfile;
-          // Backfill language for users created before i18n was added
-          if (!u.settings.language) {
-            u.settings.language = "en";
-          }
-          set({ user: u });
-        }
-        if (d.roadmap) set({ roadmap: d.roadmap as Roadmap });
-        if (d.goalBreakdown)
-          set({ goalBreakdown: d.goalBreakdown as GoalBreakdown });
-        if (d.goals) {
-          // Backfill flatPlan for goals created before the hierarchical plan redesign
-          // Also fix malformed plans (e.g. plan stored as array instead of {milestones, years})
-          // Backfill goalType for goals created before the three-type system
-          const goals = (d.goals as Goal[]).map((g) => ({
-            ...g,
-            flatPlan: g.flatPlan ?? null,
-            plan: g.plan && typeof g.plan === "object" && !Array.isArray(g.plan) && Array.isArray((g.plan as GoalPlan).years)
-              ? g.plan
-              : null,
-            goalType: g.goalType ?? (g.scope === "big" ? "big" : "everyday") as import("../types").GoalType,
-            repeatSchedule: g.repeatSchedule ?? null,
-          }));
-          set({ goals });
-        }
-        if (d.calendarEvents)
-          set({ calendarEvents: d.calendarEvents as CalendarEvent[] });
-        if (d.deviceIntegrations)
-          set({ deviceIntegrations: d.deviceIntegrations as DeviceIntegrations });
-        if (d.dailyLogs) set({ dailyLogs: d.dailyLogs as DailyLog[] });
-        if (d.heatmapData)
-          set({ heatmapData: d.heatmapData as HeatmapEntry[] });
-        if (d.moodEntries)
-          set({ moodEntries: d.moodEntries as MoodEntry[] });
-        if (d.conversations)
-          set({ conversations: d.conversations as ConversationMessage[] });
-        if (d.pendingTasks)
-          set({ pendingTasks: d.pendingTasks as PendingTask[] });
-        if (d.homeChatMessages)
-          set({ homeChatMessages: d.homeChatMessages as HomeChatMessage[] });
-        if (d.vacationMode)
-          set({ vacationMode: d.vacationMode as { active: boolean; startDate: string; endDate: string } });
-        // Determine initial view
-        if (d.goalBreakdown || d.roadmap || (d.goals as Goal[] | undefined)?.length) {
-          set({ currentView: "dashboard" });
-        } else if (d.user) {
-          const u = d.user as UserProfile;
-          if (u.onboardingComplete) {
-            set({ currentView: "dashboard" });
-          } else {
-            set({ currentView: "onboarding" });
-          }
-        }
+      if (!data || typeof data !== "object") {
+        // Empty or invalid → first launch → stay on "welcome"
+        return;
       }
+
+      const d = data as Record<string, unknown>;
+      const userObj = d.user as UserProfile | undefined;
+
+      // ── 1. No user record at all → first launch ──
+      if (!userObj) {
+        // Stay on "welcome" (the default currentView)
+        return;
+      }
+
+      // ── 2. Hydrate all persisted state ──
+      // Backfill language for users created before i18n was added
+      if (!userObj.settings.language) {
+        userObj.settings.language = "en";
+      }
+      set({ user: userObj });
+
+      if (d.roadmap) set({ roadmap: d.roadmap as Roadmap });
+      if (d.goalBreakdown)
+        set({ goalBreakdown: d.goalBreakdown as GoalBreakdown });
+      if (d.goals) {
+        const goals = (d.goals as Goal[]).map((g) => ({
+          ...g,
+          flatPlan: g.flatPlan ?? null,
+          plan: g.plan && typeof g.plan === "object" && !Array.isArray(g.plan) && Array.isArray((g.plan as GoalPlan).years)
+            ? g.plan
+            : null,
+          goalType: g.goalType ?? (g.scope === "big" ? "big" : "everyday") as import("../types").GoalType,
+          repeatSchedule: g.repeatSchedule ?? null,
+        }));
+        set({ goals });
+      }
+      if (d.calendarEvents)
+        set({ calendarEvents: d.calendarEvents as CalendarEvent[] });
+      if (d.deviceIntegrations)
+        set({ deviceIntegrations: d.deviceIntegrations as DeviceIntegrations });
+      if (d.dailyLogs) set({ dailyLogs: d.dailyLogs as DailyLog[] });
+      if (d.heatmapData)
+        set({ heatmapData: d.heatmapData as HeatmapEntry[] });
+      if (d.moodEntries)
+        set({ moodEntries: d.moodEntries as MoodEntry[] });
+      if (d.conversations)
+        set({ conversations: d.conversations as ConversationMessage[] });
+      if (d.pendingTasks)
+        set({ pendingTasks: d.pendingTasks as PendingTask[] });
+      if (d.homeChatMessages)
+        set({ homeChatMessages: d.homeChatMessages as HomeChatMessage[] });
+      if (d.vacationMode)
+        set({ vacationMode: d.vacationMode as { active: boolean; startDate: string; endDate: string } });
+
+      // ── 3. Decide initial view ──
+      if (userObj.onboardingComplete) {
+        // Fully onboarded user → dashboard
+        set({ currentView: "dashboard" });
+      } else {
+        // User record exists but onboarding never finished → resume onboarding
+        set({ currentView: "onboarding" });
+      }
+
       // Also load memory summary
       get().refreshMemorySummary();
     } catch {
@@ -655,24 +712,9 @@ const useStore = create<Store>((set, get) => ({
     }
   },
   resetGoalData: async () => {
-    const prev = get().user;
-    // Preserve API key and language across resets — those are app settings, not goal data
-    const apiKey = prev?.settings?.apiKey;
-    const language = prev?.settings?.language || "en";
+    // Wipe everything — return to a truly fresh state
     set({
-      user: apiKey ? {
-        id: `user-${Date.now()}`,
-        name: "",
-        goalRaw: "",
-        createdAt: new Date().toISOString(),
-        settings: {
-          enableMoodLogging: false,
-          enableNewsFeed: false,
-          theme: "light" as const,
-          language: language as "en" | "zh",
-          apiKey,
-        },
-      } : null,
+      user: null,
       goals: [],
       roadmap: null,
       goalBreakdown: null,
@@ -685,7 +727,7 @@ const useStore = create<Store>((set, get) => ({
       homeChatMessages: [],
       vacationMode: null,
       nudges: [],
-      currentView: "onboarding",
+      currentView: "welcome",
     });
     await get().saveToDisk();
   },
