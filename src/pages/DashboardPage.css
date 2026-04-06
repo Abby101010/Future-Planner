@@ -1231,6 +1231,12 @@
   font-style: italic;
 }
 
+.home-chat-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
 .home-chat-input-row {
   display: flex;
   gap: var(--space-sm);

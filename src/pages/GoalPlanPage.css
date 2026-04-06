@@ -50,9 +50,22 @@
 }
 
 .gp-header-icon {
-  color: var(--accent);
+  color: var(--text-primary);
   margin-top: 4px;
   flex-shrink: 0;
+}
+
+.gp-header-icon-btn {
+  width: 36px;
+  height: 36px;
+  font-size: 22px;
+  margin-top: 2px;
+}
+
+.gp-chat-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
 }
 
 .gp-header-description {

@@ -115,7 +115,11 @@ export default function Sidebar() {
                   className={`sidebar-item ${currentView === goalView ? "active" : ""}`}
                   onClick={() => setView(goalView)}
                 >
-                  <Target size={18} />
+                  {goal.icon ? (
+                    <span className="sidebar-goal-icon">{goal.icon}</span>
+                  ) : (
+                    <Target size={18} />
+                  )}
                   <span className="sidebar-goal-label">
                     {goal.title}
                     {progressPercent > 0 && (
@@ -139,6 +143,9 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
+        {__PERSONAL_EDITION__ && (
+          <div className="sidebar-edition-badge">✦ Personal Edition</div>
+        )}
         <div className="sidebar-user">
           <CalendarDays size={14} />
           <span className="sidebar-date">

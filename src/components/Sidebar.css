@@ -19,7 +19,7 @@
 }
 
 .sidebar-star {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 .sidebar-title {
@@ -66,8 +66,8 @@
 }
 
 .sidebar-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -117,11 +117,17 @@
   overflow: hidden;
 }
 
+.sidebar-goal-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .sidebar-goal-progress {
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.04);
   padding: 1px 6px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
@@ -136,4 +142,17 @@
   border-radius: var(--radius-full);
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* Personal edition badge */
+.sidebar-edition-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  text-align: center;
+  margin: 0 var(--space-md) var(--space-sm);
 }

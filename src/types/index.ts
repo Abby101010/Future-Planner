@@ -427,6 +427,8 @@ export interface Goal {
   status: "pending" | "planning" | "active" | "completed" | "archived";
   createdAt: string;
   updatedAt: string;
+  /** User-chosen icon/emoji for this goal */
+  icon?: string;
   /** For big goals — the planning conversation */
   planChat: GoalPlanMessage[];
   /** For big goals — the hierarchical plan the AI generated */

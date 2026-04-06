@@ -34,6 +34,7 @@ import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
 import { sendGoalPlanMessage, generateGoalPlan, analyzeGoalPlanEdit } from "../services/ai";
 import AgentProgress from "../components/AgentProgress";
+import RichTextToolbar, { IconPicker } from "../components/RichTextToolbar";
 import type {
   GoalPlanMessage,
   GoalPlan,
@@ -313,6 +314,17 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
+
+  // Goal icon picker state
+  const [showIconPicker, setShowIconPicker] = useState(false);
+
+  // Chat input ref for emoji/text insertion
+  const gpChatInputRef = useRef<HTMLInputElement>(null);
+
+  const handleInsertTextToGpChat = useCallback((text: string) => {
+    setChatInput((prev) => prev + text);
+    gpChatInputRef.current?.focus();
+  }, []);
 
   // ── Inline editing state ──
   const [editingItem, setEditingItem] = useState<{
@@ -632,7 +644,20 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           </button>
           <div className="gp-header-main">
             <div className="gp-header-info">
-              <Target size={24} className="gp-header-icon" />
+              <button
+                className={`goal-icon-btn gp-header-icon-btn ${goal.icon ? "has-icon" : ""}`}
+                onClick={() => setShowIconPicker(!showIconPicker)}
+                title="Choose icon"
+              >
+                {goal.icon || <Target size={24} />}
+              </button>
+              {showIconPicker && (
+                <IconPicker
+                  currentIcon={goal.icon}
+                  onSelect={(icon) => updateGoal(goal.id, { icon })}
+                  onClose={() => setShowIconPicker(false)}
+                />
+              )}
               <div>
                 <h2>{goal.title}</h2>
                 {goal.description && (
@@ -985,27 +1010,34 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
                   <div ref={chatEndRef} />
                 </div>
 
-                <div className="gp-chat-input-row">
-                  <input
-                    className="input gp-chat-input"
-                    placeholder={t.goalPlan.chatPlaceholder}
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    disabled={isLoading}
+                <div className="gp-chat-input-area">
+                  <RichTextToolbar
+                    onInsertText={handleInsertTextToGpChat}
+                    compact
                   />
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleSendMessage}
-                    disabled={isLoading || !chatInput.trim()}
-                  >
-                    {isLoading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-                  </button>
+                  <div className="gp-chat-input-row">
+                    <input
+                      ref={gpChatInputRef}
+                      className="input gp-chat-input"
+                      placeholder={t.goalPlan.chatPlaceholder}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                      disabled={isLoading}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleSendMessage}
+                      disabled={isLoading || !chatInput.trim()}
+                    >
+                      {isLoading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+                    </button>
+                  </div>
                 </div>
               </>
             )}

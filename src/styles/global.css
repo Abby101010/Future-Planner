@@ -5,44 +5,44 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* ── Color palette — Light & Soft ── */
-  --bg-primary: #f8f9fc;
+  /* ── Color palette — Pure White ── */
+  --bg-primary: #ffffff;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
-  --bg-card-hover: #f3f4f8;
-  --bg-input: #f1f3f7;
-  --bg-overlay: rgba(30, 30, 50, 0.35);
+  --bg-card-hover: #fafafa;
+  --bg-input: #f5f5f5;
+  --bg-overlay: rgba(0, 0, 0, 0.3);
 
-  --text-primary: #1e1e2e;
-  --text-secondary: #6b6f80;
-  --text-muted: #a0a4b4;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-muted: #999999;
   --text-inverse: #ffffff;
 
-  --accent: #7364e3;
-  --accent-hover: #5f50d4;
-  --accent-soft: rgba(115, 100, 227, 0.08);
+  --accent: #1a1a1a;
+  --accent-hover: #333333;
+  --accent-soft: rgba(0, 0, 0, 0.04);
 
   --surface-hover: rgba(0, 0, 0, 0.02);
   --border-subtle: rgba(0, 0, 0, 0.06);
-  --border: rgba(0, 0, 0, 0.08);
+  --border: rgba(0, 0, 0, 0.1);
 
   --green: #22c55e;
-  --green-soft: rgba(34, 197, 94, 0.10);
-  --yellow: #e6a817;
-  --yellow-soft: rgba(230, 168, 23, 0.10);
-  --red: #ef4444;
-  --red-soft: rgba(239, 68, 68, 0.08);
-  --blue: #3b82f6;
-  --blue-soft: rgba(59, 130, 246, 0.08);
+  --green-soft: rgba(34, 197, 94, 0.08);
+  --yellow: #ca8a04;
+  --yellow-soft: rgba(202, 138, 4, 0.08);
+  --red: #dc2626;
+  --red-soft: rgba(220, 38, 38, 0.06);
+  --blue: #2563eb;
+  --blue-soft: rgba(37, 99, 235, 0.06);
   --success: #22c55e;
-  --danger: #ef4444;
+  --danger: #dc2626;
 
   /* Heatmap colors */
-  --heatmap-0: #eef0f5;
-  --heatmap-1: #c6f0d5;
-  --heatmap-2: #86e0a8;
-  --heatmap-3: #3dc97a;
-  --heatmap-4: #22a55a;
+  --heatmap-0: #f0f0f0;
+  --heatmap-1: #d4edda;
+  --heatmap-2: #a3d9b1;
+  --heatmap-3: #5cb87a;
+  --heatmap-4: #2e9955;
 
   /* ── Spacing (more breathing room) ── */
   --space-xs: 4px;
@@ -83,7 +83,7 @@
   --card-bg: var(--bg-card);
   --card-hover: var(--bg-card-hover);
   --hover: var(--bg-card-hover);
-  --accent-dim: rgba(115, 100, 227, 0.06);
+  --accent-dim: rgba(0, 0, 0, 0.03);
   --surface-2: var(--bg-card-hover);
   --radius: var(--radius-md);
   --text: var(--text-primary);

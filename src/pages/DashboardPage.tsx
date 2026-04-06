@@ -25,6 +25,7 @@ import { useT, getDateLocale } from "../i18n";
 import { classifyGoal, generateGoalPlan, analyzeQuickTask, sendHomeChatMessage } from "../services/ai";
 import { recordSignal } from "../services/memory";
 import AgentProgress from "../components/AgentProgress";
+import RichTextToolbar, { IconPicker } from "../components/RichTextToolbar";
 import type { GoalImportance, GoalType, Goal, GoalPlanMessage, PendingTask, HomeChatMessage, RepeatSchedule } from "../types";
 import "./DashboardPage.css";
 
@@ -34,6 +35,7 @@ export default function DashboardPage() {
     goals,
     addGoal,
     removeGoal,
+    updateGoal,
     addGoalPlanMessage,
     setGoalPlan,
     todayLog,
@@ -75,6 +77,17 @@ export default function DashboardPage() {
 
   // Delete goal confirmation state
   const [confirmDeleteGoalId, setConfirmDeleteGoalId] = useState<string | null>(null);
+
+  // Icon picker state
+  const [iconPickerGoalId, setIconPickerGoalId] = useState<string | null>(null);
+
+  // Chat input ref for emoji/text insertion
+  const chatInputRef = useRef<HTMLInputElement>(null);
+
+  const handleInsertTextToChat = useCallback((text: string) => {
+    setChatInput((prev) => prev + text);
+    chatInputRef.current?.focus();
+  }, []);
 
   const handleDeleteGoal = useCallback((goalId: string) => {
     removeGoal(goalId);
@@ -530,6 +543,23 @@ export default function DashboardPage() {
                         </div>
                       )}
                       <div className="goal-card-top">
+                        <button
+                          className={`goal-icon-btn ${goal.icon ? "has-icon" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIconPickerGoalId(iconPickerGoalId === goal.id ? null : goal.id);
+                          }}
+                          title="Choose icon"
+                        >
+                          {goal.icon || "+"}
+                        </button>
+                        {iconPickerGoalId === goal.id && (
+                          <IconPicker
+                            currentIcon={goal.icon}
+                            onSelect={(icon) => updateGoal(goal.id, { icon })}
+                            onClose={() => setIconPickerGoalId(null)}
+                          />
+                        )}
                         <h4>{goal.title}</h4>
                         <button
                           className="goal-card-close-btn"
@@ -683,28 +713,35 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="home-chat-input-row">
-            <input
-              className="input home-chat-input"
-              type="text"
-              placeholder={t.home.chatPlaceholder}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && chatInput.trim()) {
-                  e.preventDefault();
-                  handleChatSend();
-                }
-              }}
-              disabled={isChatLoading}
+          <div className="home-chat-input-area">
+            <RichTextToolbar
+              onInsertText={handleInsertTextToChat}
+              compact
             />
-            <button
-              className="btn btn-primary home-chat-send"
-              onClick={handleChatSend}
-              disabled={isChatLoading || !chatInput.trim()}
-            >
-              <Send size={16} />
-            </button>
+            <div className="home-chat-input-row">
+              <input
+                ref={chatInputRef}
+                className="input home-chat-input"
+                type="text"
+                placeholder={t.home.chatPlaceholder}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && chatInput.trim()) {
+                    e.preventDefault();
+                    handleChatSend();
+                  }
+                }}
+                disabled={isChatLoading}
+              />
+              <button
+                className="btn btn-primary home-chat-send"
+                onClick={handleChatSend}
+                disabled={isChatLoading || !chatInput.trim()}
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </section>
       </div>
