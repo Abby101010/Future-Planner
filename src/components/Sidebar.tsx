@@ -143,9 +143,6 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        {__PERSONAL_EDITION__ && (
-          <div className="sidebar-edition-badge">✦ Personal Edition</div>
-        )}
         <div className="sidebar-user">
           <CalendarDays size={14} />
           <span className="sidebar-date">

@@ -1,8 +1,5 @@
 /// <reference types="vite/client" />
 
-/** Build-time feature flag: true when NORTHSTAR_EDITION=personal */
-declare const __PERSONAL_EDITION__: boolean;
-
 interface Window {
   electronAPI: {
     send: (channel: string, data: unknown) => void;

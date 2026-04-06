@@ -17,10 +17,14 @@ const END_HOUR = 23;
 const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
 
 function formatHour(h: number): string {
-  if (h === 0) return "12am";
-  if (h < 12) return `${h}am`;
-  if (h === 12) return "12pm";
-  return `${h - 12}pm`;
+  if (h === 0) return "12a";
+  if (h < 12) return `${h}a`;
+  if (h === 12) return "12p";
+  return `${h - 12}p`;
+}
+
+function formatRange(h: number): string {
+  return `${formatHour(h)}-${formatHour(h + 1)}`;
 }
 
 interface Props {
@@ -111,7 +115,7 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
         {HOURS.map((hour) => (
           <>
             <div key={`h-${hour}`} className="avail-grid-hour-label">
-              {formatHour(hour)}
+              <span className="avail-grid-hour-range">{formatRange(hour)}</span>
             </div>
             {Array.from({ length: 7 }, (_, day) => {
               const block = getBlock(day, hour);
@@ -164,7 +168,7 @@ export default function WeeklyAvailabilityGrid({ value, onChange, language = "en
           <div className="avail-label-popover" onClick={(e) => e.stopPropagation()}>
             <div className="avail-label-popover-header">
               <span>
-                {dayLabels[editingBlock.day]} {formatHour(editingBlock.hour)}
+                {dayLabels[editingBlock.day]} {formatRange(editingBlock.hour)}
               </span>
               <button className="btn btn-ghost btn-sm" onClick={() => setEditingBlock(null)}>
                 <X size={14} />

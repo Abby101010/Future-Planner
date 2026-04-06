@@ -16,7 +16,7 @@
 
 .avail-grid {
   display: grid;
-  grid-template-columns: 52px repeat(7, 1fr);
+  grid-template-columns: 64px repeat(7, 1fr);
   gap: 1px;
   background: rgba(0, 0, 0, 0.04);
   border-radius: var(--radius-md);
@@ -47,12 +47,17 @@
   font-size: 10px;
   color: var(--text-muted);
   user-select: none;
-  height: 28px;
+  height: 40px;
+}
+
+.avail-grid-hour-range {
+  line-height: 1.1;
+  text-align: right;
 }
 
 .avail-grid-cell {
   background: var(--bg-primary);
-  height: 28px;
+  height: 40px;
   cursor: pointer;
   transition: background 0.15s ease;
   position: relative;

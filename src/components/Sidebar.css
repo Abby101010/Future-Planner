@@ -143,16 +143,3 @@
   color: var(--text-muted);
   flex-shrink: 0;
 }
-
-/* Personal edition badge */
-.sidebar-edition-badge {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.04);
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  text-align: center;
-  margin: 0 var(--space-md) var(--space-sm);
-}
