@@ -18,21 +18,23 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "better-sqlite3": "^12.8.0",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
+    "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "lucide-react": "^1.7.0",
-    "pg": "^8.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.14.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.2",
-    "@types/pg": "^8.20.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@types/react-router-dom": "^5.3.3",
@@ -53,12 +55,29 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Abby101010",
+        "repo": "Future-Planner"
+      }
     ],
     "mac": {
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "universal"
           ]

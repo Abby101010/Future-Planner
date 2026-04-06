@@ -14,9 +14,8 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              // pg optionally requires pg-native; mark it external so the
-              // bundler doesn't try to resolve it at build time.
-              external: ["pg-native"],
+              // Native modules must be external — bundler can't process them
+              external: ["better-sqlite3"],
             },
           },
         },

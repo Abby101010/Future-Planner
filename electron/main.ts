@@ -35,6 +35,7 @@ import {
 } from "./database";
 import { startAPIServer, stopAPIServer, setAPIDBAvailable } from "./api-server";
 import { coordinateNewsBriefing } from "./agents/coordinator";
+import { initAutoUpdater } from "./auto-updater";
 import type { AgentProgressEvent, NewsBriefing } from "./agents/types";
 
 // Load .env file in development
@@ -255,7 +256,7 @@ function setupIPC() {
       if (_dbAvailable) {
         try {
           const dbEvents = await getCalendarEventsByRange(startDate, endDate);
-          inAppEvents = dbEvents.map((e) => ({
+          inAppEvents = dbEvents.map((e: { id: string; title: string; start_date: string; end_date: string; is_all_day: boolean | number; duration_minutes: number; is_vacation: boolean | number; source: string }) => ({
             id: e.id,
             title: e.title,
             startDate: e.start_date,
@@ -525,7 +526,7 @@ function createWindow() {
     title: "NorthStar 北极星",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: "#0f0f14",
+    backgroundColor: "#f8f9fc",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -567,23 +568,23 @@ app.on("before-quit", () => {
 });
 
 app.whenReady().then(async () => {
-  // Initialize PostgreSQL
+  // Initialize SQLite database
   try {
     await testConnection();
     await runMigrations();
     _dbAvailable = true;
     setAPIDBAvailable(true);
-    console.log("[DB] PostgreSQL connected and migrations complete");
+    console.log("[DB] SQLite connected and migrations complete");
 
-    // Set up pgvector semantic search (non-blocking)
+    // Set up semantic search (non-blocking)
     ensureVectorColumn()
       .then(() => backfillPreferenceEmbeddings())
-      .then((count) => {
+      .then((count: number) => {
         if (count > 0) console.log(`[DB] Backfilled ${count} preference embeddings`);
       })
-      .catch((err) => console.warn("[DB] Vector setup non-fatal:", err));
+      .catch((err: unknown) => console.warn("[DB] Vector setup non-fatal:", err));
   } catch (err) {
-    console.warn("[DB] PostgreSQL unavailable, using JSON fallback:", err);
+    console.warn("[DB] SQLite unavailable, using JSON fallback:", err);
     _dbAvailable = false;
     setAPIDBAvailable(false);
   }
@@ -606,6 +607,10 @@ app.whenReady().then(async () => {
 
   setupIPC();
   createWindow();
+
+  // Initialize auto-updater (only in production builds)
+  initAutoUpdater(mainWindow);
+
   // Record session start for behavioral tracking
   captureSessionStart();
 });

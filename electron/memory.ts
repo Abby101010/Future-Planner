@@ -220,7 +220,7 @@ export class MemoryManager {
       this.store = store;
       this.rebuildIndices();
       this._dbReady = true;
-      console.log("[Memory] Loaded from PostgreSQL");
+      console.log("[Memory] Loaded from database");
     } catch (err) {
       console.warn("[Memory] DB load failed, using JSON fallback:", err);
     }

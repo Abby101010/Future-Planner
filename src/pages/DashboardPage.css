@@ -147,6 +147,7 @@
   border-radius: var(--radius-md);
   padding: var(--space-md);
   border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .progress-card-label {
@@ -190,7 +191,7 @@
 .tasks-weight-summary {
   font-size: 12px;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   padding: 4px 10px;
   border-radius: var(--radius-md);
   white-space: nowrap;
@@ -203,24 +204,24 @@
 }
 
 .badge-weight-1 {
-  background: rgba(52, 211, 153, 0.12);
-  color: #34d399;
+  background: rgba(34, 197, 94, 0.10);
+  color: #16a34a;
 }
 .badge-weight-2 {
-  background: rgba(96, 165, 250, 0.12);
-  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.10);
+  color: #2563eb;
 }
 .badge-weight-3 {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
+  background: rgba(234, 179, 8, 0.10);
+  color: #ca8a04;
 }
 .badge-weight-4 {
-  background: rgba(251, 146, 60, 0.12);
-  color: #fb923c;
+  background: rgba(234, 88, 12, 0.10);
+  color: #c2410c;
 }
 .badge-weight-5 {
-  background: rgba(248, 113, 113, 0.12);
-  color: #f87171;
+  background: rgba(239, 68, 68, 0.10);
+  color: #dc2626;
 }
 
 .tasks-list {
@@ -236,13 +237,15 @@
   background: var(--bg-card);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
   animation: fadeIn 0.3s ease forwards;
   opacity: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .task-card:hover {
   background: var(--bg-card-hover);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .task-card.completed {
@@ -382,7 +385,7 @@
   gap: var(--space-sm);
   margin-top: var(--space-sm);
   padding-top: var(--space-sm);
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .task-action-btn {
@@ -448,7 +451,7 @@
 .nudge-card {
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
@@ -521,7 +524,7 @@
   gap: var(--space-sm);
   padding: 14px var(--space-lg);
   background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border: 1px dashed rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-lg);
   color: var(--text-muted);
   font-family: var(--font-family);
@@ -594,7 +597,7 @@
   flex-direction: column;
   gap: var(--space-sm);
   padding-top: var(--space-sm);
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .goal-entry-field {
@@ -626,7 +629,7 @@
 .timeline-selector {
   display: flex;
   gap: 4px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.025);
   border-radius: var(--radius-md);
   padding: 3px;
 }
@@ -655,7 +658,7 @@
 
 .timeline-toggle.active {
   background: var(--accent-soft);
-  border-color: rgba(108, 99, 255, 0.15);
+  border-color: rgba(115, 100, 227, 0.15);
   color: var(--accent);
 }
 
@@ -680,7 +683,7 @@
 .importance-btn {
   flex: 1;
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
@@ -751,11 +754,12 @@
   flex-direction: column;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
 }
 
 .goal-card:hover {
   background: var(--bg-card-hover);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .goal-card-top {
@@ -813,10 +817,11 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  background: rgba(15, 15, 20, 0.92);
+  background: rgba(255, 255, 255, 0.95);
   border-radius: var(--radius-lg);
   z-index: 10;
   animation: goal-confirm-in 0.15s ease;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 
 @keyframes goal-confirm-in {
@@ -863,7 +868,7 @@
 .goal-card-progress-bar {
   flex: 1;
   height: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-full);
   overflow: hidden;
 }
@@ -1113,9 +1118,9 @@
 
 .news-article {
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.025);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .news-article-header {
@@ -1139,7 +1144,7 @@
   white-space: nowrap;
   flex-shrink: 0;
   padding: 2px 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   border-radius: 4px;
 }
 
@@ -1152,7 +1157,8 @@
 
 .news-article-relevance {
   font-size: 11px;
-  color: rgba(167, 139, 250, 0.7);
+  color: var(--accent);
+  opacity: 0.7;
   font-style: italic;
 }
 
@@ -1161,7 +1167,7 @@
   color: var(--text-muted);
   margin-top: 6px;
   padding-left: 8px;
-  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid rgba(0, 0, 0, 0.06);
 }
 
 /* ── Home Chat Section ──────────────────────────────────── */
@@ -1212,8 +1218,9 @@
 .home-chat-msg-assistant .home-chat-msg-content {
   background: var(--bg-card);
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .home-chat-typing {
@@ -1277,7 +1284,7 @@
 .pending-card {
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   animation: fadeIn 0.3s ease forwards;
 }
 
@@ -1360,5 +1367,5 @@
   display: flex;
   gap: var(--space-sm);
   padding-top: var(--space-sm);
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }

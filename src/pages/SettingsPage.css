@@ -58,7 +58,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-md) 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .toggle-row:last-child {
@@ -109,7 +109,7 @@
   position: absolute;
   inset: 0;
   background: var(--bg-input);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all var(--transition-fast);

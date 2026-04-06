@@ -32,8 +32,9 @@
   top: var(--titlebar-height);
 }
 
-@media (prefers-color-scheme: dark) {
-  code {
-    background: rgba(255, 255, 255, 0.1);
-  }
+code {
+  background: rgba(0, 0, 0, 0.04);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
 }

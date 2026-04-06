@@ -1,53 +1,56 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — PostgreSQL Database Layer
-   
-   All app data flows through here. No more JSON files.
-   Uses the `pg` driver directly (no ORM overhead).
-   
-   Connection: localhost:5432 / life_planner
-   Management UI: Adminer (adminer/index.php)
+   NorthStar — SQLite Database Layer (better-sqlite3)
+
+   Embedded database — no external server required.
+   Users download the app and everything works out of the box.
+
+   Data location: app.getPath('userData')/northstar.db
+   macOS:   ~/Library/Application Support/NorthStar/northstar.db
+   Windows: %APPDATA%/NorthStar/northstar.db
+   Linux:   ~/.config/NorthStar/northstar.db
    ────────────────────────────────────────────────────────── */
 
-import { Pool, type PoolClient } from "pg";
+import Database from "better-sqlite3";
+import path from "node:path";
+import fs from "node:fs";
+import { app } from "electron";
 
-// ── Connection Pool (singleton) ─────────────────────────
+// ── Database Instance (singleton) ───────────────────────
 
-let pool: Pool | null = null;
+let db: Database.Database | null = null;
 
-export function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.PGHOST || "localhost",
-      port: parseInt(process.env.PGPORT || "5432", 10),
-      database: process.env.PGDATABASE || "life_planner",
-      user: process.env.PGUSER || process.env.USER || "postgres",
-      password: process.env.PGPASSWORD || "",
-      max: 5,
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
-    });
-
-    pool.on("error", (err) => {
-      console.error("Unexpected PG pool error:", err);
-    });
-  }
-  return pool;
+function getDBPath(): string {
+  const userDataPath = app.getPath("userData");
+  fs.mkdirSync(userDataPath, { recursive: true });
+  return path.join(userDataPath, "northstar.db");
 }
 
-/** Shut down the pool cleanly (call on app quit) */
+export function getDB(): Database.Database {
+  if (!db) {
+    const dbPath = getDBPath();
+    db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+    db.pragma("foreign_keys = ON");
+    db.pragma("busy_timeout = 5000");
+    console.log(`[DB] SQLite opened at ${dbPath}`);
+  }
+  return db;
+}
+
 export async function closePool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
+  if (db) {
+    db.close();
+    db = null;
+    console.log("[DB] SQLite closed");
   }
 }
 
-/** Test that we can reach Postgres */
 export async function testConnection(): Promise<boolean> {
   try {
-    const p = getPool();
-    const res = await p.query("SELECT 1 AS ok");
-    return res.rows[0]?.ok === 1;
+    const d = getDB();
+    const row = d.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
+    return row?.ok === 1;
   } catch (err) {
     console.error("DB connection test failed:", err);
     return false;
@@ -56,160 +59,146 @@ export async function testConnection(): Promise<boolean> {
 
 // ── Convenience query helpers ───────────────────────────
 
-/** Run a single query and return rows */
+function convertPgSql(sql: string): string {
+  let s = sql;
+  s = s.replace(/\$\d+/g, "?");
+  s = s.replace(/::\w+/g, "");
+  s = s.replace(/NOW\(\)/gi, "datetime('now')");
+  return s;
+}
+
 export async function query<T = Record<string, unknown>>(
   sql: string,
   params?: unknown[]
 ): Promise<T[]> {
-  const p = getPool();
-  const res = await p.query(sql, params);
-  return res.rows as T[];
+  const d = getDB();
+  const stmt = d.prepare(convertPgSql(sql));
+  return (params ? stmt.all(...params) : stmt.all()) as T[];
 }
 
-/** Run a single query and return the first row or null */
 export async function queryOne<T = Record<string, unknown>>(
   sql: string,
   params?: unknown[]
 ): Promise<T | null> {
-  const rows = await query<T>(sql, params);
-  return rows[0] ?? null;
+  const d = getDB();
+  const stmt = d.prepare(convertPgSql(sql));
+  const row = params ? stmt.get(...params) : stmt.get();
+  return (row as T) ?? null;
 }
 
-/** Run an INSERT/UPDATE/DELETE and return affected row count */
 export async function execute(
   sql: string,
   params?: unknown[]
 ): Promise<number> {
-  const p = getPool();
-  const res = await p.query(sql, params);
-  return res.rowCount ?? 0;
+  const d = getDB();
+  const stmt = d.prepare(convertPgSql(sql));
+  const result = params ? stmt.run(...params) : stmt.run();
+  return result.changes;
 }
 
-/** Run multiple statements in a transaction */
 export async function transaction<T>(
-  fn: (client: PoolClient) => Promise<T>
+  fn: (db: Database.Database) => T
 ): Promise<T> {
-  const p = getPool();
-  const client = await p.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await fn(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  const d = getDB();
+  const txn = d.transaction(() => fn(d));
+  return txn();
 }
 
 // ── Schema Migration ────────────────────────────────────
-// Ensures our memory tables exist alongside the original schema.
-// Safe to call multiple times (uses IF NOT EXISTS).
 
 export async function runMigrations(): Promise<void> {
-  const p = getPool();
+  const d = getDB();
 
-  await p.query(`
-    -- Memory facts (Layer 2: Long-term structured facts)
+  d.exec(`
     CREATE TABLE IF NOT EXISTS memory_facts (
       id            TEXT PRIMARY KEY,
       category      TEXT NOT NULL,
       key           TEXT NOT NULL,
       value         TEXT NOT NULL,
       confidence    REAL NOT NULL DEFAULT 0.3,
-      evidence      TEXT[] NOT NULL DEFAULT '{}',
+      evidence      TEXT NOT NULL DEFAULT '[]',
       source        TEXT NOT NULL DEFAULT 'reflection',
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_memory_facts_cat_key
       ON memory_facts(category, key);
 
-    -- Memory preferences (Layer 3: Semantic preferences)
     CREATE TABLE IF NOT EXISTS memory_preferences (
       id            TEXT PRIMARY KEY,
       text          TEXT NOT NULL,
-      tags          TEXT[] NOT NULL DEFAULT '{}',
+      tags          TEXT NOT NULL DEFAULT '[]',
       weight        REAL NOT NULL DEFAULT 0,
-      frequency     INT NOT NULL DEFAULT 1,
-      examples      TEXT[] NOT NULL DEFAULT '{}',
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      frequency     INTEGER NOT NULL DEFAULT 1,
+      examples      TEXT NOT NULL DEFAULT '[]',
+      embedding     TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
-    CREATE INDEX IF NOT EXISTS idx_memory_prefs_tags
-      ON memory_preferences USING GIN(tags);
 
-    -- Behavioral signals
     CREATE TABLE IF NOT EXISTS memory_signals (
       id            TEXT PRIMARY KEY,
       type          TEXT NOT NULL,
       context       TEXT NOT NULL,
       value         TEXT NOT NULL,
-      timestamp     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      timestamp     TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_memory_signals_type
       ON memory_signals(type);
     CREATE INDEX IF NOT EXISTS idx_memory_signals_ts
-      ON memory_signals(timestamp DESC);
+      ON memory_signals(timestamp);
 
-    -- Snooze records
     CREATE TABLE IF NOT EXISTS memory_snooze_records (
-      id            SERIAL PRIMARY KEY,
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
       task_title    TEXT NOT NULL,
       task_category TEXT NOT NULL,
-      snooze_count  INT NOT NULL DEFAULT 1,
+      snooze_count  INTEGER NOT NULL DEFAULT 1,
       original_date TEXT NOT NULL,
-      last_snoozed  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_snoozed  TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(task_title, original_date)
     );
 
-    -- Task timing records
     CREATE TABLE IF NOT EXISTS memory_task_timings (
-      id                SERIAL PRIMARY KEY,
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
       task_category     TEXT NOT NULL,
-      task_keywords     TEXT[] NOT NULL DEFAULT '{}',
-      estimated_minutes INT NOT NULL,
-      actual_minutes    INT NOT NULL,
+      task_keywords     TEXT NOT NULL DEFAULT '[]',
+      estimated_minutes INTEGER NOT NULL,
+      actual_minutes    INTEGER NOT NULL,
       date              TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_memory_timings_cat
       ON memory_task_timings(task_category);
 
-    -- Memory meta (single row)
     CREATE TABLE IF NOT EXISTS memory_meta (
-      id                 INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-      last_reflection_at TIMESTAMPTZ,
-      reflection_count   INT NOT NULL DEFAULT 0,
-      version            INT NOT NULL DEFAULT 1
+      id                 INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      last_reflection_at TEXT,
+      reflection_count   INTEGER NOT NULL DEFAULT 0,
+      version            INTEGER NOT NULL DEFAULT 1
     );
-    INSERT INTO memory_meta (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+    INSERT OR IGNORE INTO memory_meta (id) VALUES (1);
 
-    -- App store (replaces northstar-data.json)
     CREATE TABLE IF NOT EXISTS app_store (
       key    TEXT PRIMARY KEY,
-      value  JSONB NOT NULL DEFAULT '{}'
+      value  TEXT NOT NULL DEFAULT '{}'
     );
 
-    -- Calendar events (standalone, not macOS-dependent)
     CREATE TABLE IF NOT EXISTS calendar_events (
       id              TEXT PRIMARY KEY,
       title           TEXT NOT NULL,
-      start_date      TIMESTAMPTZ NOT NULL,
-      end_date        TIMESTAMPTZ NOT NULL,
-      is_all_day      BOOLEAN NOT NULL DEFAULT FALSE,
-      duration_minutes INT NOT NULL DEFAULT 60,
+      start_date      TEXT NOT NULL,
+      end_date        TEXT NOT NULL,
+      is_all_day      INTEGER NOT NULL DEFAULT 0,
+      duration_minutes INTEGER NOT NULL DEFAULT 60,
       category        TEXT NOT NULL DEFAULT 'personal',
-      is_vacation     BOOLEAN NOT NULL DEFAULT FALSE,
+      is_vacation     INTEGER NOT NULL DEFAULT 0,
       source          TEXT NOT NULL DEFAULT 'manual',
       source_calendar TEXT,
       color           TEXT,
       notes           TEXT,
       recurring_freq  TEXT,
       recurring_until TEXT,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_cal_events_date
       ON calendar_events(start_date);
@@ -218,52 +207,44 @@ export async function runMigrations(): Promise<void> {
   console.log("[DB] Migrations complete");
 }
 
-// ── App Store (replaces JSON file) ──────────────────────
+// ── App Store ───────────────────────────────────────────
 
 export async function loadAppData(): Promise<Record<string, unknown>> {
-  const rows = await query<{ key: string; value: unknown }>(
-    "SELECT key, value FROM app_store"
-  );
+  const d = getDB();
+  const rows = d.prepare("SELECT key, value FROM app_store").all() as Array<{ key: string; value: string }>;
   const data: Record<string, unknown> = {};
   for (const row of rows) {
-    data[row.key] = row.value;
+    try { data[row.key] = JSON.parse(row.value); } catch { data[row.key] = row.value; }
   }
   return data;
 }
 
 export async function saveAppData(data: Record<string, unknown>): Promise<void> {
-  const p = getPool();
-  const client = await p.connect();
-  try {
-    await client.query("BEGIN");
+  const d = getDB();
+  const upsert = d.prepare(
+    `INSERT INTO app_store (key, value) VALUES (?, ?)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+  );
+  const saveTxn = d.transaction(() => {
     for (const [key, value] of Object.entries(data)) {
       if (value === undefined) continue;
-      await client.query(
-        `INSERT INTO app_store (key, value) VALUES ($1, $2)
-         ON CONFLICT (key) DO UPDATE SET value = $2`,
-        [key, JSON.stringify(value)]
-      );
+      upsert.run(key, JSON.stringify(value));
     }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
+  saveTxn();
 }
 
-// ── Calendar Events (standalone DB-backed) ──────────────
+// ── Calendar Events ─────────────────────────────────────
 
 export interface DBCalendarEvent {
   id: string;
   title: string;
   start_date: string;
   end_date: string;
-  is_all_day: boolean;
+  is_all_day: boolean | number;
   duration_minutes: number;
   category: string;
-  is_vacation: boolean;
+  is_vacation: boolean | number;
   source: string;
   source_calendar: string | null;
   color: string | null;
@@ -272,22 +253,25 @@ export interface DBCalendarEvent {
   recurring_until: string | null;
 }
 
+function normalizeEvent(row: DBCalendarEvent): DBCalendarEvent {
+  return { ...row, is_all_day: !!row.is_all_day, is_vacation: !!row.is_vacation };
+}
+
 export async function getAllCalendarEvents(): Promise<DBCalendarEvent[]> {
-  return query<DBCalendarEvent>(
-    "SELECT * FROM calendar_events ORDER BY start_date"
-  );
+  const d = getDB();
+  const rows = d.prepare("SELECT * FROM calendar_events ORDER BY start_date").all() as DBCalendarEvent[];
+  return rows.map(normalizeEvent);
 }
 
 export async function getCalendarEventsByRange(
   startDate: string,
   endDate: string
 ): Promise<DBCalendarEvent[]> {
-  return query<DBCalendarEvent>(
-    `SELECT * FROM calendar_events
-     WHERE start_date >= $1 AND start_date <= $2
-     ORDER BY start_date`,
-    [startDate, endDate]
-  );
+  const d = getDB();
+  const rows = d.prepare(
+    "SELECT * FROM calendar_events WHERE start_date >= ? AND start_date <= ? ORDER BY start_date"
+  ).all(startDate, endDate) as DBCalendarEvent[];
+  return rows.map(normalizeEvent);
 }
 
 export async function upsertCalendarEvent(event: {
@@ -306,34 +290,38 @@ export async function upsertCalendarEvent(event: {
   recurringFreq?: string;
   recurringUntil?: string;
 }): Promise<void> {
-  await execute(
+  const d = getDB();
+  d.prepare(
     `INSERT INTO calendar_events
        (id, title, start_date, end_date, is_all_day, duration_minutes,
         category, is_vacation, source, source_calendar, color, notes,
         recurring_freq, recurring_until)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (id) DO UPDATE SET
-       title=$2, start_date=$3, end_date=$4, is_all_day=$5,
-       duration_minutes=$6, category=$7, is_vacation=$8,
-       source=$9, source_calendar=$10, color=$11, notes=$12,
-       recurring_freq=$13, recurring_until=$14,
-       updated_at=NOW()`,
-    [
-      event.id, event.title, event.startDate, event.endDate,
-      event.isAllDay, event.durationMinutes, event.category,
-      event.isVacation, event.source, event.sourceCalendar || null,
-      event.color || null, event.notes || null,
-      event.recurringFreq || null, event.recurringUntil || null,
-    ]
+       title=excluded.title, start_date=excluded.start_date,
+       end_date=excluded.end_date, is_all_day=excluded.is_all_day,
+       duration_minutes=excluded.duration_minutes,
+       category=excluded.category, is_vacation=excluded.is_vacation,
+       source=excluded.source, source_calendar=excluded.source_calendar,
+       color=excluded.color, notes=excluded.notes,
+       recurring_freq=excluded.recurring_freq,
+       recurring_until=excluded.recurring_until,
+       updated_at=datetime('now')`
+  ).run(
+    event.id, event.title, event.startDate, event.endDate,
+    event.isAllDay ? 1 : 0, event.durationMinutes, event.category,
+    event.isVacation ? 1 : 0, event.source, event.sourceCalendar || null,
+    event.color || null, event.notes || null,
+    event.recurringFreq || null, event.recurringUntil || null
   );
 }
 
 export async function deleteCalendarEvent(id: string): Promise<void> {
-  await execute("DELETE FROM calendar_events WHERE id = $1", [id]);
+  const d = getDB();
+  d.prepare("DELETE FROM calendar_events WHERE id = ?").run(id);
 }
 
 // ── Memory DB Operations ────────────────────────────────
-// These mirror the MemoryStore shape but read/write from PG.
 
 export async function loadMemoryFromDB(): Promise<{
   facts: Record<string, unknown>[];
@@ -344,17 +332,36 @@ export async function loadMemoryFromDB(): Promise<{
   lastReflectionAt: string | null;
   reflectionCount: number;
 }> {
-  const [facts, preferences, signals, snoozeRecords, taskTimings, meta] =
-    await Promise.all([
-      query("SELECT * FROM memory_facts ORDER BY updated_at DESC"),
-      query("SELECT * FROM memory_preferences ORDER BY updated_at DESC"),
-      query("SELECT * FROM memory_signals ORDER BY timestamp DESC LIMIT 500"),
-      query("SELECT * FROM memory_snooze_records ORDER BY last_snoozed DESC LIMIT 100"),
-      query("SELECT * FROM memory_task_timings ORDER BY date DESC LIMIT 200"),
-      queryOne<{ last_reflection_at: string | null; reflection_count: number }>(
-        "SELECT last_reflection_at, reflection_count FROM memory_meta WHERE id = 1"
-      ),
-    ]);
+  const d = getDB();
+
+  const facts = d.prepare("SELECT * FROM memory_facts ORDER BY updated_at DESC").all() as Record<string, unknown>[];
+  const preferences = d.prepare("SELECT * FROM memory_preferences ORDER BY updated_at DESC").all() as Record<string, unknown>[];
+  const signals = d.prepare("SELECT * FROM memory_signals ORDER BY timestamp DESC LIMIT 500").all() as Record<string, unknown>[];
+  const snoozeRecords = d.prepare("SELECT * FROM memory_snooze_records ORDER BY last_snoozed DESC LIMIT 100").all() as Record<string, unknown>[];
+  const taskTimings = d.prepare("SELECT * FROM memory_task_timings ORDER BY date DESC LIMIT 200").all() as Record<string, unknown>[];
+  const meta = d.prepare("SELECT last_reflection_at, reflection_count FROM memory_meta WHERE id = 1").get() as {
+    last_reflection_at: string | null;
+    reflection_count: number;
+  } | undefined;
+
+  for (const fact of facts) {
+    if (typeof fact.evidence === "string") {
+      try { fact.evidence = JSON.parse(fact.evidence as string); } catch { fact.evidence = []; }
+    }
+  }
+  for (const pref of preferences) {
+    if (typeof pref.tags === "string") {
+      try { pref.tags = JSON.parse(pref.tags as string); } catch { pref.tags = []; }
+    }
+    if (typeof pref.examples === "string") {
+      try { pref.examples = JSON.parse(pref.examples as string); } catch { pref.examples = []; }
+    }
+  }
+  for (const timing of taskTimings) {
+    if (typeof timing.task_keywords === "string") {
+      try { timing.task_keywords = JSON.parse(timing.task_keywords as string); } catch { timing.task_keywords = []; }
+    }
+  }
 
   return {
     facts,
@@ -376,13 +383,15 @@ export async function dbUpsertFact(
   evidence: string[],
   source: string
 ): Promise<void> {
-  await execute(
+  const d = getDB();
+  d.prepare(
     `INSERT INTO memory_facts (id, category, key, value, confidence, evidence, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     VALUES (?,?,?,?,?,?,?)
      ON CONFLICT (id) DO UPDATE SET
-       value=$4, confidence=$5, evidence=$6, source=$7, updated_at=NOW()`,
-    [id, category, key, value, confidence, evidence, source]
-  );
+       value=excluded.value, confidence=excluded.confidence,
+       evidence=excluded.evidence, source=excluded.source,
+       updated_at=datetime('now')`
+  ).run(id, category, key, value, confidence, JSON.stringify(evidence), source);
 }
 
 export async function dbUpsertPreference(
@@ -393,13 +402,15 @@ export async function dbUpsertPreference(
   frequency: number,
   examples: string[]
 ): Promise<void> {
-  await execute(
+  const d = getDB();
+  d.prepare(
     `INSERT INTO memory_preferences (id, text, tags, weight, frequency, examples)
-     VALUES ($1,$2,$3,$4,$5,$6)
+     VALUES (?,?,?,?,?,?)
      ON CONFLICT (id) DO UPDATE SET
-       text=$2, tags=$3, weight=$4, frequency=$5, examples=$6, updated_at=NOW()`,
-    [id, text, tags, weight, frequency, examples]
-  );
+       text=excluded.text, tags=excluded.tags, weight=excluded.weight,
+       frequency=excluded.frequency, examples=excluded.examples,
+       updated_at=datetime('now')`
+  ).run(id, text, JSON.stringify(tags), weight, frequency, JSON.stringify(examples));
 }
 
 export async function dbInsertSignal(
@@ -408,16 +419,13 @@ export async function dbInsertSignal(
   context: string,
   value: string
 ): Promise<void> {
-  await execute(
-    `INSERT INTO memory_signals (id, type, context, value) VALUES ($1,$2,$3,$4)`,
-    [id, type, context, value]
-  );
-  // Trim to 500
-  await execute(
-    `DELETE FROM memory_signals WHERE id IN (
-       SELECT id FROM memory_signals ORDER BY timestamp DESC OFFSET 500
-     )`
-  );
+  const d = getDB();
+  d.prepare(
+    "INSERT INTO memory_signals (id, type, context, value) VALUES (?,?,?,?)"
+  ).run(id, type, context, value);
+  d.prepare(
+    "DELETE FROM memory_signals WHERE id IN (SELECT id FROM memory_signals ORDER BY timestamp DESC LIMIT -1 OFFSET 500)"
+  ).run();
 }
 
 export async function dbUpsertSnooze(
@@ -425,14 +433,14 @@ export async function dbUpsertSnooze(
   taskCategory: string,
   originalDate: string
 ): Promise<void> {
-  await execute(
+  const d = getDB();
+  d.prepare(
     `INSERT INTO memory_snooze_records (task_title, task_category, snooze_count, original_date)
-     VALUES ($1,$2,1,$3)
+     VALUES (?,?,1,?)
      ON CONFLICT (task_title, original_date) DO UPDATE SET
        snooze_count = memory_snooze_records.snooze_count + 1,
-       last_snoozed = NOW()`,
-    [taskTitle, taskCategory, originalDate]
-  );
+       last_snoozed = datetime('now')`
+  ).run(taskTitle, taskCategory, originalDate);
 }
 
 export async function dbInsertTaskTiming(
@@ -442,52 +450,39 @@ export async function dbInsertTaskTiming(
   actualMinutes: number,
   date: string
 ): Promise<void> {
-  await execute(
-    `INSERT INTO memory_task_timings (task_category, task_keywords, estimated_minutes, actual_minutes, date)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [taskCategory, taskKeywords, estimatedMinutes, actualMinutes, date]
-  );
-  // Trim to 200
-  await execute(
-    `DELETE FROM memory_task_timings WHERE id IN (
-       SELECT id FROM memory_task_timings ORDER BY date DESC OFFSET 200
-     )`
-  );
+  const d = getDB();
+  d.prepare(
+    "INSERT INTO memory_task_timings (task_category, task_keywords, estimated_minutes, actual_minutes, date) VALUES (?,?,?,?,?)"
+  ).run(taskCategory, JSON.stringify(taskKeywords), estimatedMinutes, actualMinutes, date);
+  d.prepare(
+    "DELETE FROM memory_task_timings WHERE id IN (SELECT id FROM memory_task_timings ORDER BY date DESC LIMIT -1 OFFSET 200)"
+  ).run();
 }
 
 export async function dbUpdateReflectionMeta(
   lastReflectionAt: string,
   reflectionCount: number
 ): Promise<void> {
-  await execute(
-    `UPDATE memory_meta SET last_reflection_at=$1, reflection_count=$2 WHERE id=1`,
-    [lastReflectionAt, reflectionCount]
-  );
+  const d = getDB();
+  d.prepare(
+    "UPDATE memory_meta SET last_reflection_at=?, reflection_count=? WHERE id=1"
+  ).run(lastReflectionAt, reflectionCount);
 }
 
 export async function dbClearMemory(): Promise<void> {
-  const p = getPool();
-  await p.query(`
-    TRUNCATE memory_facts, memory_preferences, memory_signals,
-             memory_snooze_records, memory_task_timings;
+  const d = getDB();
+  d.exec(`
+    DELETE FROM memory_facts;
+    DELETE FROM memory_preferences;
+    DELETE FROM memory_signals;
+    DELETE FROM memory_snooze_records;
+    DELETE FROM memory_task_timings;
     UPDATE memory_meta SET last_reflection_at=NULL, reflection_count=0 WHERE id=1;
   `);
 }
 
-// ── pgvector Semantic Search ────────────────────────────
-//
-// Uses PostgreSQL's pgvector extension (already enabled in schema.sql)
-// for preference vector storage and similarity search.
-//
-// This replaces the need for Pinecone — everything stays local in PG.
-// Embeddings are generated via a simple tag-based TF-IDF-like approach
-// for preferences, or can be swapped for real LLM embeddings later.
+// ── Semantic Search (local vector similarity) ───────────
 
-/**
- * Generate a lightweight pseudo-embedding from tags + text.
- * This is a 64-dimensional hashed vector — fast, local, no API call.
- * Good enough for ~1000 preferences. Swap for real embeddings later.
- */
 export function generateTagEmbedding(tags: string[], text: string): number[] {
   const dim = 64;
   const vec = new Array(dim).fill(0);
@@ -495,9 +490,7 @@ export function generateTagEmbedding(tags: string[], text: string): number[] {
     ...tags.map((t) => t.toLowerCase()),
     ...text.toLowerCase().split(/\s+/).filter((w) => w.length > 2),
   ];
-
   for (const token of tokens) {
-    // Deterministic hash to spread tokens across dimensions
     let hash = 0;
     for (let i = 0; i < token.length; i++) {
       hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
@@ -505,8 +498,6 @@ export function generateTagEmbedding(tags: string[], text: string): number[] {
     const idx = Math.abs(hash) % dim;
     vec[idx] += hash > 0 ? 1 : -1;
   }
-
-  // L2 normalize
   const norm = Math.sqrt(vec.reduce((sum: number, v: number) => sum + v * v, 0));
   if (norm > 0) {
     for (let i = 0; i < dim; i++) vec[i] /= norm;
@@ -514,48 +505,10 @@ export function generateTagEmbedding(tags: string[], text: string): number[] {
   return vec;
 }
 
-/**
- * Add the embedding column to memory_preferences if not present.
- * Safe to call multiple times.
- */
 export async function ensureVectorColumn(): Promise<void> {
-  const p = getPool();
-  try {
-    // Check if pgvector extension is available
-    const extCheck = await p.query(
-      `SELECT 1 FROM pg_extension WHERE extname = 'vector'`
-    );
-    if (extCheck.rows.length === 0) {
-      // Try to create it
-      try {
-        await p.query(`CREATE EXTENSION IF NOT EXISTS vector`);
-      } catch {
-        console.warn("[DB] pgvector extension not available — semantic search disabled");
-        return;
-      }
-    }
-
-    // Add embedding column if missing
-    await p.query(`
-      ALTER TABLE memory_preferences
-      ADD COLUMN IF NOT EXISTS embedding vector(64)
-    `);
-
-    // Create HNSW index for fast similarity search
-    await p.query(`
-      CREATE INDEX IF NOT EXISTS idx_memory_prefs_embedding
-      ON memory_preferences USING hnsw (embedding vector_cosine_ops)
-    `);
-
-    console.log("[DB] pgvector semantic search ready");
-  } catch (err) {
-    console.warn("[DB] Vector column setup failed (non-fatal):", err);
-  }
+  console.log("[DB] SQLite semantic search ready (local cosine similarity)");
 }
 
-/**
- * Upsert a preference WITH its embedding vector.
- */
 export async function dbUpsertPreferenceWithEmbedding(
   id: string,
   text: string,
@@ -565,22 +518,28 @@ export async function dbUpsertPreferenceWithEmbedding(
   examples: string[]
 ): Promise<void> {
   const embedding = generateTagEmbedding(tags, text);
-  const embeddingStr = `[${embedding.join(",")}]`;
-
-  await execute(
+  const d = getDB();
+  d.prepare(
     `INSERT INTO memory_preferences (id, text, tags, weight, frequency, examples, embedding)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::vector)
+     VALUES (?,?,?,?,?,?,?)
      ON CONFLICT (id) DO UPDATE SET
-       text=$2, tags=$3, weight=$4, frequency=$5, examples=$6,
-       embedding=$7::vector, updated_at=NOW()`,
-    [id, text, tags, weight, frequency, examples, embeddingStr]
-  );
+       text=excluded.text, tags=excluded.tags, weight=excluded.weight,
+       frequency=excluded.frequency, examples=excluded.examples,
+       embedding=excluded.embedding, updated_at=datetime('now')`
+  ).run(id, text, JSON.stringify(tags), weight, frequency, JSON.stringify(examples), JSON.stringify(embedding));
 }
 
-/**
- * Find the most similar preferences to a query using pgvector cosine similarity.
- * Returns preferences ordered by relevance.
- */
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
 export async function searchSimilarPreferences(
   queryTags: string[],
   queryText: string,
@@ -593,51 +552,49 @@ export async function searchSimilarPreferences(
   frequency: number;
   similarity: number;
 }>> {
-  const embedding = generateTagEmbedding(queryTags, queryText);
-  const embeddingStr = `[${embedding.join(",")}]`;
+  const queryEmbedding = generateTagEmbedding(queryTags, queryText);
+  const d = getDB();
+  const rows = d.prepare(
+    "SELECT id, text, tags, weight, frequency, embedding FROM memory_preferences WHERE embedding IS NOT NULL"
+  ).all() as Array<{
+    id: string; text: string; tags: string; weight: number; frequency: number; embedding: string;
+  }>;
 
-  try {
-    const rows = await query<{
-      id: string;
-      text: string;
-      tags: string[];
-      weight: number;
-      frequency: number;
-      similarity: number;
-    }>(
-      `SELECT id, text, tags, weight, frequency,
-              1 - (embedding <=> $1::vector) AS similarity
-       FROM memory_preferences
-       WHERE embedding IS NOT NULL
-       ORDER BY embedding <=> $1::vector
-       LIMIT $2`,
-      [embeddingStr, limit]
-    );
-    return rows;
-  } catch {
-    // Fallback: pgvector not available, use tag-based matching
-    return [];
-  }
+  const scored = rows
+    .map((row) => {
+      let tags: string[];
+      try { tags = JSON.parse(row.tags); } catch { tags = []; }
+      let embedding: number[];
+      try { embedding = JSON.parse(row.embedding); } catch { return null; }
+      return {
+        id: row.id, text: row.text, tags, weight: row.weight,
+        frequency: row.frequency, similarity: cosineSimilarity(queryEmbedding, embedding),
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+
+  return scored;
 }
 
-/**
- * Backfill embeddings for existing preferences that don't have one.
- */
 export async function backfillPreferenceEmbeddings(): Promise<number> {
-  const prefs = await query<{ id: string; text: string; tags: string[] }>(
-    `SELECT id, text, tags FROM memory_preferences WHERE embedding IS NULL`
-  );
+  const d = getDB();
+  const prefs = d.prepare(
+    "SELECT id, text, tags FROM memory_preferences WHERE embedding IS NULL"
+  ).all() as Array<{ id: string; text: string; tags: string }>;
 
   let count = 0;
-  for (const pref of prefs) {
-    const embedding = generateTagEmbedding(pref.tags, pref.text);
-    const embeddingStr = `[${embedding.join(",")}]`;
-    await execute(
-      `UPDATE memory_preferences SET embedding = $1::vector WHERE id = $2`,
-      [embeddingStr, pref.id]
-    );
-    count++;
-  }
-
+  const update = d.prepare("UPDATE memory_preferences SET embedding = ? WHERE id = ?");
+  const txn = d.transaction(() => {
+    for (const pref of prefs) {
+      let tags: string[];
+      try { tags = JSON.parse(pref.tags); } catch { tags = []; }
+      const embedding = generateTagEmbedding(tags, pref.text);
+      update.run(JSON.stringify(embedding), pref.id);
+      count++;
+    }
+  });
+  txn();
   return count;
 }
