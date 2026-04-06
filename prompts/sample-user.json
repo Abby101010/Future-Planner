@@ -1,0 +1,13 @@
+{
+  "name": "Alex Chen",
+  "age": 26,
+  "current_role": "Software Engineer (2 years at a mid-size SaaS company)",
+  "education": "B.S. Computer Science",
+  "location": "San Francisco, CA",
+  "goal_raw": "I want to become a product manager",
+  "context": "I like my engineering work but I keep gravitating toward product decisions. I've been informally doing PM-adjacent work — writing specs, talking to customers, prioritizing bugs. I want to make the official switch but I don't know if I should do it internally or look externally. I don't have an MBA and I'm not sure if I need one.",
+  "time_available": "about 1.5 hours per day on weekdays, more on weekends",
+  "constraints": "Full-time job, no budget for expensive bootcamps (< $500 okay), want to make the switch within 8 months",
+  "mood_baseline": "Motivated but anxious — feels behind compared to peers who already have PM titles",
+  "past_blockers": []
+}

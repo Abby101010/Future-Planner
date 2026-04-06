@@ -1,0 +1,155 @@
+/* ──────────────────────────────────────────────────────────
+   NorthStar — Sidebar component
+   ────────────────────────────────────────────────────────── */
+
+import {
+  LayoutDashboard,
+  Map,
+  Settings,
+  Star,
+  CalendarDays,
+  Heart,
+  MessageSquare,
+  Target,
+  CheckSquare,
+} from "lucide-react";
+import useStore from "../store/useStore";
+import { useT, getDateLocale } from "../i18n";
+import type { AppView } from "../types";
+import "./Sidebar.css";
+
+interface NavItem {
+  icon: React.ReactNode;
+  label: string;
+  view: AppView;
+  optIn?: boolean;
+}
+
+export default function Sidebar() {
+  const { currentView, setView, user, roadmap, goals } = useStore();
+  const t = useT();
+  const lang = user?.settings?.language || "en";
+
+  const bigGoals = goals.filter(
+    (g) => (g.goalType === "big" || (!g.goalType && g.scope === "big")) && g.status !== "archived"
+  );
+  const everydayCount = goals.filter(
+    (g) => (g.goalType === "everyday" || (!g.goalType && g.scope === "small")) && g.status !== "archived" && g.status !== "completed"
+  ).length;
+  const repeatingCount = goals.filter(
+    (g) => g.goalType === "repeating" && g.status !== "archived"
+  ).length;
+
+  const nav: NavItem[] = [
+    { icon: <LayoutDashboard size={18} />, label: t.sidebar.today, view: "dashboard" },
+    { icon: <CheckSquare size={18} />, label: t.sidebar.tasks, view: "tasks" },
+    { icon: <CalendarDays size={18} />, label: t.sidebar.calendar, view: "calendar" },
+    { icon: <Map size={18} />, label: t.sidebar.roadmap, view: "roadmap" },
+    { icon: <MessageSquare size={18} />, label: t.sidebar.goalCoach, view: "onboarding" },
+    {
+      icon: <Heart size={18} />,
+      label: t.sidebar.wellbeing,
+      view: "settings",
+      optIn: true,
+    },
+    { icon: <Settings size={18} />, label: t.sidebar.settings, view: "settings" },
+  ];
+
+  // Filter visibility
+  const visibleNav = nav.filter((item) => {
+    if (item.label === t.sidebar.roadmap && !roadmap) return false;
+    if (item.label === t.sidebar.wellbeing) {
+      return user?.settings.enableMoodLogging;
+    }
+    return true;
+  });
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-brand">
+        <Star className="sidebar-star" size={20} />
+        <span className="sidebar-title">NorthStar</span>
+        <span className="sidebar-subtitle">北极星</span>
+      </div>
+
+      <nav className="sidebar-nav">
+        {visibleNav.map((item) => (
+          <button
+            key={item.view + item.label}
+            className={`sidebar-item ${currentView === item.view ? "active" : ""}`}
+            onClick={() => setView(item.view)}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
+
+        {/* Dynamic entries for goals */}
+        {(bigGoals.length > 0 || everydayCount > 0 || repeatingCount > 0) && (
+          <>
+            <div className="sidebar-divider" />
+            <div className="sidebar-section-label">{t.sidebar.goalsSection}</div>
+            {bigGoals.map((goal) => {
+              const goalView: AppView = `goal-plan-${goal.id}`;
+              // Compute progress for sidebar badge
+              let progressPercent = 0;
+              if (goal.plan && Array.isArray(goal.plan.years)) {
+                let total = 0, completed = 0;
+                for (const yr of goal.plan.years) {
+                  for (const mo of yr.months) {
+                    for (const wk of mo.weeks) {
+                      for (const dy of wk.days) {
+                        for (const tk of dy.tasks) {
+                          total++;
+                          if (tk.completed) completed++;
+                        }
+                      }
+                    }
+                  }
+                }
+                progressPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+              }
+              return (
+                <button
+                  key={goal.id}
+                  className={`sidebar-item ${currentView === goalView ? "active" : ""}`}
+                  onClick={() => setView(goalView)}
+                >
+                  <Target size={18} />
+                  <span className="sidebar-goal-label">
+                    {goal.title}
+                    {progressPercent > 0 && (
+                      <span className="sidebar-goal-progress">{progressPercent}%</span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+            {everydayCount > 0 && (
+              <button
+                className={`sidebar-item ${currentView === "dashboard" ? "" : ""}`}
+                onClick={() => setView("dashboard")}
+              >
+                <CheckSquare size={18} />
+                <span>{t.goalTypes?.everydayTasks || "Everyday"} <span className="sidebar-count">{everydayCount}</span></span>
+              </button>
+            )}
+          </>
+        )}
+      </nav>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-user">
+          <CalendarDays size={14} />
+          <span className="sidebar-date">
+            {new Date().toLocaleDateString(getDateLocale(lang), {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+        </div>
+      </div>
+    </aside>
+  );
+}

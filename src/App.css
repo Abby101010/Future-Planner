@@ -1,0 +1,39 @@
+/* ── App shell layout ── */
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Every direct page fills the container via absolute positioning,
+   guaranteeing inner *-scroll containers get a real pixel height.
+   overflow is hidden here — only the inner *-scroll div should scroll. */
+.app-main > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+/* When sidebar is visible, offset pages below the macOS titlebar */
+.app-main--with-sidebar > * {
+  top: var(--titlebar-height);
+}
+
+@media (prefers-color-scheme: dark) {
+  code {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}

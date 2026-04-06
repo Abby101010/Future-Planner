@@ -1,0 +1,134 @@
+# ──────────────────────────────────────────────────────────────
+# Release workflow — builds macOS .dmg, Windows .exe (NSIS),
+# and Linux .AppImage, then uploads them to a GitHub Release.
+#
+# Trigger: push a semver tag, e.g.  git tag v0.1.0 && git push --tags
+# ──────────────────────────────────────────────────────────────
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Need write permission to create releases & upload assets
+permissions:
+  contents: write
+
+jobs:
+  # ─── macOS (.dmg, universal binary) ───────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Vite + Electron (macOS)
+        run: npm run build
+        env:
+          CI: true
+
+      - name: Package with electron-builder (macOS .dmg)
+        run: npx electron-builder --mac --universal --publish never
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: release/*.dmg
+
+  # ─── Windows (.exe via NSIS) ──────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Vite + Electron (Windows)
+        run: npm run build
+        env:
+          CI: true
+
+      - name: Package with electron-builder (Windows NSIS)
+        run: npx electron-builder --win --publish never
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: release/*.exe
+
+  # ─── Linux (.AppImage) ───────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Vite + Electron (Linux)
+        run: npm run build
+        env:
+          CI: true
+
+      - name: Package with electron-builder (Linux AppImage)
+        run: npx electron-builder --linux --publish never
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: release/*.AppImage
+
+  # ─── Publish GitHub Release ──────────────────────────────
+  publish-release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: ls -R artifacts
+
+      - name: Create GitHub Release & upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

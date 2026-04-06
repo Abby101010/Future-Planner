@@ -1,0 +1,169 @@
+/* Tasks page styles — shares many patterns with DashboardPage */
+
+.tasks-page {
+  height: 100%;
+}
+
+.tasks-page-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-xl) var(--space-xl) var(--space-3xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.tasks-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.tasks-page-header-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.tasks-page-header h2 {
+  font-size: 20px;
+}
+
+.vacation-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.vacation-link:hover {
+  color: var(--yellow);
+}
+
+.tasks-page-briefing {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Adaptive reasoning display */
+.adaptive-reasoning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: var(--space-sm);
+}
+.adaptive-reasoning-label {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.adaptive-reasoning-text {
+  font-style: italic;
+}
+
+/* Goal tasks divider */
+.goal-tasks-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.goal-tasks-divider::before,
+.goal-tasks-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ── Vacation Mode ─────────────────────────────────────── */
+
+.vacation-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 8px var(--space-md);
+  background: rgba(251, 191, 36, 0.06);
+  border-radius: var(--radius-md);
+  color: var(--yellow);
+  font-size: 12px;
+}
+
+.vacation-banner svg {
+  flex-shrink: 0;
+}
+
+.vacation-banner span {
+  flex: 1;
+}
+
+.vacation-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.vacation-sep {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.vacation-input-row .input-sm {
+  width: 130px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* ── Big Goal Progress Summary ─────────────────────────── */
+
+.big-goal-progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.big-goal-progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.big-goal-progress-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.big-goal-progress-pct {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.big-goal-bar {
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+
+.progress-bar-fill.complete {
+  background: linear-gradient(90deg, var(--green), #10b981);
+}
