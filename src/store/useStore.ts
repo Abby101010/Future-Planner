@@ -658,15 +658,24 @@ const useStore = create<Store>((set, get) => ({
   // ── Home Chat ──
   homeChatMessages: [],
   addHomeChatMessage: (msg) => {
-    set((s) => ({ homeChatMessages: [...s.homeChatMessages, msg] }));
-    get().saveToDisk();
-    if (msg.role === "user") {
-      recordSignal("chat_message", "home_chat", msg.content.slice(0, 100)).catch(() => {});
+    const messages = get().homeChatMessages;
+    set({ homeChatMessages: [...messages, msg] });
+    // Don't persist to disk — chat history is session-only (clears on app restart)
+
+    // When an assistant reply arrives, extract key behavioral insights
+    // from the preceding user message (stored as concise signals, not full text)
+    if (msg.role === "assistant" && messages.length > 0) {
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      if (lastUserMsg) {
+        window.electronAPI.invoke("memory:chat-insight", {
+          userMessage: lastUserMsg.content,
+          aiReply: msg.content,
+        }).catch(() => {});
+      }
     }
   },
   clearHomeChat: () => {
     set({ homeChatMessages: [] });
-    get().saveToDisk();
   },
 
   // ── Persistence via Electron IPC ──
@@ -722,8 +731,7 @@ const useStore = create<Store>((set, get) => ({
         set({ conversations: d.conversations as ConversationMessage[] });
       if (d.pendingTasks)
         set({ pendingTasks: d.pendingTasks as PendingTask[] });
-      if (d.homeChatMessages)
-        set({ homeChatMessages: d.homeChatMessages as HomeChatMessage[] });
+      // homeChatMessages are session-only — not loaded from disk
       if (d.vacationMode)
         set({ vacationMode: d.vacationMode as { active: boolean; startDate: string; endDate: string } });
       if (d.monthlyContexts)
@@ -759,7 +767,7 @@ const useStore = create<Store>((set, get) => ({
         moodEntries: s.moodEntries,
         conversations: s.conversations,
         pendingTasks: s.pendingTasks,
-        homeChatMessages: s.homeChatMessages,
+        // homeChatMessages excluded — session-only, not persisted
         vacationMode: s.vacationMode,
         monthlyContexts: s.monthlyContexts,
       });

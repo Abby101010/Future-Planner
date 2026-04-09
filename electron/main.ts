@@ -14,6 +14,7 @@ import {
   captureTaskTiming,
   captureSessionStart,
   captureExplicitFeedback,
+  captureChatInsight,
   quickReflect,
   runReflection,
   generateNudges,
@@ -611,6 +612,16 @@ function setupIPC() {
   ipcMain.handle("memory:feedback", (_event, payload) => {
     try {
       captureExplicitFeedback(payload.context, payload.feedback, payload.isPositive);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // Extract behavioral insights from home chat exchanges
+  ipcMain.handle("memory:chat-insight", (_event, payload) => {
+    try {
+      captureChatInsight(payload.userMessage, payload.aiReply);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };

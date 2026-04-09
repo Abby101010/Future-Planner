@@ -87,7 +87,8 @@ export type SignalType =
   | "negative_feedback"
   | "session_time"       // when they open the app
   | "high_energy_window" // when they crush tasks
-  | "low_energy_window"; // when they skip/snooze (with day+time context)
+  | "low_energy_window"  // when they skip/snooze (with day+time context)
+  | "chat_insight";      // key behavioral takeaway from home chat
 
 /** Snooze tracking for implicit feedback */
 export interface SnoozeRecord {

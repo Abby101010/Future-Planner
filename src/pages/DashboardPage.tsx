@@ -40,25 +40,32 @@ export default function DashboardPage() {
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Clear previous conversation on mount
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    clearHomeChat();
-  }, [clearHomeChat]);
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [homeChatMessages, isLoading]);
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || isLoading) return;
     const query = input.trim();
     setInput("");
     setIsLoading(true);
-    setAiResponse(null);
+
+    // Add user message to store
+    addHomeChatMessage({
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: query,
+      timestamp: new Date().toISOString(),
+    });
 
     try {
       const result = await sendHomeChatMessage(
         query,
-        [],
+        homeChatMessages.map((m) => ({ role: m.role, content: m.content })),
         goals,
         todayLog?.tasks || [],
         calendarEvents
@@ -86,7 +93,13 @@ export default function DashboardPage() {
         // Not JSON — regular response
       }
 
-      setAiResponse(displayText);
+      // Add assistant message to store
+      addHomeChatMessage({
+        id: `msg-${Date.now()}-reply`,
+        role: "assistant",
+        content: displayText,
+        timestamp: new Date().toISOString(),
+      });
 
       if (isTask) {
         const pendingId = `pending-${Date.now()}`;
@@ -125,11 +138,16 @@ export default function DashboardPage() {
         }
       }
     } catch {
-      setAiResponse(t.home.chatError);
+      addHomeChatMessage({
+        id: `msg-${Date.now()}-error`,
+        role: "assistant",
+        content: t.home.chatError,
+        timestamp: new Date().toISOString(),
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, goals, todayLog, calendarEvents, addPendingTask, updatePendingTask, t]);
+  }, [input, isLoading, goals, todayLog, calendarEvents, homeChatMessages, addPendingTask, updatePendingTask, addHomeChatMessage, t]);
 
   const activePending = pendingTasks.filter((pt) => pt.status === "analyzing" || pt.status === "ready");
 
@@ -164,19 +182,25 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── AI Response ── */}
-        {(aiResponse || isLoading) && (
-          <div className="home-response-section">
-            {isLoading && !aiResponse ? (
-              <div className="home-response-loading">
-                <Loader2 size={18} className="spin" />
-                <span>Thinking...</span>
+        {/* ── Chat History ── */}
+        {(homeChatMessages.length > 0 || isLoading) && (
+          <div className="home-chat-history">
+            {homeChatMessages.map((msg) => (
+              <div key={msg.id} className={`home-chat-msg home-chat-${msg.role}`}>
+                <div className="home-chat-bubble">
+                  {msg.content}
+                </div>
               </div>
-            ) : aiResponse ? (
-              <div className="home-response-content">
-                {aiResponse}
+            ))}
+            {isLoading && (
+              <div className="home-chat-msg home-chat-assistant">
+                <div className="home-chat-bubble home-chat-loading">
+                  <Loader2 size={14} className="spin" />
+                  <span>Thinking...</span>
+                </div>
               </div>
-            ) : null}
+            )}
+            <div ref={chatEndRef} />
           </div>
         )}
 

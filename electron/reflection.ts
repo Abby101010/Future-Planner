@@ -162,6 +162,78 @@ export function captureSessionStart(): void {
 }
 
 /**
+ * Extract and store key behavioral insights from a home chat exchange.
+ * No AI call — uses pattern matching to detect signals worth remembering.
+ * Stores concise key points, not full conversation text.
+ */
+export function captureChatInsight(userMessage: string, aiReply: string): void {
+  const lower = userMessage.toLowerCase();
+  const now = new Date();
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayName = dayNames[now.getDay()];
+  const hour = now.getHours();
+  const timeSlot = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+
+  let memory = loadMemory();
+  let captured = false;
+
+  // Energy / mood signals
+  const tiredPatterns = /\b(tired|exhausted|burnt? out|drained|low energy|sleepy|fatigued|no energy)\b/;
+  const energizedPatterns = /\b(energized|motivated|pumped|ready|feeling good|productive|focused|on fire)\b/;
+  if (tiredPatterns.test(lower)) {
+    memory = recordSignal(memory, "chat_insight", "energy_low",
+      `Reported low energy on ${dayName} ${timeSlot}`);
+    memory = recordSignal(memory, "low_energy_window", `${dayName}_${timeSlot}`,
+      `User said: "${userMessage.slice(0, 80)}"`);
+    captured = true;
+  }
+  if (energizedPatterns.test(lower)) {
+    memory = recordSignal(memory, "chat_insight", "energy_high",
+      `Reported high energy on ${dayName} ${timeSlot}`);
+    memory = recordSignal(memory, "high_energy_window", `${dayName}_${timeSlot}`,
+      `User said: "${userMessage.slice(0, 80)}"`);
+    captured = true;
+  }
+
+  // Overwhelm / stress signals
+  const overwhelmPatterns = /\b(overwhelm|too much|can't cope|stressed|anxious|behind|falling behind|drowning|swamped)\b/;
+  if (overwhelmPatterns.test(lower)) {
+    memory = recordSignal(memory, "chat_insight", "overwhelm",
+      `Expressed overwhelm on ${dayName} ${timeSlot}: "${userMessage.slice(0, 80)}"`);
+    captured = true;
+  }
+
+  // Schedule / availability changes
+  const schedulePatterns = /\b(cancel|free today|free tomorrow|day off|sick|no class|plans changed|schedule changed|going out|traveling|travel)\b/;
+  if (schedulePatterns.test(lower)) {
+    memory = recordSignal(memory, "chat_insight", "schedule_change",
+      `Schedule shift on ${dayName}: "${userMessage.slice(0, 80)}"`);
+    captured = true;
+  }
+
+  // Preference signals
+  const preferPatterns = /\b(i prefer|i like|i hate|i don't like|i want|rather|instead of|too many|too few|too hard|too easy)\b/;
+  if (preferPatterns.test(lower)) {
+    memory = recordSignal(memory, "chat_insight", "preference",
+      `Preference expressed: "${userMessage.slice(0, 100)}"`);
+    captured = true;
+  }
+
+  // Goal-related reflections
+  const goalPatterns = /\b(give up|quit|pivot|change goal|new goal|not sure|rethink|reconsider|excited about|making progress|stuck on)\b/;
+  if (goalPatterns.test(lower)) {
+    memory = recordSignal(memory, "chat_insight", "goal_sentiment",
+      `Goal reflection on ${dayName}: "${userMessage.slice(0, 100)}"`);
+    captured = true;
+  }
+
+  // Only save if we captured something meaningful
+  if (captured) {
+    saveMemory(memory);
+  }
+}
+
+/**
  * Run the full reflection loop.
  * This calls Claude to analyze recent signals and distill insights.
  * Should be called:
