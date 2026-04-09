@@ -10,6 +10,7 @@ import type {
   GoalBreakdown,
   CalendarEvent,
   DeviceIntegrations,
+  MonthlyContext,
   DailyLog,
   ConversationMessage,
   HeatmapEntry,
@@ -77,6 +78,13 @@ interface Store {
   vacationMode: { active: boolean; startDate: string; endDate: string } | null;
   setVacationMode: (mode: { active: boolean; startDate: string; endDate: string } | null) => void;
 
+  // ── Monthly Context ──
+  monthlyContexts: MonthlyContext[];
+  setMonthlyContext: (ctx: MonthlyContext) => void;
+  removeMonthlyContext: (month: string) => void;
+  getMonthlyContext: (month: string) => MonthlyContext | null;
+  getCurrentMonthContext: () => MonthlyContext | null;
+
   // In-app calendar
   calendarEvents: CalendarEvent[];
   addCalendarEvent: (e: CalendarEvent) => void;
@@ -120,6 +128,11 @@ interface Store {
   setLoading: (v: boolean) => void;
   error: string | null;
   setError: (e: string | null) => void;
+
+  // ── Active Jobs (background job queue tracking) ──
+  activeJobs: Record<string, { type: string; status: string; progress: number }>;
+  setActiveJob: (jobId: string, info: { type: string; status: string; progress: number }) => void;
+  clearActiveJob: (jobId: string) => void;
 
   // ── Memory (Three-Tier Architecture) ──
   memorySummary: MemorySummary | null;
@@ -266,6 +279,36 @@ const useStore = create<Store>((set, get) => ({
     set({ vacationMode: mode });
     get().saveToDisk();
     recordSignal("vacation_mode", mode ? "activated" : "deactivated", mode ? `${mode.startDate} to ${mode.endDate}` : "ended").catch(() => {});
+  },
+
+  // ── Monthly Context ──
+  monthlyContexts: [],
+  setMonthlyContext: (ctx) => {
+    set((s) => {
+      const existing = s.monthlyContexts.findIndex((c) => c.month === ctx.month);
+      if (existing >= 0) {
+        const updated = [...s.monthlyContexts];
+        updated[existing] = ctx;
+        return { monthlyContexts: updated };
+      }
+      return { monthlyContexts: [...s.monthlyContexts, ctx] };
+    });
+    get().saveToDisk();
+    recordSignal("monthly_context_set", ctx.month, `${ctx.intensity}: ${ctx.description.slice(0, 100)}`).catch(() => {});
+  },
+  removeMonthlyContext: (month) => {
+    set((s) => ({
+      monthlyContexts: s.monthlyContexts.filter((c) => c.month !== month),
+    }));
+    get().saveToDisk();
+  },
+  getMonthlyContext: (month) => {
+    return get().monthlyContexts.find((c) => c.month === month) || null;
+  },
+  getCurrentMonthContext: () => {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return get().monthlyContexts.find((c) => c.month === currentMonth) || null;
   },
 
   // In-app calendar
@@ -455,6 +498,16 @@ const useStore = create<Store>((set, get) => ({
   setLoading: (v) => set({ isLoading: v }),
   error: null,
   setError: (e) => set({ error: e }),
+
+  // ── Active Jobs ──
+  activeJobs: {},
+  setActiveJob: (jobId, info) =>
+    set((s) => ({ activeJobs: { ...s.activeJobs, [jobId]: info } })),
+  clearActiveJob: (jobId) =>
+    set((s) => {
+      const { [jobId]: _, ...rest } = s.activeJobs;
+      return { activeJobs: rest };
+    }),
 
   // ── Memory ──
   memorySummary: null,
@@ -673,6 +726,8 @@ const useStore = create<Store>((set, get) => ({
         set({ homeChatMessages: d.homeChatMessages as HomeChatMessage[] });
       if (d.vacationMode)
         set({ vacationMode: d.vacationMode as { active: boolean; startDate: string; endDate: string } });
+      if (d.monthlyContexts)
+        set({ monthlyContexts: d.monthlyContexts as MonthlyContext[] });
 
       // ── 3. Decide initial view ──
       if (userObj.onboardingComplete) {
@@ -706,6 +761,7 @@ const useStore = create<Store>((set, get) => ({
         pendingTasks: s.pendingTasks,
         homeChatMessages: s.homeChatMessages,
         vacationMode: s.vacationMode,
+        monthlyContexts: s.monthlyContexts,
       });
     } catch {
       console.warn("Could not save data to disk");
@@ -726,6 +782,7 @@ const useStore = create<Store>((set, get) => ({
       pendingTasks: [],
       homeChatMessages: [],
       vacationMode: null,
+      monthlyContexts: [],
       nudges: [],
       currentView: "welcome",
     });

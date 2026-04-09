@@ -372,6 +372,26 @@ export interface CalendarSchedule {
   averageFreeMinutesWeekend: number;
 }
 
+// ── Monthly Life Context ───────────────────────────────
+
+/** User-described context for a given month that influences AI workload decisions */
+export interface MonthlyContext {
+  /** "YYYY-MM" format, e.g. "2026-04" */
+  month: string;
+  /** Free-text description of what's happening this month */
+  description: string;
+  /** AI-interpreted intensity level (set by AI after analyzing description) */
+  intensity: "free" | "light" | "normal" | "busy" | "intense";
+  /** AI-generated reasoning for the intensity classification */
+  intensityReasoning: string;
+  /** Capacity multiplier: 0.3 (intense) to 1.5 (free). Applied to cognitive budget. */
+  capacityMultiplier: number;
+  /** Max core tasks per day for this month (1-5) */
+  maxDailyTasks: number;
+  /** When the user last updated this context */
+  updatedAt: string;
+}
+
 // App State
 export type AppView =
   | "welcome"
@@ -394,6 +414,7 @@ export interface AppState {
   goals: Goal[];
   calendarEvents: CalendarEvent[];
   deviceIntegrations: DeviceIntegrations;
+  monthlyContexts: MonthlyContext[];
   dailyLogs: DailyLog[];
   conversations: ConversationMessage[];
   isLoading: boolean;

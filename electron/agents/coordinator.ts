@@ -20,9 +20,12 @@ import type {
   AgentProgressEvent,
   ProgressCallback,
   ResearchResult,
+  SchedulingContext,
 } from "./types";
 import { researchGoal, getPeerContext, generateNewsBriefing } from "./research-agent";
 import { loadMemory, buildMemoryContext } from "../memory";
+import { evaluateSchedulingContext, formatSchedulingContext } from "./context-evaluator";
+import { getMonthlyContext } from "../database";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -90,19 +93,100 @@ export async function coordinateRequest(
     }
   }
 
-  // Phase 2: Execute the main task with research context injected
+  // Phase 2: Context Evaluation (for scheduling-aware tasks)
+  let schedulingContext: SchedulingContext | undefined;
+  let monthlyCtxCache: { intensity: string; capacityMultiplier: number; maxDailyTasks: number } | null = null;
+  const schedulingTasks: CoordinatorTaskType[] = [
+    "daily-tasks", "analyze-quick-task", "classify-goal", "home-chat",
+  ];
+
+  if (schedulingTasks.includes(taskType)) {
+    emit({
+      agentId: "coordinator",
+      status: "analyzing",
+      message: "Evaluating your schedule and workload...",
+      timestamp: new Date().toISOString(),
+      progress: needsResearch ? 50 : 15,
+    });
+
+    try {
+      // Extract data from the payload that the renderer sent
+      const weeklyAvailability = (payload.weeklyAvailability || []) as Array<{
+        day: number; hour: number; importance: 1 | 2 | 3; label: string;
+      }>;
+      const todayTasks = ((payload.existingTasks || payload.confirmedQuickTasks || []) as Array<{
+        title: string; completed?: boolean; durationMinutes?: number;
+        cognitiveWeight?: number; category?: string; priority?: string;
+      }>).map((t) => ({
+        title: t.title,
+        completed: t.completed ?? false,
+        durationMinutes: t.durationMinutes,
+        cognitiveWeight: t.cognitiveWeight,
+        category: t.category,
+        priority: t.priority,
+      }));
+      const recentLogs = (payload.pastLogs || []) as Array<{
+        date: string;
+        tasks: Array<{ title: string; completed: boolean; skipped?: boolean; category?: string }>;
+      }>;
+      const goals = (payload.goals || []) as Array<{
+        title: string; goalType?: string; scope?: string; status?: string;
+        percentComplete?: number; targetDate?: string;
+      }>;
+      const date = (payload.date as string) || new Date().toISOString().split("T")[0];
+
+      // Fetch monthly context for the current month
+      try {
+        const currentMonth = date.substring(0, 7);
+        const dbCtx = await getMonthlyContext(currentMonth);
+        if (dbCtx) {
+          monthlyCtxCache = {
+            intensity: dbCtx.intensity,
+            capacityMultiplier: dbCtx.capacity_multiplier,
+            maxDailyTasks: dbCtx.max_daily_tasks,
+          };
+        }
+      } catch { /* no monthly context */ }
+
+      schedulingContext = evaluateSchedulingContext({
+        weeklyAvailability,
+        todayTasks,
+        recentLogs,
+        goals,
+        date,
+        monthlyContext: monthlyCtxCache,
+      });
+
+      emit({
+        agentId: "coordinator",
+        status: "analyzing",
+        message: `Day type: ${schedulingContext.recommendation} | Budget: ${schedulingContext.remainingCognitiveBudget} | Tasks: ${schedulingContext.existingTaskCount}`,
+        timestamp: new Date().toISOString(),
+        progress: needsResearch ? 55 : 20,
+      });
+    } catch (err) {
+      console.warn("[coordinator] Context evaluation failed, continuing without:", err);
+    }
+  }
+
+  // Phase 3: Execute the main task with research + scheduling context injected
   emit({
     agentId: "coordinator",
     status: "generating",
     message: getTaskMessage(taskType),
     timestamp: new Date().toISOString(),
-    progress: needsResearch ? 50 : 20,
+    progress: needsResearch ? 60 : 25,
   });
 
   try {
-    const enrichedPayload = researchResult
+    let enrichedPayload = researchResult
       ? { ...payload, _researchContext: researchResult }
-      : payload;
+      : { ...payload };
+
+    if (schedulingContext) {
+      enrichedPayload._schedulingContext = schedulingContext;
+      enrichedPayload._schedulingContextFormatted = formatSchedulingContext(schedulingContext, monthlyCtxCache);
+    }
 
     const data = await executeTask(
       client,

@@ -7,6 +7,7 @@ import type { MemoryStore } from "./memory";
 import { quickReflect, runReflection, captureSessionStart } from "./reflection";
 import { coordinateRequest } from "./agents/coordinator";
 import type { CoordinatorTaskType, ProgressCallback } from "./agents/types";
+import { getMonthlyContext } from "./database";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -22,6 +23,7 @@ export type RequestType =
   | "goal-plan-edit"
   | "generate-goal-plan"
   | "analyze-quick-task"
+  | "analyze-monthly-context"
   | "home-chat";
 
 function getClient(
@@ -509,6 +511,10 @@ The user is chatting with you on their home page. They might:
 DETECTION RULES:
 - If the user is clearly adding a task or errand, respond with a JSON block:
   {"is_task": true, "task_description": "the task they want to add"}
+- If the user mentions a significant context change (schedule shift, new deadline, cancelled plans,
+  energy change, illness, unexpected free time, etc.), respond with:
+  {"context_change": true, "summary": "brief description of what changed", "suggestion": "what you recommend — e.g., regenerate today's tasks, update monthly context, reduce load"}
+  Then add a natural follow-up message after the JSON explaining what you suggest.
 - For everything else, respond naturally as a coach. Be concise, warm, and actionable.
 - Reference their goals, progress, and cognitive load when relevant.
 - If they seem overwhelmed (many tasks, low completion), proactively suggest reducing load.
@@ -519,9 +525,12 @@ CONTEXT AWARENESS:
 - You can see their calendar — suggest scheduling around busy periods
 - You can see completion status — celebrate wins, gently address missed tasks
 - If they mention feeling overwhelmed, acknowledge it and suggest concrete actions
+- If the monthly context has changed (e.g., "exams are over" when the month is set to "intense"),
+  suggest updating it
 
 When responding conversationally (not a task), just reply naturally.
-When it's a task, respond ONLY with the JSON object, nothing else.`;
+When it's a task, respond ONLY with the JSON object, nothing else.
+When it's a context change, respond with the JSON object followed by your recommendation.`;
 
 // Main handler — routes through coordinator for agent-enabled requests
 export async function handleAIRequest(
@@ -551,6 +560,7 @@ export async function handleAIRequest(
     "pace-check",
     "onboarding",
     "analyze-quick-task",
+    "analyze-monthly-context",
     "home-chat",
   ];
 
@@ -620,6 +630,8 @@ export async function handleAIRequestDirect(
       return handleGenerateGoalPlan(client, payload, memoryContext);
     case "analyze-quick-task":
       return handleAnalyzeQuickTask(client, payload, memoryContext);
+    case "analyze-monthly-context":
+      return handleAnalyzeMonthlyContext(client, payload, memoryContext);
     case "home-chat":
       return handleHomeChat(client, payload, memoryContext);
   }
@@ -842,7 +854,23 @@ async function handleDailyTasks(
       skipped: !!t.skipped,
     })),
   }));
-  const capacityProfile = computeCapacityProfile(memory, logsForCapacity, todayDayOfWeek);
+
+  // Fetch monthly context for capacity adjustment
+  const currentMonth = date.substring(0, 7); // "YYYY-MM"
+  let monthlyCtx: { capacityMultiplier: number; maxDailyTasks: number; intensity: string; description: string } | null = null;
+  try {
+    const dbCtx = await getMonthlyContext(currentMonth);
+    if (dbCtx) {
+      monthlyCtx = {
+        capacityMultiplier: dbCtx.capacity_multiplier,
+        maxDailyTasks: dbCtx.max_daily_tasks,
+        intensity: dbCtx.intensity,
+        description: dbCtx.description,
+      };
+    }
+  } catch { /* no monthly context */ }
+
+  const capacityProfile = computeCapacityProfile(memory, logsForCapacity, todayDayOfWeek, monthlyCtx);
 
   const capacityBlock = `
 CAPACITY PROFILE (computed from user's behavioral history):
@@ -870,6 +898,12 @@ CAPACITY PROFILE (computed from user's behavioral history):
     recommendedCount = "3-5 (healthy zone)";
   } else {
     recommendedCount = "3-5 + bonus (strong performer)";
+  }
+
+  // Apply monthly context task cap
+  if (capacityProfile.maxDailyTasks != null) {
+    const max = capacityProfile.maxDailyTasks;
+    recommendedCount = `${Math.max(1, max - 1)}-${max} (monthly context: ${monthlyCtx?.intensity || "adjusted"})`;
   }
 
   // ── Additional data sources ──
@@ -936,10 +970,29 @@ CAPACITY PROFILE (computed from user's behavioral history):
     todayFreeMinutes = Math.max(0, todayFreeMinutes - repeatingMinutes);
   }
 
+  // Monthly context block
+  let monthlyContextBlock = "";
+  if (monthlyCtx) {
+    monthlyContextBlock = `
+MONTHLY CONTEXT (${currentMonth}):
+  Intensity: ${monthlyCtx.intensity} (capacity multiplier: ${monthlyCtx.capacityMultiplier}x)
+  Max daily tasks: ${monthlyCtx.maxDailyTasks}
+  User's description: "${monthlyCtx.description}"
+  → Adjust task count and difficulty accordingly. During "${monthlyCtx.intensity}" months, respect the max daily tasks limit of ${monthlyCtx.maxDailyTasks}.
+`;
+  }
+
   // Vacation mode
   let vacationBlock = "";
   if (isVacationDay) {
     vacationBlock = `\n*** VACATION MODE ACTIVE ***\nThe user is on vacation today. Do NOT assign any big goal tasks.\nOnly include: light everyday tasks (errands, reminders) and non-negotiable repeating events (classes).\nKeep the total to 1-2 tasks maximum. Make it restful.\n`;
+  }
+
+  // Inject scheduling context from the coordinator (if available)
+  const schedulingContextFormatted = (payload._schedulingContextFormatted as string) || "";
+  let schedulingBlock = "";
+  if (schedulingContextFormatted) {
+    schedulingBlock = `\n${schedulingContextFormatted}\n`;
   }
 
   const response = await client.messages.create({
@@ -950,7 +1003,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
       {
         role: "user",
         content: `Today is ${date}. I have ${todayFreeMinutes} minutes available for goal work.
-${vacationBlock}${capacityBlock}
+${monthlyContextBlock}${vacationBlock}${schedulingBlock}${capacityBlock}
   recommended_task_count: ${recommendedCount}
 ${calendarBlock}
 ${repeatingBlock}
@@ -992,9 +1045,10 @@ Generate EXACTLY ${recommendedCount.split(" ")[0]} core tasks for today. Include
   // Even if the AI generates too many tasks, we enforce the hard limits here.
   let coreTasks: Array<Record<string, unknown>> = parsed.tasks || [];
 
-  // HARD LIMIT: Never more than 5 core tasks
-  if (coreTasks.length > 5) {
-    console.warn(`[NorthStar] AI returned ${coreTasks.length} tasks — trimming to 5 highest priority`);
+  // HARD LIMIT: Never more than maxDailyTasks (from monthly context) or 5 core tasks
+  const taskHardLimit = capacityProfile.maxDailyTasks ?? 5;
+  if (coreTasks.length > taskHardLimit) {
+    console.warn(`[NorthStar] AI returned ${coreTasks.length} tasks — trimming to ${taskHardLimit} highest priority`);
     // Sort by priority (must-do first), then by cognitive weight (higher first for impact)
     const priorityOrder: Record<string, number> = { "must-do": 0, "should-do": 1, "bonus": 2 };
     coreTasks.sort((a, b) => {
@@ -1003,7 +1057,7 @@ Generate EXACTLY ${recommendedCount.split(" ")[0]} core tasks for today. Include
       if (pa !== pb) return pa - pb;
       return ((b.cognitive_weight as number) || 3) - ((a.cognitive_weight as number) || 3);
     });
-    coreTasks = coreTasks.slice(0, 5);
+    coreTasks = coreTasks.slice(0, taskHardLimit);
   }
 
   // Enforce cognitive weight budget
@@ -1739,6 +1793,13 @@ async function handleAnalyzeQuickTask(
 
   const remainingFreeMinutes = Math.max(0, todayFreeMinutes - totalMinutes);
 
+  // Inject scheduling context from coordinator (if available)
+  const schedulingContextFormatted = (payload._schedulingContextFormatted as string) || "";
+  let schedulingBlock = "";
+  if (schedulingContextFormatted) {
+    schedulingBlock = `\n${schedulingContextFormatted}\n`;
+  }
+
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 512,
@@ -1747,7 +1808,7 @@ async function handleAnalyzeQuickTask(
       {
         role: "user",
         content: `TODAY: ${today}
-
+${schedulingBlock}
 USER INPUT: "${userInput}"
 
 EXISTING TASKS TODAY:
@@ -1775,6 +1836,58 @@ Analyze this task and suggest how to schedule it.`,
   const text2 = response.content[0].type === "text" ? response.content[0].text : "";
   const cleanedText = text2.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   return JSON.parse(cleanedText);
+}
+
+// ── Analyze Monthly Context ───────────────────────────────
+
+const ANALYZE_MONTHLY_CONTEXT_SYSTEM = `You are NorthStar's monthly context analyzer. The user describes what their month looks like — exams, vacation, work crunch, etc. Your job is to interpret this into structured scheduling parameters.
+
+INTENSITY LEVELS:
+- "free": Very light month — vacation, break, no obligations. capacityMultiplier: 1.5, maxDailyTasks: 5
+- "light": Fewer than usual obligations. capacityMultiplier: 1.2, maxDailyTasks: 4
+- "normal": Typical month, balanced workload. capacityMultiplier: 1.0, maxDailyTasks: 3
+- "busy": Heavy month — deadlines, projects, social commitments. capacityMultiplier: 0.6, maxDailyTasks: 2
+- "intense": Crunch time — exams, major deadlines, crisis. capacityMultiplier: 0.3, maxDailyTasks: 1
+
+RULES:
+- Read the user's description carefully for signals of cognitive load, time pressure, and emotional stress.
+- If they mention exams, finals, thesis deadlines → lean toward "busy" or "intense".
+- If they mention vacation, time off, holiday → lean toward "free" or "light".
+- Provide clear reasoning so the user understands why you chose this level.
+- The capacityMultiplier scales the user's cognitive budget (base 12 points). At 0.3, they get ~4 points/day.
+- maxDailyTasks is the hard cap on non-calendar tasks the system will generate.
+
+RESPOND WITH ONLY valid JSON, no markdown fences:
+{
+  "intensity": "free" | "light" | "normal" | "busy" | "intense",
+  "intensityReasoning": "1-2 sentence explanation of why this intensity was chosen",
+  "capacityMultiplier": number,
+  "maxDailyTasks": number
+}`;
+
+async function handleAnalyzeMonthlyContext(
+  client: Anthropic,
+  payload: Record<string, unknown>,
+  memoryContext: string
+): Promise<unknown> {
+  const month = payload.month as string;
+  const description = payload.description as string;
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 256,
+    system: personalizeSystem(ANALYZE_MONTHLY_CONTEXT_SYSTEM, memoryContext),
+    messages: [
+      {
+        role: "user",
+        content: `Month: ${month}\n\nMy situation this month: ${description}`,
+      },
+    ],
+  });
+
+  const text = response.content[0].type === "text" ? response.content[0].text : "";
+  const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  return JSON.parse(cleaned);
 }
 
 // ── Home Chat ──────────────────────────────────────────────

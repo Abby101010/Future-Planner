@@ -914,12 +914,15 @@ export interface CapacityProfile {
   trend: "improving" | "declining" | "stable";
   isNewUser: boolean;
   chronicSnoozePatterns: string[];  // task types/keywords that are frequently snoozed
+  monthlyContextApplied?: boolean;  // true when monthly context modified the budget
+  maxDailyTasks?: number;           // override from monthly context
 }
 
 export function computeCapacityProfile(
   memory: MemoryStore,
   dailyLogs: Array<{ date: string; tasks: Array<{ completed: boolean; skipped?: boolean }> }>,
-  todayDayOfWeek: number
+  todayDayOfWeek: number,
+  monthlyContext?: { capacityMultiplier: number; maxDailyTasks: number } | null
 ): CapacityProfile {
   const DEFAULT_BUDGET = 10;
 
@@ -1059,6 +1062,15 @@ export function computeCapacityProfile(
     if (count >= 3) chronicSnoozePatterns.push(key); // snoozed 3+ times in 14 days
   }
 
+  // Apply monthly context multiplier (e.g., exam season → 0.3x, vacation → 1.5x)
+  let monthlyContextApplied = false;
+  let maxDailyTasks: number | undefined;
+  if (monthlyContext) {
+    budget = Math.max(4, Math.min(12, Math.round(budget * monthlyContext.capacityMultiplier)));
+    maxDailyTasks = monthlyContext.maxDailyTasks;
+    monthlyContextApplied = true;
+  }
+
   return {
     capacityBudget: budget,
     recentCompletionRate,
@@ -1069,6 +1081,8 @@ export function computeCapacityProfile(
     trend,
     isNewUser: false,
     chronicSnoozePatterns,
+    monthlyContextApplied,
+    maxDailyTasks,
   };
 }
 

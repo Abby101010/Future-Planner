@@ -88,6 +88,7 @@ export type CoordinatorTaskType =
   | "pace-check"
   | "reallocate"
   | "analyze-quick-task"
+  | "analyze-monthly-context"
   | "home-chat";
 
 /** Result envelope from the coordinator */
@@ -102,3 +103,47 @@ export interface CoordinatorResult<T = unknown> {
 
 /** Callback type for streaming progress to the renderer */
 export type ProgressCallback = (event: AgentProgressEvent) => void;
+
+// ── Job Queue Types ────────────────────────────────────
+
+export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export interface JobRow {
+  id: string;
+  type: string;
+  status: JobStatus;
+  payload: string;       // JSON
+  result: string | null;  // JSON
+  error: string | null;
+  progress: number;       // 0-100
+  progress_log: string;   // JSON array of AgentProgressEvent
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  retry_count: number;
+  max_retries: number;
+}
+
+// ── Scheduling Context Types ───────────────────────────
+
+export interface SchedulingContext {
+  availableMinutesToday: number;
+  remainingCognitiveBudget: number;
+  existingTaskCount: number;
+  bigGoalStatus: Array<{
+    title: string;
+    onTrack: boolean;
+    percentComplete: number;
+  }>;
+  recommendation: "full-load" | "light-load" | "recovery-day" | "momentum-day";
+  psychologyFlags: {
+    momentumOpportunity: boolean;
+    recoveryNeeded: boolean;
+    decisionFatigueRisk: boolean;
+    overloadRisk: boolean;
+  };
+  unfinishedFromYesterday: Array<{
+    title: string;
+    category: string;
+  }>;
+}

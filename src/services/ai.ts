@@ -1,4 +1,12 @@
-/* NorthStar - AI service (calls Claude via Electron IPC) */
+/* NorthStar - AI service (calls Claude via Electron IPC)
+
+   All AI requests go through the background job queue:
+   1. Submit job → get jobId immediately
+   2. Poll job:status until completed/failed
+   3. Return result to caller
+
+   This makes every AI call resilient to focus loss.
+*/
 
 import type {
   ConversationMessage,
@@ -24,15 +32,144 @@ import type {
 } from "../types";
 import type { NewsBriefing } from "../types/agents";
 
+// ── Job Queue Helpers ──────────────────────────────────
+
+const POLL_INTERVAL_MS = 1000;
+const JOB_TIMEOUT_MS = 120_000; // 2 minutes
+
+// Shape of IPC responses
+interface JobSubmitResult { ok: boolean; jobId: string; error?: string }
+interface JobStatusResult {
+  ok: boolean;
+  error?: string;
+  job: {
+    id: string;
+    type: string;
+    status: string;
+    progress: number;
+    progress_log: unknown[];
+    result: unknown;
+    error: string | null;
+    created_at: string;
+    started_at: string | null;
+    completed_at: string | null;
+  };
+}
+interface JobListResult {
+  ok: boolean;
+  error?: string;
+  jobs: Array<{ id: string; type: string; status: string; progress: number }>;
+}
+interface JobCancelResult { ok: boolean; cancelled: boolean; error?: string }
+
+/** Submit a job to the background queue, returns jobId */
+async function submitJob(type: string, payload: Record<string, unknown>): Promise<string> {
+  const result = (await window.electronAPI.invoke("job:submit", { type, payload })) as JobSubmitResult;
+  if (!result.ok) throw new Error(result.error || "Failed to submit job");
+  return result.jobId;
+}
+
+/** Poll a job until it completes or fails */
+async function pollJobUntilDone<T = unknown>(
+  jobId: string,
+  onProgress?: (progress: number, log: unknown[]) => void
+): Promise<T> {
+  const startTime = Date.now();
+
+  return new Promise<T>((resolve, reject) => {
+    const poll = async () => {
+      if (Date.now() - startTime > JOB_TIMEOUT_MS) {
+        reject(new Error("Job timed out"));
+        return;
+      }
+
+      try {
+        const result = (await window.electronAPI.invoke("job:status", { jobId })) as JobStatusResult;
+        if (!result.ok) {
+          reject(new Error(result.error || "Failed to get job status"));
+          return;
+        }
+
+        const job = result.job;
+        onProgress?.(job.progress, job.progress_log);
+
+        if (job.status === "completed") {
+          resolve(job.result as T);
+          return;
+        }
+
+        if (job.status === "failed") {
+          reject(new Error(job.error || "Job failed"));
+          return;
+        }
+
+        if (job.status === "cancelled") {
+          reject(new Error("Job was cancelled"));
+          return;
+        }
+
+        // Still pending or running — poll again
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    poll();
+  });
+}
+
+/** Submit a job and wait for the result */
+async function submitAndWait<T = unknown>(
+  type: string,
+  payload: Record<string, unknown>,
+  onProgress?: (progress: number, log: unknown[]) => void
+): Promise<T> {
+  const jobId = await submitJob(type, payload);
+  return pollJobUntilDone<T>(jobId, onProgress);
+}
+
+/** Get the jobId for a recently submitted job (for progress tracking) */
+export async function getActiveJobId(type: string): Promise<string | null> {
+  try {
+    const result = (await window.electronAPI.invoke("job:list", {
+      type,
+      status: "running",
+      limit: 1,
+    })) as JobListResult;
+    if (result.ok && result.jobs.length > 0) return result.jobs[0].id;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Get job status for progress display */
+export async function getJobStatus(jobId: string): Promise<{
+  status: string;
+  progress: number;
+  progress_log: unknown[];
+  result: unknown;
+  error: string | null;
+} | null> {
+  try {
+    const result = (await window.electronAPI.invoke("job:status", { jobId })) as JobStatusResult;
+    if (result.ok) return result.job;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Cancel a running/pending job */
+export async function cancelJobById(jobId: string): Promise<boolean> {
+  try {
+    const result = (await window.electronAPI.invoke("job:cancel", { jobId })) as JobCancelResult;
+    return result.ok && result.cancelled;
+  } catch { return false; }
+}
+
 export async function sendOnboardingMessage(
   messages: ConversationMessage[],
   userInput: string
 ): Promise<string> {
-  const result = await window.electronAPI.invoke("ai:onboarding", {
-    messages,
-    userInput,
-  });
-  return result as string;
+  return submitAndWait<string>("onboarding", { messages, userInput });
 }
 
 export async function generateGoalBreakdown(
@@ -42,14 +179,13 @@ export async function generateGoalBreakdown(
   calendarEvents?: CalendarEvent[],
   deviceIntegrations?: DeviceIntegrations
 ): Promise<GoalBreakdown> {
-  const result = await window.electronAPI.invoke("ai:goal-breakdown", {
+  const raw = await submitAndWait<Record<string, unknown>>("goal-breakdown", {
     goal,
     targetDate,
     dailyHours: dailyHours || 2,
     inAppEvents: calendarEvents || [],
     deviceIntegrations,
   });
-  const raw = result as Record<string, unknown>;
   return normalizeBreakdown(raw);
 }
 
@@ -60,14 +196,13 @@ export async function reallocateGoals(
   calendarEvents?: CalendarEvent[],
   deviceIntegrations?: DeviceIntegrations
 ): Promise<GoalBreakdown> {
-  const result = await window.electronAPI.invoke("ai:reallocate", {
+  const raw = await submitAndWait<Record<string, unknown>>("reallocate", {
     breakdown,
     reason,
     changes,
     inAppEvents: calendarEvents || [],
     deviceIntegrations,
   });
-  const raw = result as Record<string, unknown>;
   return normalizeBreakdown(raw);
 }
 
@@ -158,7 +293,7 @@ export async function generateDailyTasks(
     recurring: e.recurring,
   }));
 
-  const result = await window.electronAPI.invoke("ai:daily-tasks", {
+  return submitAndWait<DailyLog>("daily-tasks", {
     breakdown,
     pastLogs,
     heatmap,
@@ -179,8 +314,15 @@ export async function generateDailyTasks(
     })),
     todayCalendarEvents: todayEvents,
     weeklyAvailability: weeklyAvailability || [],
+    // Pass goals for scheduling context evaluation
+    goals: (goals || []).map((g) => ({
+      title: g.title,
+      goalType: g.goalType,
+      scope: g.scope,
+      status: g.status,
+      targetDate: g.targetDate,
+    })),
   });
-  return result as DailyLog;
 }
 
 export async function handleRecovery(
@@ -188,23 +330,21 @@ export async function handleRecovery(
   breakdown: GoalBreakdown,
   todayLog: DailyLog
 ): Promise<RecoveryResponse> {
-  const result = await window.electronAPI.invoke("ai:recovery", {
+  return submitAndWait<RecoveryResponse>("recovery", {
     blockerId,
     breakdown,
     todayLog,
   });
-  return result as RecoveryResponse;
 }
 
 export async function paceCheck(
   breakdown: GoalBreakdown,
   logs: DailyLog[]
 ): Promise<PaceCheck> {
-  const result = await window.electronAPI.invoke("ai:pace-check", {
+  return submitAndWait<PaceCheck>("pace-check", {
     breakdown,
     logs,
   });
-  return result as PaceCheck;
 }
 
 export async function getCalendarSchedule(
@@ -259,14 +399,20 @@ export async function classifyGoal(
   repeatSchedule?: RepeatSchedule | null;
   suggestedTimeSlot?: string | null;
 }> {
-  const result = await window.electronAPI.invoke("ai:classify-goal", {
+  return submitAndWait<{
+    scope: GoalScope;
+    goalType: GoalType;
+    reasoning: string;
+    suggestedTasks?: Array<{ title: string; description: string; dueDate: string; durationMinutes: number; priority: "must-do" | "should-do" | "bonus"; category: "learning" | "building" | "networking" | "reflection" | "planning" }>;
+    repeatSchedule?: RepeatSchedule | null;
+    suggestedTimeSlot?: string | null;
+  }>("classify-goal", {
     title,
     targetDate,
     importance,
     isHabit,
     description,
   });
-  return result as any;
 }
 
 /** Send a message in the goal planning chat — AI develops the plan iteratively */
@@ -280,7 +426,7 @@ export async function sendGoalPlanMessage(
   userMessage: string,
   currentPlan?: GoalPlan | null
 ): Promise<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }> {
-  const result = await window.electronAPI.invoke("ai:goal-plan-chat", {
+  return submitAndWait<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }>("goal-plan-chat", {
     goalTitle,
     targetDate,
     importance,
@@ -290,7 +436,6 @@ export async function sendGoalPlanMessage(
     userMessage,
     currentPlan: currentPlan || null,
   });
-  return result as { reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null };
 }
 
 /** Analyze a direct inline edit to the goal plan — AI reviews before committing */
@@ -299,12 +444,11 @@ export async function analyzeGoalPlanEdit(
   edit: PlanEdit,
   planSummary: string
 ): Promise<PlanEditSuggestion> {
-  const result = await window.electronAPI.invoke("ai:goal-plan-edit", {
+  return submitAndWait<PlanEditSuggestion>("goal-plan-edit", {
     goalTitle,
     edit,
     planSummary,
   });
-  return result as PlanEditSuggestion;
 }
 
 /** Generate the initial plan for a big goal (called after classification) */
@@ -315,14 +459,13 @@ export async function generateGoalPlan(
   isHabit: boolean,
   description: string
 ): Promise<{ reply: string; plan: GoalPlan }> {
-  const result = await window.electronAPI.invoke("ai:generate-goal-plan", {
+  return submitAndWait<{ reply: string; plan: GoalPlan }>("generate-goal-plan", {
     goalTitle,
     targetDate,
     importance,
     isHabit,
     description,
   });
-  return result as { reply: string; plan: GoalPlan };
 }
 
 // Normalize snake_case AI output to camelCase types
@@ -444,7 +587,17 @@ export async function analyzeQuickTask(
     category: e.category,
   }));
 
-  const result = await window.electronAPI.invoke("ai:analyze-quick-task", {
+  return submitAndWait<{
+    title: string;
+    description: string;
+    suggested_date: string;
+    duration_minutes: number;
+    cognitive_weight: 1 | 2 | 3 | 4 | 5;
+    priority: "must-do" | "should-do" | "bonus";
+    category: "learning" | "building" | "networking" | "reflection" | "planning";
+    reasoning: string;
+    conflicts_with_existing: string[];
+  }>("analyze-quick-task", {
     userInput,
     existingTasks: existingTasks.map((t) => ({
       title: t.title,
@@ -455,7 +608,6 @@ export async function analyzeQuickTask(
     goals: goals.map((g) => ({ title: g.title, scope: g.scope })),
     todayCalendarEvents: todayEvents,
   });
-  return result as any;
 }
 
 /** Send a message in the home chat */
@@ -477,14 +629,13 @@ export async function sendHomeChatMessage(
     category: e.category,
   }));
 
-  const result = await window.electronAPI.invoke("ai:home-chat", {
+  return submitAndWait<{ reply: string }>("home-chat", {
     userInput,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
     goals: goals.map((g) => ({ title: g.title, scope: g.scope, status: g.status })),
     todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight })),
     todayCalendarEvents: todayEvents,
   });
-  return result as { reply: string };
 }
 
 // ── Multi-Agent Functions ────────────────────────────────
@@ -494,9 +645,13 @@ export async function fetchNewsBriefing(
   goalTitles: string[],
   userInterests: string[]
 ): Promise<{ ok: boolean; data?: NewsBriefing; error?: string }> {
-  const result = await window.electronAPI.invoke("ai:news-briefing", {
-    goalTitles,
-    userInterests,
-  });
-  return result as { ok: boolean; data?: NewsBriefing; error?: string };
+  try {
+    const data = await submitAndWait<NewsBriefing>("news-digest", {
+      goalTitles,
+      userInterests,
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

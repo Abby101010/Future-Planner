@@ -32,11 +32,17 @@ import {
   dbClearMemory,
   ensureVectorColumn,
   backfillPreferenceEmbeddings,
+  getAllMonthlyContexts,
+  getMonthlyContext,
+  upsertMonthlyContext,
+  deleteMonthlyContext,
 } from "./database";
 import { startAPIServer, stopAPIServer, setAPIDBAvailable } from "./api-server";
 import { coordinateNewsBriefing } from "./agents/coordinator";
 import { initAutoUpdater } from "./auto-updater";
-import type { AgentProgressEvent, NewsBriefing } from "./agents/types";
+import type { AgentProgressEvent, NewsBriefing, JobStatus } from "./agents/types";
+import { insertJob, getJob, listJobs, cancelJob } from "./job-db";
+import { JobRunner } from "./job-runner";
 
 // Load .env file in development
 const envPath = path.join(__dirname, "../.env");
@@ -63,6 +69,7 @@ process.env.VITE_PUBLIC = app.isPackaged
   : path.join(process.env.DIST, "../public");
 
 let mainWindow: BrowserWindow | null = null;
+let jobRunner: JobRunner | null = null;
 
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 
@@ -132,6 +139,71 @@ function setupIPC() {
     await saveData(data);
     return { ok: true };
   });
+
+  // ── Job Queue IPC Handlers ──────────────────────────────
+
+  ipcMain.handle("job:submit", async (_event, payload: { type: string; payload: Record<string, unknown>; maxRetries?: number }) => {
+    try {
+      const jobId = insertJob(payload.type, payload.payload, payload.maxRetries);
+      return { ok: true, jobId };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("job:status", async (_event, payload: { jobId: string }) => {
+    try {
+      const job = getJob(payload.jobId);
+      if (!job) return { ok: false, error: "Job not found" };
+      return {
+        ok: true,
+        job: {
+          id: job.id,
+          type: job.type,
+          status: job.status,
+          progress: job.progress,
+          progress_log: JSON.parse(job.progress_log || "[]"),
+          result: job.result ? JSON.parse(job.result) : null,
+          error: job.error,
+          created_at: job.created_at,
+          started_at: job.started_at,
+          completed_at: job.completed_at,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("job:list", async (_event, payload?: { type?: string; status?: JobStatus; limit?: number }) => {
+    try {
+      const jobs = listJobs(payload);
+      return {
+        ok: true,
+        jobs: jobs.map((j) => ({
+          id: j.id,
+          type: j.type,
+          status: j.status,
+          progress: j.progress,
+          created_at: j.created_at,
+          completed_at: j.completed_at,
+        })),
+      };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("job:cancel", async (_event, payload: { jobId: string }) => {
+    try {
+      const cancelled = cancelJob(payload.jobId);
+      return { ok: true, cancelled };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // ── AI Handlers (kept during migration) ─────────────────
 
   ipcMain.handle("ai:onboarding", async (_event, payload) => {
     const progressCb = (evt: AgentProgressEvent) => {
@@ -333,6 +405,84 @@ function setupIPC() {
       if (!_dbAvailable) return { ok: false, error: "Database not available" };
       await deleteCalendarEvent(payload.id);
       return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // ── Monthly Context IPC ────────────────────────────────
+
+  ipcMain.handle("monthly-context:list", async () => {
+    try {
+      if (!_dbAvailable) return { ok: true, contexts: [] };
+      const rows = await getAllMonthlyContexts();
+      const contexts = rows.map((r) => ({
+        month: r.month,
+        description: r.description,
+        intensity: r.intensity,
+        intensityReasoning: r.intensity_reasoning,
+        capacityMultiplier: r.capacity_multiplier,
+        maxDailyTasks: r.max_daily_tasks,
+        updatedAt: r.updated_at,
+      }));
+      return { ok: true, contexts };
+    } catch (err) {
+      return { ok: false, error: String(err), contexts: [] };
+    }
+  });
+
+  ipcMain.handle("monthly-context:get", async (_event, payload: { month: string }) => {
+    try {
+      if (!_dbAvailable) return { ok: false, context: null };
+      const row = await getMonthlyContext(payload.month);
+      if (!row) return { ok: true, context: null };
+      return {
+        ok: true,
+        context: {
+          month: row.month,
+          description: row.description,
+          intensity: row.intensity,
+          intensityReasoning: row.intensity_reasoning,
+          capacityMultiplier: row.capacity_multiplier,
+          maxDailyTasks: row.max_daily_tasks,
+          updatedAt: row.updated_at,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: String(err), context: null };
+    }
+  });
+
+  ipcMain.handle("monthly-context:upsert", async (_event, payload) => {
+    try {
+      if (!_dbAvailable) return { ok: true }; // persisted via JSON store fallback
+      await upsertMonthlyContext(payload);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("monthly-context:delete", async (_event, payload: { month: string }) => {
+    try {
+      if (!_dbAvailable) return { ok: true };
+      await deleteMonthlyContext(payload.month);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // AI-powered monthly context analysis
+  ipcMain.handle("monthly-context:analyze", async (_event, payload: { month: string; description: string }) => {
+    try {
+      const progressCb = (evt: AgentProgressEvent) => {
+        mainWindow?.webContents.send("agent:progress", evt);
+      };
+      return handleAIRequest("analyze-monthly-context", {
+        month: payload.month,
+        description: payload.description,
+      }, loadDataSync, progressCb);
     } catch (err) {
       return { ok: false, error: String(err) };
     }
@@ -583,6 +733,7 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  jobRunner?.stop();
   stopAPIServer().catch(() => {});
   closePool().catch(() => {});
 });
@@ -627,6 +778,11 @@ app.whenReady().then(async () => {
 
   setupIPC();
   createWindow();
+
+  // Start background job runner
+  jobRunner = new JobRunner(loadDataSync, () => mainWindow);
+  jobRunner.start();
+  console.log("[JobRunner] Background job processor started");
 
   // Initialize auto-updater (only in production builds)
   initAutoUpdater(mainWindow);

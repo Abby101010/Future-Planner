@@ -202,6 +202,36 @@ export async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_cal_events_date
       ON calendar_events(start_date);
+
+    CREATE TABLE IF NOT EXISTS job_queue (
+      id            TEXT PRIMARY KEY,
+      type          TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      payload       TEXT NOT NULL DEFAULT '{}',
+      result        TEXT,
+      error         TEXT,
+      progress      INTEGER NOT NULL DEFAULT 0,
+      progress_log  TEXT NOT NULL DEFAULT '[]',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      started_at    TEXT,
+      completed_at  TEXT,
+      retry_count   INTEGER NOT NULL DEFAULT 0,
+      max_retries   INTEGER NOT NULL DEFAULT 2
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_queue_status
+      ON job_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_job_queue_type
+      ON job_queue(type);
+
+    CREATE TABLE IF NOT EXISTS monthly_contexts (
+      month         TEXT PRIMARY KEY,
+      description   TEXT NOT NULL DEFAULT '',
+      intensity     TEXT NOT NULL DEFAULT 'normal',
+      intensity_reasoning TEXT NOT NULL DEFAULT '',
+      capacity_multiplier REAL NOT NULL DEFAULT 1.0,
+      max_daily_tasks INTEGER NOT NULL DEFAULT 4,
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   console.log("[DB] Migrations complete");
@@ -479,6 +509,55 @@ export async function dbClearMemory(): Promise<void> {
     DELETE FROM memory_task_timings;
     UPDATE memory_meta SET last_reflection_at=NULL, reflection_count=0 WHERE id=1;
   `);
+}
+
+// ── Monthly Context ────────────────────────────────────
+
+export interface DBMonthlyContext {
+  month: string;
+  description: string;
+  intensity: string;
+  intensity_reasoning: string;
+  capacity_multiplier: number;
+  max_daily_tasks: number;
+  updated_at: string;
+}
+
+export async function getAllMonthlyContexts(): Promise<DBMonthlyContext[]> {
+  const d = getDB();
+  return d.prepare("SELECT * FROM monthly_contexts ORDER BY month DESC").all() as DBMonthlyContext[];
+}
+
+export async function getMonthlyContext(month: string): Promise<DBMonthlyContext | null> {
+  const d = getDB();
+  const row = d.prepare("SELECT * FROM monthly_contexts WHERE month = ?").get(month) as DBMonthlyContext | undefined;
+  return row ?? null;
+}
+
+export async function upsertMonthlyContext(ctx: {
+  month: string;
+  description: string;
+  intensity: string;
+  intensityReasoning: string;
+  capacityMultiplier: number;
+  maxDailyTasks: number;
+}): Promise<void> {
+  const d = getDB();
+  d.prepare(
+    `INSERT INTO monthly_contexts (month, description, intensity, intensity_reasoning, capacity_multiplier, max_daily_tasks, updated_at)
+     VALUES (?,?,?,?,?,?,datetime('now'))
+     ON CONFLICT (month) DO UPDATE SET
+       description=excluded.description, intensity=excluded.intensity,
+       intensity_reasoning=excluded.intensity_reasoning,
+       capacity_multiplier=excluded.capacity_multiplier,
+       max_daily_tasks=excluded.max_daily_tasks,
+       updated_at=datetime('now')`
+  ).run(ctx.month, ctx.description, ctx.intensity, ctx.intensityReasoning, ctx.capacityMultiplier, ctx.maxDailyTasks);
+}
+
+export async function deleteMonthlyContext(month: string): Promise<void> {
+  const d = getDB();
+  d.prepare("DELETE FROM monthly_contexts WHERE month = ?").run(month);
 }
 
 // ── Semantic Search (local vector similarity) ───────────

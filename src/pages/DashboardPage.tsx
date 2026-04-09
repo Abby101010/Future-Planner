@@ -26,6 +26,7 @@ import { useT, getDateLocale } from "../i18n";
 import { classifyGoal, generateGoalPlan, analyzeQuickTask, sendHomeChatMessage } from "../services/ai";
 import { recordSignal } from "../services/memory";
 import AgentProgress from "../components/AgentProgress";
+import MonthlyContext from "../components/MonthlyContext";
 import RichTextToolbar, { IconPicker } from "../components/RichTextToolbar";
 import type { GoalImportance, GoalType, Goal, GoalPlanMessage, PendingTask, HomeChatMessage, RepeatSchedule } from "../types";
 import "./DashboardPage.css";
@@ -162,14 +163,19 @@ export default function DashboardPage() {
 
       const replyText = result.reply;
 
-      // Check if AI detected a task
+      // Check if AI detected a task or context change
       let isTask = false;
       let taskDescription = "";
+      let isContextChange = false;
+      let contextChangeSuggestion = "";
       try {
         const parsed = JSON.parse(replyText);
         if (parsed.is_task) {
           isTask = true;
           taskDescription = parsed.task_description || input;
+        } else if (parsed.context_change) {
+          isContextChange = true;
+          contextChangeSuggestion = parsed.suggestion || "";
         }
       } catch {
         // Not JSON — it's a regular chat response
@@ -222,6 +228,17 @@ export default function DashboardPage() {
         } catch {
           updatePendingTask(pendingId, { status: "rejected" });
         }
+      } else if (isContextChange) {
+        // Context change detected — show suggestion to user
+        const changeMsg: HomeChatMessage = {
+          id: `msg-${Date.now() + 1}`,
+          role: "assistant",
+          content: contextChangeSuggestion
+            ? `I noticed a change in your situation. ${contextChangeSuggestion}\n\nYou can update your monthly context above, and I'll adjust your tasks accordingly.`
+            : "It sounds like things have changed. You might want to update your monthly context above so I can adjust your workload.",
+          timestamp: new Date().toISOString(),
+        };
+        addHomeChatMessage(changeMsg);
       } else {
         // Regular chat response
         const assistantMsg: HomeChatMessage = {
@@ -698,6 +715,9 @@ export default function DashboardPage() {
             </div>
           </section>
         )}
+
+        {/* ── Monthly Context ── */}
+        <MonthlyContext />
 
         {/* ── Chat Section ── */}
         <section className="home-chat-section animate-slide-up">
