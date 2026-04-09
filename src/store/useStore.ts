@@ -23,6 +23,7 @@ import type {
   GoalPlan,
   PendingTask,
   HomeChatMessage,
+  ChatSession,
 } from "../types";
 import {
   recordTaskCompleted,
@@ -149,9 +150,14 @@ interface Store {
   confirmPendingTask: (id: string) => void;
 
   // ── Home Chat ──
+  chatSessions: ChatSession[];
+  activeChatId: string | null;
   homeChatMessages: HomeChatMessage[];
   addHomeChatMessage: (msg: HomeChatMessage) => void;
   clearHomeChat: () => void;
+  startNewChat: () => void;
+  switchChat: (sessionId: string) => void;
+  deleteChat: (sessionId: string) => void;
 
   // ── Persistence ──
   loadFromDisk: () => Promise<void>;
@@ -647,15 +653,51 @@ const useStore = create<Store>((set, get) => ({
   },
 
   // ── Home Chat ──
+  chatSessions: [],
+  activeChatId: null,
   homeChatMessages: [],
   addHomeChatMessage: (msg) => {
-    const messages = get().homeChatMessages;
-    set({ homeChatMessages: [...messages, msg] });
-    // Don't persist to disk — chat history is session-only (clears on app restart)
+    const messages = [...get().homeChatMessages, msg];
+    const activeChatId = get().activeChatId;
+
+    // If no active session, create one
+    if (!activeChatId) {
+      const title = msg.role === "user" ? msg.content.slice(0, 50) : "New chat";
+      const newSession: ChatSession = {
+        id: `chat-${Date.now()}`,
+        title,
+        messages,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      set({
+        homeChatMessages: messages,
+        chatSessions: [newSession, ...get().chatSessions],
+        activeChatId: newSession.id,
+      });
+      // Persist to DB
+      window.electronAPI.invoke("chat:save-session", newSession).catch(() => {});
+    } else {
+      // Update active session
+      const updatedAt = new Date().toISOString();
+      const updatedSessions = get().chatSessions.map((s) =>
+        s.id === activeChatId
+          ? { ...s, messages, updatedAt }
+          : s
+      );
+      set({
+        homeChatMessages: messages,
+        chatSessions: updatedSessions,
+      });
+      // Persist to DB
+      const session = updatedSessions.find((s) => s.id === activeChatId);
+      if (session) {
+        window.electronAPI.invoke("chat:save-session", session).catch(() => {});
+      }
+    }
 
     // When an assistant reply arrives, extract key behavioral insights
-    // from the preceding user message (stored as concise signals, not full text)
-    if (msg.role === "assistant" && messages.length > 0) {
+    if (msg.role === "assistant" && messages.length > 1) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
       if (lastUserMsg) {
         window.electronAPI.invoke("memory:chat-insight", {
@@ -666,7 +708,25 @@ const useStore = create<Store>((set, get) => ({
     }
   },
   clearHomeChat: () => {
-    set({ homeChatMessages: [] });
+    set({ homeChatMessages: [], activeChatId: null });
+  },
+  startNewChat: () => {
+    set({ homeChatMessages: [], activeChatId: null });
+  },
+  switchChat: (sessionId) => {
+    const session = get().chatSessions.find((s) => s.id === sessionId);
+    if (session) {
+      set({ homeChatMessages: session.messages, activeChatId: sessionId });
+    }
+  },
+  deleteChat: (sessionId) => {
+    const isActive = get().activeChatId === sessionId;
+    set({
+      chatSessions: get().chatSessions.filter((s) => s.id !== sessionId),
+      ...(isActive ? { homeChatMessages: [], activeChatId: null } : {}),
+    });
+    // Delete from DB (also removes attachment files)
+    window.electronAPI.invoke("chat:delete-session", { id: sessionId }).catch(() => {});
   },
 
   // ── Persistence via Electron IPC ──
@@ -721,7 +781,14 @@ const useStore = create<Store>((set, get) => ({
         set({ conversations: d.conversations as ConversationMessage[] });
       if (d.pendingTasks)
         set({ pendingTasks: d.pendingTasks as PendingTask[] });
-      // homeChatMessages are session-only — not loaded from disk
+      // Load chat sessions from DB
+      try {
+        const chatResult = await window.electronAPI.invoke("chat:list-sessions") as { ok?: boolean; data?: ChatSession[] };
+        if (chatResult?.ok && chatResult.data) {
+          set({ chatSessions: chatResult.data });
+        }
+      } catch { /* chat sessions are optional */ }
+
       if (d.vacationMode)
         set({ vacationMode: d.vacationMode as { active: boolean; startDate: string; endDate: string } });
       if (d.monthlyContexts)

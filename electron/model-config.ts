@@ -34,13 +34,13 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "onboarding": "medium",
   "goal-plan-chat": "medium",
   "goal-plan-edit": "medium",
-  "home-chat": "medium",
-  "recovery": "medium",
-  "pace-check": "medium",
   "research": "medium",          // research-agent
   "news-digest": "medium",
 
-  // Light — simple classification, fast responses
+  // Light — fast responses, simple tasks
+  "home-chat": "light",
+  "recovery": "light",
+  "pace-check": "light",
   "classify-goal": "light",
   "analyze-quick-task": "light",
   "analyze-monthly-context": "light",

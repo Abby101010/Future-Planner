@@ -521,12 +521,20 @@ goals, today's tasks with cognitive load, and calendar schedule.
 The user is chatting with you on their home page. They might:
 1. Ask questions about their goals, progress, or schedule
 2. Add a quick task (e.g. "remind me to buy groceries", "I need to call the dentist")
-3. Ask for advice or motivation
-4. Discuss their day, energy level, or blockers
+3. Add a calendar event (e.g. "meeting with Alex Thursday 2pm", "dentist Friday 10am-11am")
+4. Ask for advice or motivation
+5. Discuss their day, energy level, or blockers
 
 DETECTION RULES:
-- If the user is clearly adding a task or errand, respond with a JSON block:
+- If the user is clearly adding a task or errand (no specific time), respond with a JSON block:
   {"is_task": true, "task_description": "the task they want to add"}
+- If the user is adding a CALENDAR EVENT (has a specific date AND time), respond with ONLY this JSON:
+  {"is_event": true, "title": "event title", "startDate": "YYYY-MM-DDTHH:MM:SS", "endDate": "YYYY-MM-DDTHH:MM:SS", "category": "work|personal|health|social|travel|focus|other", "isAllDay": false, "notes": "optional context"}
+  RULES for events:
+  - Use today's date context to resolve relative dates ("tomorrow", "Thursday", "next Monday")
+  - If no end time given, default to 1 hour after start
+  - If "all day" → set isAllDay: true, startDate to midnight, endDate to end of day
+  - Category should be inferred from context (meeting → work, dentist → health, dinner → social)
 - If the user mentions a significant context change (schedule shift, new deadline, cancelled plans,
   energy change, illness, unexpected free time, etc.), respond with:
   {"context_change": true, "summary": "brief description of what changed", "suggestion": "what you recommend — e.g., regenerate today's tasks, update monthly context, reduce load"}
@@ -536,8 +544,23 @@ DETECTION RULES:
 - If they seem overwhelmed (many tasks, low completion), proactively suggest reducing load.
 - Keep responses under 150 words unless they ask for detail.
 
+OVERLOAD PROTECTION (CRITICAL):
+You are the user's guard against overcommitment. Before adding ANY task or event, check:
+  1. Cognitive load: if ≥10/12 points used → WARN and suggest tomorrow instead
+  2. Time budget: if ≥150/180 minutes used → WARN about hitting the 3-hour ceiling
+  3. Task count: if ≥4/5 active tasks → WARN about decision fatigue
+  4. Calendar density: if the day already has 3+ events → WARN it's a packed day
+
+When load is high, respond like a supportive coach who pushes back:
+- "Your day is already pretty full (10/12 cognitive points). Want me to slot this in tomorrow instead?"
+- "You've got 3 hours of deep work lined up already. Adding this might set you up to fail — how about Thursday?"
+- Don't just warn — actively suggest a better day/time based on their schedule.
+- If the user insists, respect their choice but note the risk: "Got it, adding it — just know today's load is heavy."
+- If they're adding a low-effort item (quick errand, 5-min task), be more lenient.
+
 CONTEXT AWARENESS:
-- You can see their cognitive load (X/12 points used) — mention it if they're adding tasks
+- You can see their cognitive load (X/12 points used) — mention it when they're near limits
+- You can see their time budget (X/180 min used) — flag when approaching the ceiling
 - You can see their calendar — suggest scheduling around busy periods
 - You can see completion status — celebrate wins, gently address missed tasks
 - If they mention feeling overwhelmed, acknowledge it and suggest concrete actions
@@ -551,8 +574,15 @@ ENVIRONMENT AWARENESS:
   that require being at home if they're clearly elsewhere.
 - Never creepily reference their exact coordinates. Use city/region naturally if relevant.
 
-When responding conversationally (not a task), just reply naturally.
-When it's a task, respond ONLY with the JSON object, nothing else.
+DISTINGUISHING TASKS vs EVENTS:
+- EVENT: has a specific date+time slot, involves other people or appointments, is a fixed commitment
+  Examples: "meeting at 3pm", "dentist Friday 10am", "dinner with Sarah 7pm"
+- TASK: is flexible, can be done anytime, is an action the user controls
+  Examples: "buy groceries", "call the dentist", "review notes"
+- When ambiguous, prefer EVENT if a specific time is mentioned, TASK otherwise.
+
+When responding conversationally (not a task/event), just reply naturally.
+When it's a task or event, respond ONLY with the raw JSON object — no markdown fences, no \`\`\`json blocks, no extra text. Just the { } object.
 When it's a context change, respond with the JSON object followed by your recommendation.`;
 
 // Main handler — routes through coordinator for agent-enabled requests
@@ -569,22 +599,27 @@ export async function handleAIRequest(
     );
   }
 
-  // Route through coordinator for tasks that benefit from multi-agent orchestration
-  // ALL task types go through the coordinator for proper memory context and capacity awareness
+  // Route through coordinator ONLY for complex tasks that benefit from
+  // multi-agent orchestration (research, scheduling context, capacity evaluation).
+  // Simple tasks skip the coordinator for much faster response times.
   const coordinatorRouted: CoordinatorTaskType[] = [
-    "generate-goal-plan",
-    "goal-plan-chat",
-    "goal-plan-edit",
-    "daily-tasks",
-    "goal-breakdown",
-    "reallocate",
+    "generate-goal-plan",   // needs research + scheduling context
+    "goal-plan-edit",       // needs plan context
+    "daily-tasks",          // needs scheduling + capacity + monthly context
+    "goal-breakdown",       // needs research
+    "reallocate",           // needs full context evaluation
+  ];
+
+  // Fast path — these go direct to the handler with lightweight memory context
+  const directHandled: RequestType[] = [
+    "home-chat",
     "classify-goal",
+    "analyze-quick-task",
+    "analyze-monthly-context",
+    "goal-plan-chat",
     "recovery",
     "pace-check",
     "onboarding",
-    "analyze-quick-task",
-    "analyze-monthly-context",
-    "home-chat",
   ];
 
   if (coordinatorRouted.includes(type as CoordinatorTaskType)) {
@@ -605,9 +640,12 @@ export async function handleAIRequest(
     return result.data;
   }
 
-  // Fallback: direct handling for any unrecognized types
+  // Fast path: direct handling with lightweight memory context (no coordinator overhead)
   const memory = loadMemory();
-  const contextType: "planning" | "daily" | "recovery" | "general" = "general";
+  const contextType: "planning" | "daily" | "recovery" | "general" =
+    type === "recovery" ? "recovery"
+    : (type === "home-chat" || type === "analyze-quick-task") ? "daily"
+    : "general";
   const now = new Date();
   const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   const currentDay = dayNames[now.getDay()];
@@ -1027,7 +1065,7 @@ MONTHLY CONTEXT (${currentMonth}):
 
   const response = await client.messages.create({
     model: getModelForTask("daily-tasks"),
-    max_tokens: 4096,
+    max_tokens: 2048,
     system: personalizeSystem(DAILY_TASKS_SYSTEM, memoryContext),
     messages: [
       {
@@ -1547,7 +1585,7 @@ async function handleGoalPlanChat(
 
   const response = await client.messages.create({
     model: getModelForTask("goal-plan-chat"),
-    max_tokens: 4096,
+    max_tokens: 1024,
     system: personalizeSystem(
       `${GOAL_PLAN_CHAT_SYSTEM}\n\nGOAL CONTEXT:\n${goalContext}${planBlock}`,
       memoryContext
@@ -1924,7 +1962,10 @@ async function handleAnalyzeMonthlyContext(
 
   const text = response.content[0].type === "text" ? response.content[0].text : "";
   const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  return JSON.parse(cleaned);
+  // Extract just the JSON object — AI sometimes adds trailing explanation text
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No valid JSON found in response");
+  return JSON.parse(jsonMatch[0]);
 }
 
 // ── Home Chat ──────────────────────────────────────────────
@@ -1937,7 +1978,7 @@ async function handleHomeChat(
   const userInput = payload.userInput as string;
   const chatHistory = (payload.chatHistory || []) as Array<{ role: string; content: string }>;
   const goals = (payload.goals || []) as Array<{ title: string; scope: string; status: string }>;
-  const todayTasks = (payload.todayTasks || []) as Array<{ title: string; completed: boolean; cognitiveWeight?: number }>;
+  const todayTasks = (payload.todayTasks || []) as Array<{ title: string; completed: boolean; cognitiveWeight?: number; durationMinutes?: number }>;
   const todayCalendarEvents = (payload.todayCalendarEvents || []) as Array<{ title: string; startDate: string; endDate: string; category: string }>;
 
   const goalsSummary = goals.length > 0
@@ -1945,11 +1986,13 @@ async function handleHomeChat(
     : "No goals set.";
 
   const tasksSummary = todayTasks.length > 0
-    ? todayTasks.map((t) => `- [${t.completed ? "✓" : " "}] ${t.title} (weight: ${t.cognitiveWeight || 3})`).join("\n")
+    ? todayTasks.map((t) => `- [${t.completed ? "✓" : " "}] ${t.title} (weight: ${t.cognitiveWeight || 3}, ${t.durationMinutes || 30}min)`).join("\n")
     : "No tasks today.";
 
   const totalWeight = todayTasks.reduce((sum, t) => sum + (t.cognitiveWeight || 3), 0);
+  const totalMinutes = todayTasks.reduce((sum, t) => sum + (t.durationMinutes || 30), 0);
   const completedCount = todayTasks.filter((t) => t.completed).length;
+  const taskCount = todayTasks.filter((t) => !t.completed).length;
 
   const calendarSummary = todayCalendarEvents.length > 0
     ? todayCalendarEvents.map((e) => `- ${e.title} (${e.startDate}, ${e.category})`).join("\n")
@@ -1973,17 +2016,62 @@ async function handleHomeChat(
 ${environmentBlock}${schedulingBlock}Goals:
 ${goalsSummary}
 
-Today's tasks (${completedCount}/${todayTasks.length} done, cognitive load: ${totalWeight}/12):
+Today's tasks (${completedCount}/${todayTasks.length} done, ${taskCount} pending):
+  Cognitive load: ${totalWeight}/12 points used
+  Time committed: ${totalMinutes}/180 minutes used
+  Active tasks: ${taskCount}/5 slots used
 ${tasksSummary}
 
 Today's calendar:
 ${calendarSummary}`;
 
+  const attachments = (payload.attachments || []) as Array<{
+    type: string;
+    name: string;
+    base64: string;
+    mediaType: string;
+  }>;
+
   const messages = chatHistory.map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
   }));
-  messages.push({ role: "user", content: userInput });
+
+  // Build the user message — multimodal if attachments are present
+  if (attachments.length > 0) {
+    const contentBlocks: Array<
+      | { type: "text"; text: string }
+      | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+      | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } }
+    > = [];
+
+    for (const att of attachments) {
+      if (att.type === "image") {
+        contentBlocks.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: att.mediaType,
+            data: att.base64,
+          },
+        });
+      } else if (att.type === "pdf") {
+        contentBlocks.push({
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: att.base64,
+          },
+        });
+      }
+    }
+
+    contentBlocks.push({ type: "text", text: userInput });
+    messages.push({ role: "user", content: contentBlocks as unknown as string });
+  } else {
+    messages.push({ role: "user", content: userInput });
+  }
 
   const response = await client.messages.create({
     model: getModelForTask("home-chat"),

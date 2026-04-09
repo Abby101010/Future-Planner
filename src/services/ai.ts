@@ -616,7 +616,8 @@ export async function sendHomeChatMessage(
   chatHistory: Array<{ role: string; content: string }>,
   goals: Goal[],
   todayTasks: DailyTask[],
-  calendarEvents?: CalendarEvent[]
+  calendarEvents?: CalendarEvent[],
+  attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>
 ): Promise<{ reply: string }> {
   const today = new Date().toISOString().split("T")[0];
   const todayEvents = (calendarEvents || []).filter((e) => {
@@ -633,8 +634,9 @@ export async function sendHomeChatMessage(
     userInput,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
     goals: goals.map((g) => ({ title: g.title, scope: g.scope, status: g.status })),
-    todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight })),
+    todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
+    attachments,
   });
 }
 

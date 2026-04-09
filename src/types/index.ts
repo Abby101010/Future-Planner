@@ -682,3 +682,12 @@ export interface HomeChatMessage {
   pendingTaskId?: string;
   timestamp: string;
 }
+
+/** A chat session containing multiple messages */
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: HomeChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
