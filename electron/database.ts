@@ -20,7 +20,10 @@ import { app } from "electron";
 let db: Database.Database | null = null;
 
 function getDBPath(): string {
-  const userDataPath = app.getPath("userData");
+  const isDev = !app.isPackaged;
+  const userDataPath = isDev
+    ? path.join(app.getPath("userData"), "dev-data")
+    : app.getPath("userData");
   fs.mkdirSync(userDataPath, { recursive: true });
   return path.join(userDataPath, "northstar.db");
 }
@@ -778,7 +781,11 @@ export function getAttachmentsForSession(sessionId: string): DBChatAttachment[] 
 }
 
 export function getAttachmentsDir(): string {
-  const dir = path.join(app.getPath("userData"), "attachments");
+  const isDev = !app.isPackaged;
+  const base = isDev
+    ? path.join(app.getPath("userData"), "dev-data")
+    : app.getPath("userData");
+  const dir = path.join(base, "attachments");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

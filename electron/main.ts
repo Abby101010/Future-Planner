@@ -84,7 +84,11 @@ let jobRunner: JobRunner | null = null;
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 
 // ── Data persistence (PostgreSQL-backed, JSON fallback) ─
-const userDataPath = app.getPath("userData");
+const isDev = !app.isPackaged;
+const userDataPath = isDev
+  ? path.join(app.getPath("userData"), "dev-data")
+  : app.getPath("userData");
+fs.mkdirSync(userDataPath, { recursive: true });
 const dataFilePath = path.join(userDataPath, "northstar-data.json");
 
 let _dbAvailable = false;

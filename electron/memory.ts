@@ -772,7 +772,10 @@ export async function ensureManagerReady(): Promise<MemoryManager> {
 const MEMORY_FILE = "northstar-memory.json";
 
 function getMemoryPath(): string {
-  const userDataPath = app.getPath("userData");
+  const isDev = !app.isPackaged;
+  const userDataPath = isDev
+    ? path.join(app.getPath("userData"), "dev-data")
+    : app.getPath("userData");
   return path.join(userDataPath, MEMORY_FILE);
 }
 
