@@ -27,7 +27,7 @@ export default function MonthlyContext() {
   const currentMonth = new Date().toISOString().substring(0, 7);
   const ctx = getCurrentMonthContext();
 
-  const monthLabel = new Date(currentMonth + "-01").toLocaleDateString(undefined, {
+  const monthLabel = new Date(currentMonth + "-15T12:00:00").toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
