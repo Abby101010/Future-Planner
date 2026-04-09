@@ -10,6 +10,7 @@ import {
   Target,
   Clock,
   ChevronRight,
+  ChevronDown,
   RefreshCw,
   Pause,
   Play,
@@ -70,6 +71,7 @@ export default function TasksPage() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [showAgentProgress, setShowAgentProgress] = useState(false);
   const [showVacationInput, setShowVacationInput] = useState(false);
+  const [showAllTasks, setShowAllTasks] = useState(false);
   const [vacStartDate, setVacStartDate] = useState("");
   const [vacEndDate, setVacEndDate] = useState("");
   const t = useT();
@@ -96,6 +98,21 @@ export default function TasksPage() {
       }
       return { title: g.title, total, completed, percent: total > 0 ? Math.round((completed / total) * 100) : 0 };
     });
+
+  // Collect all tasks across all daily logs (for "All Tasks" dropdown)
+  const allTasksByDate = dailyLogs
+    .filter((log) => log.tasks.length > 0)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((log) => ({
+      date: log.date,
+      tasks: log.tasks,
+    }));
+
+  // Count incomplete tasks across all logs
+  const totalIncompleteTasks = dailyLogs.reduce(
+    (sum, log) => sum + log.tasks.filter((t) => !t.completed && !t.skipped).length,
+    0
+  );
 
   const hasActivePlan = !!(goalBreakdown || roadmap || goals.length > 0);
 
@@ -474,6 +491,51 @@ export default function TasksPage() {
             </div>
           )}
         </section>
+
+        {/* ── All Tasks (collapsible) ── */}
+        {allTasksByDate.length > 0 && (
+          <section className="all-tasks-section animate-slide-up">
+            <button
+              className="all-tasks-toggle"
+              onClick={() => setShowAllTasks(!showAllTasks)}
+            >
+              {showAllTasks ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              <span>All Tasks</span>
+              {totalIncompleteTasks > 0 && (
+                <span className="all-tasks-badge">{totalIncompleteTasks} incomplete</span>
+              )}
+            </button>
+            {showAllTasks && (
+              <div className="all-tasks-list">
+                {allTasksByDate.map((group) => (
+                  <div key={group.date} className="all-tasks-date-group">
+                    <div className="all-tasks-date-label">
+                      {new Date(group.date + "T00:00:00").toLocaleDateString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </div>
+                    {group.tasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className={`all-tasks-item ${task.completed ? "all-tasks-item-done" : ""} ${task.skipped ? "all-tasks-item-skipped" : ""}`}
+                      >
+                        <span className={`all-tasks-check ${task.completed ? "checked" : ""}`}>
+                          {task.completed ? <Check size={12} /> : null}
+                        </span>
+                        <span className="all-tasks-item-title">{task.title}</span>
+                        <span className="all-tasks-item-meta">
+                          {task.category} · {task.durationMinutes}m
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Contextual nudges */}
         {nudges.filter((n) => !n.dismissed).length > 0 && (

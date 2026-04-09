@@ -192,3 +192,116 @@
 .progress-bar-fill.complete {
   background: linear-gradient(90deg, var(--green), #10b981);
 }
+
+/* ── All Tasks (collapsible) ── */
+
+.all-tasks-section {
+  margin-top: var(--space-sm);
+}
+
+.all-tasks-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background var(--transition-fast);
+}
+
+.all-tasks-toggle:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.all-tasks-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: rgba(251, 191, 36, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.all-tasks-list {
+  margin-top: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.all-tasks-date-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.all-tasks-date-group:last-child {
+  border-bottom: none;
+}
+
+.all-tasks-date-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: var(--space-xs) var(--space-md);
+  background: var(--bg-secondary);
+}
+
+.all-tasks-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  font-size: 13px;
+}
+
+.all-tasks-item-done {
+  opacity: 0.5;
+}
+
+.all-tasks-item-done .all-tasks-item-title {
+  text-decoration: line-through;
+}
+
+.all-tasks-item-skipped {
+  opacity: 0.4;
+}
+
+.all-tasks-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.all-tasks-check.checked {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+
+.all-tasks-item-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.all-tasks-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

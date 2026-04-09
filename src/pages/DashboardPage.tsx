@@ -25,11 +25,31 @@ import {
   FileText,
   Image as ImageIcon,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
 import { analyzeQuickTask, sendHomeChatMessage } from "../services/ai";
-import type { PendingTask, HomeChatMessage, CalendarEvent } from "../types";
+import type { PendingTask, HomeChatMessage, CalendarEvent, Goal } from "../types";
 import "./DashboardPage.css";
+
+/** Strip emojis and stray unicode symbols from AI text */
+function sanitizeAIText(text: string): string {
+  return text
+    // Remove emoji characters (broad Unicode ranges)
+    .replace(/[\u{1F600}-\u{1F64F}]/gu, "")   // emoticons
+    .replace(/[\u{1F300}-\u{1F5FF}]/gu, "")   // misc symbols & pictographs
+    .replace(/[\u{1F680}-\u{1F6FF}]/gu, "")   // transport & map symbols
+    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, "")   // flags
+    .replace(/[\u{2600}-\u{26FF}]/gu, "")      // misc symbols
+    .replace(/[\u{2700}-\u{27BF}]/gu, "")      // dingbats
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, "")      // variation selectors
+    .replace(/[\u{1F900}-\u{1F9FF}]/gu, "")    // supplemental symbols
+    .replace(/[\u{1FA00}-\u{1FA6F}]/gu, "")    // chess symbols
+    .replace(/[\u{1FA70}-\u{1FAFF}]/gu, "")    // symbols extended-A
+    .replace(/[\u{200D}]/gu, "")               // zero-width joiner
+    .replace(/  +/g, " ")                       // collapse double spaces
+    .trim();
+}
 
 interface Attachment {
   id: string;
@@ -62,6 +82,7 @@ export default function DashboardPage() {
     getCurrentMonthContext,
     setView,
     addCalendarEvent,
+    addGoal,
   } = useStore();
 
   const t = useT();
@@ -144,7 +165,7 @@ export default function DashboardPage() {
     // Build display text for the user message
     const attachmentNames = currentAttachments.map((a) => a.name);
     const userContent = attachmentNames.length > 0
-      ? `${query}${query ? "\n" : ""}📎 ${attachmentNames.join(", ")}`
+      ? `${query}${query ? "\n" : ""}Attached: ${attachmentNames.join(", ")}`
       : query;
 
     // Add user message to store
@@ -235,6 +256,29 @@ export default function DashboardPage() {
           const dateStr = new Date(startDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
           const timeStr = parsed.isAllDay ? "all day" : new Date(startDate).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
           displayText = `Got it — I'll add "${event.title}" on ${dateStr} at ${timeStr} to your calendar.`;
+        } else if (parsed.is_goal) {
+          const goalType = parsed.goalType || "big";
+          const newGoal: Goal = {
+            id: `goal-${Date.now()}`,
+            title: parsed.title || query,
+            description: parsed.description || "",
+            targetDate: parsed.targetDate || "",
+            isHabit: goalType === "everyday" || goalType === "repeating",
+            importance: parsed.importance || "high",
+            scope: goalType === "big" ? "big" : "small",
+            goalType,
+            status: "pending",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            planChat: [],
+            plan: null,
+            flatPlan: null,
+            planConfirmed: false,
+            scopeReasoning: "Created via home chat",
+            repeatSchedule: null,
+          };
+          addGoal(newGoal);
+          displayText = `I've created "${newGoal.title}" as a ${goalType} goal. Head to the Planning tab to build out the plan.`;
         } else if (parsed.is_task) {
           isTask = true;
           taskDescription = parsed.task_description || query;
@@ -248,11 +292,11 @@ export default function DashboardPage() {
         // Not JSON — regular response
       }
 
-      // Add assistant message to store
+      // Add assistant message to store (sanitized — no emojis or stray symbols)
       addHomeChatMessage({
         id: `msg-${Date.now()}-reply`,
         role: "assistant",
-        content: displayText,
+        content: sanitizeAIText(displayText),
         timestamp: new Date().toISOString(),
       });
 
@@ -470,7 +514,11 @@ export default function DashboardPage() {
             {homeChatMessages.map((msg) => (
               <div key={msg.id} className={`home-chat-msg home-chat-${msg.role}`}>
                 <div className="home-chat-bubble">
-                  {msg.content}
+                  {msg.role === "assistant" ? (
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  ) : (
+                    msg.content
+                  )}
                 </div>
               </div>
             ))}
