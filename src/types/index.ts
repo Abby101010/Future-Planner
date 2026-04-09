@@ -398,6 +398,7 @@ export type AppView =
   | "welcome"
   | "onboarding"
   | "dashboard"
+  | "planning"
   | "tasks"
   | "calendar"
   | "goal-breakdown"
@@ -477,6 +478,8 @@ export interface Goal {
   suggestedTimeSlot?: string;
   /** For big goals — overall progress (0-100) computed from task completion */
   progressPercent?: number;
+  /** Freeform notes for the goal */
+  notes?: string;
 }
 
 /** A message in the goal planning chat */

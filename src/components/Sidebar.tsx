@@ -11,6 +11,7 @@ import {
   Heart,
   Target,
   CheckSquare,
+  Compass,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
@@ -41,6 +42,7 @@ export default function Sidebar() {
 
   const nav: NavItem[] = [
     { icon: <LayoutDashboard size={18} />, label: t.sidebar.today, view: "dashboard" },
+    { icon: <Compass size={18} />, label: "Planning", view: "planning" },
     { icon: <CheckSquare size={18} />, label: t.sidebar.tasks, view: "tasks" },
     { icon: <CalendarDays size={18} />, label: t.sidebar.calendar, view: "calendar" },
     { icon: <Map size={18} />, label: t.sidebar.roadmap, view: "roadmap" },
@@ -65,9 +67,7 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <Star className="sidebar-star" size={20} />
         <span className="sidebar-title">NorthStar</span>
-        <span className="sidebar-subtitle">北极星</span>
       </div>
 
       <nav className="sidebar-nav">
@@ -129,8 +129,8 @@ export default function Sidebar() {
             })}
             {everydayCount > 0 && (
               <button
-                className={`sidebar-item ${currentView === "dashboard" ? "" : ""}`}
-                onClick={() => setView("dashboard")}
+                className={`sidebar-item ${currentView === "planning" ? "" : ""}`}
+                onClick={() => setView("planning")}
               >
                 <CheckSquare size={18} />
                 <span>{t.goalTypes?.everydayTasks || "Everyday"} <span className="sidebar-count">{everydayCount}</span></span>

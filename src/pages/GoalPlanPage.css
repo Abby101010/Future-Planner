@@ -997,3 +997,58 @@
   padding-top: var(--space-sm);
   border-top: 1px solid var(--border);
 }
+
+/* Notes section */
+
+.gp-notes {
+  margin-top: var(--space-lg);
+}
+
+.gp-notes-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+
+.gp-notes-header:hover {
+  background: var(--surface-2);
+}
+
+.gp-notes-header h3 {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gp-notes-body {
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  position: relative;
+}
+
+.gp-notes-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: var(--font-family);
+}
+
+.gp-notes-saved {
+  position: absolute;
+  bottom: var(--space-lg);
+  right: var(--space-lg);
+  font-size: 12px;
+  color: var(--green, #22c55e);
+  font-weight: 500;
+  animation: gp-notes-fade 0.2s ease-out;
+}
+
+@keyframes gp-notes-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

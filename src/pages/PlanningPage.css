@@ -1,0 +1,23 @@
+/* Planning page styles */
+
+.planning-page {
+  height: 100%;
+}
+
+.planning-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-xl) var(--space-xl) var(--space-3xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.planning-header h2 {
+  margin-bottom: var(--space-xs);
+}
+
+.planning-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+}

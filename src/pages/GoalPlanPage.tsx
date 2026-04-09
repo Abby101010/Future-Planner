@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   Info,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
@@ -317,6 +318,11 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
 
   // Goal icon picker state
   const [showIconPicker, setShowIconPicker] = useState(false);
+
+  // Notes state
+  const [showNotes, setShowNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState(goal?.notes || "");
+  const [notesSaved, setNotesSaved] = useState(false);
 
   // Chat input ref for emoji/text insertion
   const gpChatInputRef = useRef<HTMLInputElement>(null);
@@ -638,9 +644,9 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       <div className="goal-plan-scroll">
         {/* Header */}
         <header className="gp-header animate-fade-in">
-          <button className="btn btn-ghost btn-sm gp-back" onClick={() => setView("dashboard")}>
+          <button className="btn btn-ghost btn-sm gp-back" onClick={() => setView("planning")}>
             <ArrowLeft size={16} />
-            {t.common.home}
+            Planning
           </button>
           <div className="gp-header-main">
             <div className="gp-header-info">
@@ -964,6 +970,37 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
             </div>
           </div>
         )}
+
+        {/* Notes section */}
+        <div className="gp-notes animate-slide-up">
+          <div className="gp-notes-header" onClick={() => setShowNotes(!showNotes)}>
+            <FileText size={16} />
+            <h3>Notes</h3>
+            {showNotes ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </div>
+          {showNotes && (
+            <div className="gp-notes-body">
+              <textarea
+                className="input gp-notes-textarea"
+                placeholder="Add your thoughts, research, links, or anything related to this goal..."
+                value={notesValue}
+                onChange={(e) => {
+                  setNotesValue(e.target.value);
+                  setNotesSaved(false);
+                }}
+                onBlur={() => {
+                  if (notesValue !== (goal.notes || "")) {
+                    updateGoal(goal.id, { notes: notesValue });
+                    setNotesSaved(true);
+                    setTimeout(() => setNotesSaved(false), 2000);
+                  }
+                }}
+                rows={6}
+              />
+              {notesSaved && <span className="gp-notes-saved">Saved</span>}
+            </div>
+          )}
+        </div>
 
         {/* Chat section */}
         {(showChat || goal.planChat.length > 0) && (

@@ -13,6 +13,7 @@ import CalendarPage from "./pages/CalendarPage";
 import GoalPlanPage from "./pages/GoalPlanPage";
 import RoadmapPage from "./pages/RoadmapPage";
 import SettingsPage from "./pages/SettingsPage";
+import PlanningPage from "./pages/PlanningPage";
 import TasksPage from "./pages/TasksPage";
 import "./styles/global.css";
 import "./App.css";
@@ -27,6 +28,7 @@ function App() {
 
   const showSidebar =
     currentView === "dashboard" ||
+    currentView === "planning" ||
     currentView === "tasks" ||
     currentView === "calendar" ||
     currentView === "roadmap" ||
@@ -49,6 +51,7 @@ function App() {
         {currentView === "welcome" && <WelcomePage />}
         {currentView === "onboarding" && <OnboardingPage />}
         {currentView === "dashboard" && <DashboardPage />}
+        {currentView === "planning" && <PlanningPage />}
         {currentView === "tasks" && <TasksPage />}
         {currentView === "calendar" && <CalendarPage />}
         {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
