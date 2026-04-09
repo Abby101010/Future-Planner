@@ -1,0 +1,120 @@
+/* News Feed page styles */
+
+.newsfeed-page {
+  height: 100%;
+  overflow: hidden;
+}
+
+.newsfeed-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-xl) var(--space-xl) var(--space-3xl);
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.newsfeed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xl);
+}
+
+.newsfeed-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.newsfeed-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: var(--space-xl) 0;
+}
+
+.newsfeed-error {
+  color: var(--red);
+  font-size: 13px;
+  padding: var(--space-md);
+  background: rgba(239, 68, 68, 0.06);
+  border-radius: 8px;
+}
+
+.newsfeed-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: var(--space-3xl) var(--space-xl);
+}
+
+.newsfeed-summary {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--surface-secondary, var(--bg-secondary));
+  border-radius: 8px;
+}
+
+.newsfeed-articles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.newsfeed-article {
+  padding: var(--space-md);
+}
+
+.newsfeed-article-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.newsfeed-article-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.newsfeed-article-source {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+}
+
+.newsfeed-article-summary {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.newsfeed-article-relevance {
+  font-size: 12px;
+  color: var(--accent);
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.newsfeed-relevance-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: var(--space-md);
+  padding-left: 8px;
+  border-left: 2px solid rgba(0, 0, 0, 0.06);
+}

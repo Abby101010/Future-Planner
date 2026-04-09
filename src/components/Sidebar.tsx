@@ -6,12 +6,11 @@ import {
   LayoutDashboard,
   Map,
   Settings,
-  Star,
   CalendarDays,
-  Heart,
   Target,
   CheckSquare,
   Compass,
+  Newspaper,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
@@ -47,9 +46,9 @@ export default function Sidebar() {
     { icon: <CalendarDays size={18} />, label: t.sidebar.calendar, view: "calendar" },
     { icon: <Map size={18} />, label: t.sidebar.roadmap, view: "roadmap" },
     {
-      icon: <Heart size={18} />,
-      label: t.sidebar.wellbeing,
-      view: "settings",
+      icon: <Newspaper size={18} />,
+      label: t.settings.newsFeed,
+      view: "news-feed",
       optIn: true,
     },
     { icon: <Settings size={18} />, label: t.sidebar.settings, view: "settings" },
@@ -58,8 +57,8 @@ export default function Sidebar() {
   // Filter visibility
   const visibleNav = nav.filter((item) => {
     if (item.label === t.sidebar.roadmap && !roadmap) return false;
-    if (item.label === t.sidebar.wellbeing) {
-      return user?.settings.enableMoodLogging;
+    if (item.label === t.settings.newsFeed) {
+      return user?.settings.enableNewsFeed;
     }
     return true;
   });

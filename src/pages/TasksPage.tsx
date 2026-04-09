@@ -6,7 +6,6 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Check,
-  Loader2,
   Flame,
   Target,
   Clock,
@@ -18,21 +17,18 @@ import {
   AlarmClock,
   MessageCircle,
   X,
-  Globe,
   Palmtree,
   TrendingUp,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
-import { generateDailyTasks, fetchNewsBriefing } from "../services/ai";
+import { generateDailyTasks } from "../services/ai";
 import { shouldAutoReflect, triggerReflection, recordSignal } from "../services/memory";
 import Heatmap from "../components/Heatmap";
-import MoodLogger from "../components/MoodLogger";
 import RecoveryModal from "../components/RecoveryModal";
 import MilestoneCelebration from "../components/MilestoneCelebration";
 import AgentProgress from "../components/AgentProgress";
 import type { DailyTask, ContextualNudge } from "../types";
-import type { NewsBriefing } from "../types/agents";
 import "./TasksPage.css";
 
 function formatDate(): string {
@@ -73,8 +69,6 @@ export default function TasksPage() {
   const [showRecovery, setShowRecovery] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [showAgentProgress, setShowAgentProgress] = useState(false);
-  const [newsBriefing, setNewsBriefing] = useState<NewsBriefing | null>(null);
-  const [newsLoading, setNewsLoading] = useState(false);
   const [showVacationInput, setShowVacationInput] = useState(false);
   const [vacStartDate, setVacStartDate] = useState("");
   const [vacEndDate, setVacEndDate] = useState("");
@@ -174,28 +168,6 @@ export default function TasksPage() {
     })();
     return () => { cancelled = true; };
   }, []);
-
-  // News briefing
-  useEffect(() => {
-    if (!user?.settings?.enableNewsFeed) return;
-    if (goals.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      setNewsLoading(true);
-      try {
-        const goalTitles = goals.map(g => g.title);
-        const result = await fetchNewsBriefing(goalTitles, []);
-        if (!cancelled && result.ok && result.data) {
-          setNewsBriefing(result.data);
-        }
-      } catch {
-        // silent
-      } finally {
-        if (!cancelled) setNewsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [user?.settings?.enableNewsFeed, goals.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const completedCount = todayLog?.tasks.filter((t) => t.completed).length ?? 0;
   const totalCount = todayLog?.tasks.length ?? 0;
@@ -575,39 +547,6 @@ export default function TasksPage() {
           </div>
         )}
 
-        {/* News Briefing (opt-in) */}
-        {user?.settings?.enableNewsFeed && (
-          <section className="news-section animate-slide-up">
-            <h3><Globe size={16} /> {t.agents.newsTitle}</h3>
-            {newsLoading && (
-              <div className="news-loading">
-                <Loader2 size={14} className="spin" />
-                <span>{t.agents.newsLoading}</span>
-              </div>
-            )}
-            {!newsLoading && !newsBriefing && goals.length > 0 && (
-              <p className="news-empty">{t.agents.newsEmpty}</p>
-            )}
-            {newsBriefing && newsBriefing.articles && newsBriefing.articles.length > 0 && (
-              <div className="news-articles">
-                {(newsBriefing.articles as Array<{title: string; source: string; url: string; summary: string; relevance: string}>).map((article, i) => (
-                  <div key={i} className="news-article card">
-                    <div className="news-article-header">
-                      <span className="news-article-title">{article.title}</span>
-                      <span className="news-article-source">{article.source}</span>
-                    </div>
-                    <p className="news-article-summary">{article.summary}</p>
-                    <p className="news-article-relevance">{article.relevance}</p>
-                  </div>
-                ))}
-                {newsBriefing.relevanceNote && (
-                  <p className="news-relevance-note">{newsBriefing.relevanceNote}</p>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-
         {/* Heatmap */}
         <section className="heatmap-section animate-slide-up">
           <h3>{t.dashboard.activity}</h3>
@@ -624,13 +563,6 @@ export default function TasksPage() {
             </div>
           )}
         </section>
-
-        {/* Mood logger (opt-in) */}
-        {user?.settings.enableMoodLogging && (
-          <section className="mood-section animate-slide-up">
-            <MoodLogger />
-          </section>
-        )}
 
         {/* Recovery prompt */}
         {missedTasks.length > 0 && completedCount > 0 && (

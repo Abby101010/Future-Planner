@@ -3,7 +3,7 @@
    ────────────────────────────────────────────────────────── */
 
 import { useState, useEffect, useCallback } from "react";
-import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X, Cpu, Clock } from "lucide-react";
+import { Key, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X, Cpu, Clock } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, LANGUAGE_OPTIONS } from "../i18n";
 import type { Language } from "../i18n";
@@ -214,28 +214,6 @@ export default function SettingsPage() {
           <p className="settings-desc">
             {t.settings.optionalDesc}
           </p>
-
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <Heart size={16} />
-              <div>
-                <span className="toggle-label">{t.settings.moodTracking}</span>
-                <span className="toggle-desc">
-                  {t.settings.moodTrackingDesc}
-                </span>
-              </div>
-            </div>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={settings?.enableMoodLogging || false}
-                onChange={(e) =>
-                  updateSettings({ enableMoodLogging: e.target.checked })
-                }
-              />
-              <span className="toggle-slider" />
-            </label>
-          </div>
 
           <div className="toggle-row">
             <div className="toggle-info">

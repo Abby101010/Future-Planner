@@ -43,7 +43,6 @@ export default function OnboardingPage() {
       goalRaw: "",
       createdAt: new Date().toISOString(),
       settings: {
-        enableMoodLogging: false,
         enableNewsFeed: false,
         theme: "light" as const,
         language: "en" as const,
@@ -60,7 +59,6 @@ export default function OnboardingPage() {
       goalRaw: "",
       createdAt: new Date().toISOString(),
       settings: {
-        enableMoodLogging: false,
         enableNewsFeed: false,
         theme: "light" as const,
         language: "en" as const,

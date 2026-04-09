@@ -15,6 +15,7 @@ import RoadmapPage from "./pages/RoadmapPage";
 import SettingsPage from "./pages/SettingsPage";
 import PlanningPage from "./pages/PlanningPage";
 import TasksPage from "./pages/TasksPage";
+import NewsFeedPage from "./pages/NewsFeedPage";
 import "./styles/global.css";
 import "./App.css";
 
@@ -33,6 +34,7 @@ function App() {
     currentView === "calendar" ||
     currentView === "roadmap" ||
     currentView === "settings" ||
+    currentView === "news-feed" ||
     currentView.startsWith("goal-plan-");
 
   const goalPlanId = currentView.startsWith("goal-plan-")
@@ -56,6 +58,7 @@ function App() {
         {currentView === "calendar" && <CalendarPage />}
         {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
         {currentView === "roadmap" && <RoadmapPage />}
+        {currentView === "news-feed" && <NewsFeedPage />}
         {currentView === "settings" && <SettingsPage />}
       </main>
     </div>

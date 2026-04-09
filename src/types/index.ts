@@ -28,7 +28,6 @@ export interface TimeBlock {
 }
 
 export interface UserSettings {
-  enableMoodLogging: boolean;
   enableNewsFeed: boolean;
   dailyReminderTime?: string;
   theme: "light" | "dark" | "system";
@@ -404,6 +403,7 @@ export type AppView =
   | "goal-breakdown"
   | "roadmap"
   | "settings"
+  | "news-feed"
   | "recovery"
   | "milestone-celebration"
   | `goal-plan-${string}`;  // dynamic goal plan pages

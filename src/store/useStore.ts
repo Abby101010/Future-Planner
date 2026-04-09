@@ -14,7 +14,6 @@ import type {
   DailyLog,
   ConversationMessage,
   HeatmapEntry,
-  MoodEntry,
   UserSettings,
   MemorySummary,
   ContextualNudge,
@@ -120,8 +119,6 @@ interface Store {
   setHeatmapData: (data: HeatmapEntry[]) => void;
 
   // ── Mood (opt-in) ──
-  moodEntries: MoodEntry[];
-  addMoodEntry: (entry: MoodEntry) => void;
 
   // ── Loading & errors ──
   isLoading: boolean;
@@ -487,12 +484,6 @@ const useStore = create<Store>((set, get) => ({
   setHeatmapData: (data) => set({ heatmapData: data }),
 
   // ── Mood ──
-  moodEntries: [],
-  addMoodEntry: (entry) => {
-    set((s) => ({ moodEntries: [...s.moodEntries, entry] }));
-    get().saveToDisk();
-  },
-
   // ── Loading ──
   isLoading: false,
   setLoading: (v) => set({ isLoading: v }),
@@ -725,8 +716,7 @@ const useStore = create<Store>((set, get) => ({
       if (d.dailyLogs) set({ dailyLogs: d.dailyLogs as DailyLog[] });
       if (d.heatmapData)
         set({ heatmapData: d.heatmapData as HeatmapEntry[] });
-      if (d.moodEntries)
-        set({ moodEntries: d.moodEntries as MoodEntry[] });
+      // moodEntries no longer loaded (feature removed)
       if (d.conversations)
         set({ conversations: d.conversations as ConversationMessage[] });
       if (d.pendingTasks)
@@ -764,7 +754,6 @@ const useStore = create<Store>((set, get) => ({
         deviceIntegrations: s.deviceIntegrations,
         dailyLogs: s.dailyLogs,
         heatmapData: s.heatmapData,
-        moodEntries: s.moodEntries,
         conversations: s.conversations,
         pendingTasks: s.pendingTasks,
         // homeChatMessages excluded — session-only, not persisted
@@ -785,7 +774,6 @@ const useStore = create<Store>((set, get) => ({
       dailyLogs: [],
       todayLog: null,
       heatmapData: [],
-      moodEntries: [],
       conversations: [],
       pendingTasks: [],
       homeChatMessages: [],
