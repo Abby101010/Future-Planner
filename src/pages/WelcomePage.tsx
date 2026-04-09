@@ -2,7 +2,7 @@
    NorthStar — Welcome page (first launch)
    ────────────────────────────────────────────────────────── */
 
-import { Star, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
 import "./WelcomePage.css";
@@ -14,12 +14,8 @@ export default function WelcomePage() {
   return (
     <div className="welcome">
       <div className="welcome-content animate-fade-in">
-        <div className="welcome-icon">
-          <Star size={48} />
-        </div>
-
         <h1 className="welcome-title">
-          {t.welcome.title} <span className="welcome-zh">{t.welcome.subtitle}</span>
+          {t.welcome.title}
         </h1>
 
         <p className="welcome-desc">

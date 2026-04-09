@@ -3,12 +3,14 @@
    ────────────────────────────────────────────────────────── */
 
 import { useState, useEffect, useCallback } from "react";
-import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X, Cpu } from "lucide-react";
+import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X, Cpu, Clock } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, LANGUAGE_OPTIONS } from "../i18n";
 import type { Language } from "../i18n";
 import { triggerReflection, clearMemory, getBehaviorProfile, saveBehaviorProfile } from "../services/memory";
 import type { BehaviorProfileEntry } from "../services/memory";
+import WeeklyAvailabilityGrid from "../components/WeeklyAvailabilityGrid";
+import type { TimeBlock } from "../types";
 import "./SettingsPage.css";
 
 export default function SettingsPage() {
@@ -48,6 +50,17 @@ export default function SettingsPage() {
     availableModels: ClaudeModel[];
   } | null>(null);
   const [modelSaved, setModelSaved] = useState(false);
+
+  // ── Availability state ──
+  const [availability, setAvailability] = useState<TimeBlock[]>(user?.weeklyAvailability || []);
+  const [availabilitySaved, setAvailabilitySaved] = useState(false);
+
+  const handleSaveAvailability = () => {
+    if (!user) return;
+    useStore.getState().setUser({ ...user, weeklyAvailability: availability });
+    setAvailabilitySaved(true);
+    setTimeout(() => setAvailabilitySaved(false), 2000);
+  };
 
   useEffect(() => {
     window.electronAPI.invoke("model-config:get").then((config: any) => {
@@ -173,6 +186,27 @@ export default function SettingsPage() {
             ))}
           </section>
         )}
+
+        {/* Weekly Availability */}
+        <section className="settings-section card animate-fade-in">
+          <div className="settings-section-header">
+            <Clock size={18} />
+            <h3>Weekly Availability</h3>
+          </div>
+          <p className="settings-desc">
+            Select the time blocks when you're free to work on goals. This directly affects how many tasks the AI assigns each day.
+            {availabilitySaved && <span className="settings-saved-inline"> Saved!</span>}
+          </p>
+          <WeeklyAvailabilityGrid value={availability} onChange={setAvailability} />
+          <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="btn btn-primary" onClick={handleSaveAvailability}>
+              <Save size={14} /> Save Availability
+            </button>
+            <span className="settings-desc" style={{ margin: 0 }}>
+              {availability.length} block{availability.length !== 1 ? "s" : ""} selected
+            </span>
+          </div>
+        </section>
 
         {/* Opt-in Features */}
         <section className="settings-section card animate-fade-in">

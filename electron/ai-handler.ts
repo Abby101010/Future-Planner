@@ -362,6 +362,17 @@ This is your feedback loop. Use it to calibrate task count and weight:
 - Trend "improving" → lean into momentum. Slightly increase ambition.
 - overwhelm_days > 2 in last 14 days → reduce to 3 tasks, max weight 8.
 
+═══ ENVIRONMENT AWARENESS ═══
+
+You receive real-time environment data (time, timezone, GPS location). Use it:
+- TIME OF DAY: Morning → schedule hardest cognitive tasks first (peak cortisol).
+  Afternoon → moderate tasks. Evening → light/creative tasks only.
+  If it's already late in the day, reduce scope — don't assign a full day's work at 6pm.
+- LOCATION: If the user is traveling or in a different city/country, adapt tasks.
+  Gym tasks don't make sense if they're at an airport. Cooking tasks don't work in a hotel.
+  If location suggests they're away from home, favor portable/digital tasks.
+- TIMEZONE: Respect the user's actual local time, not server time.
+
 ═══ EVENING PRE-GENERATION ═══
 
 When the date is TOMORROW (called at night), generate tasks for the next day.
@@ -463,6 +474,12 @@ You will receive:
 3. Their remaining cognitive budget and free time
 4. Their calendar events for today
 5. Their goals (for context)
+6. Environment data (current local time, timezone, GPS location/city)
+
+ENVIRONMENT AWARENESS:
+- Use time-of-day: if it's evening and the task requires focus, suggest tomorrow morning.
+- Use location: if the task is location-dependent (e.g., "go to gym") and the user is
+  traveling or far from home, note this and suggest an alternative or later date.
 
 ═══ ANALYSIS PRINCIPLES ═══
 
@@ -497,7 +514,7 @@ OUTPUT FORMAT (JSON):
 
 Return ONLY valid JSON, no markdown fences.`;
 
-const HOME_CHAT_SYSTEM = `You are NorthStar (北极星), a friendly and helpful productivity assistant
+const HOME_CHAT_SYSTEM = `You are NorthStar, a friendly and helpful productivity assistant
 integrated with the central coordinator. You have access to the user's complete context:
 goals, today's tasks with cognitive load, and calendar schedule.
 
@@ -526,6 +543,13 @@ CONTEXT AWARENESS:
 - If they mention feeling overwhelmed, acknowledge it and suggest concrete actions
 - If the monthly context has changed (e.g., "exams are over" when the month is set to "intense"),
   suggest updating it
+
+ENVIRONMENT AWARENESS:
+- You receive real-time data: local time, timezone, and GPS location (city/country).
+- Use time-of-day to give relevant advice (e.g., "it's already evening — maybe save that for tomorrow").
+- Use location context naturally — if they're traveling, acknowledge it. Don't suggest tasks
+  that require being at home if they're clearly elsewhere.
+- Never creepily reference their exact coordinates. Use city/region naturally if relevant.
 
 When responding conversationally (not a task), just reply naturally.
 When it's a task, respond ONLY with the JSON object, nothing else.
@@ -994,6 +1018,13 @@ MONTHLY CONTEXT (${currentMonth}):
     schedulingBlock = `\n${schedulingContextFormatted}\n`;
   }
 
+  // Inject environment context (time, location, GPS)
+  const environmentFormatted = (payload._environmentContextFormatted as string) || "";
+  let environmentBlock = "";
+  if (environmentFormatted) {
+    environmentBlock = `\n${environmentFormatted}\n`;
+  }
+
   const response = await client.messages.create({
     model: getModelForTask("daily-tasks"),
     max_tokens: 4096,
@@ -1002,7 +1033,7 @@ MONTHLY CONTEXT (${currentMonth}):
       {
         role: "user",
         content: `Today is ${date}. I have ${todayFreeMinutes} minutes available for goal work.
-${monthlyContextBlock}${vacationBlock}${schedulingBlock}${capacityBlock}
+${environmentBlock}${monthlyContextBlock}${vacationBlock}${schedulingBlock}${capacityBlock}
   recommended_task_count: ${recommendedCount}
 ${calendarBlock}
 ${repeatingBlock}
@@ -1799,6 +1830,13 @@ async function handleAnalyzeQuickTask(
     schedulingBlock = `\n${schedulingContextFormatted}\n`;
   }
 
+  // Inject environment context (time, location, GPS)
+  const environmentFormatted = (payload._environmentContextFormatted as string) || "";
+  let environmentBlock = "";
+  if (environmentFormatted) {
+    environmentBlock = `\n${environmentFormatted}\n`;
+  }
+
   const response = await client.messages.create({
     model: getModelForTask("analyze-quick-task"),
     max_tokens: 512,
@@ -1807,7 +1845,7 @@ async function handleAnalyzeQuickTask(
       {
         role: "user",
         content: `TODAY: ${today}
-${schedulingBlock}
+${environmentBlock}${schedulingBlock}
 USER INPUT: "${userInput}"
 
 EXISTING TASKS TODAY:
@@ -1917,8 +1955,22 @@ async function handleHomeChat(
     ? todayCalendarEvents.map((e) => `- ${e.title} (${e.startDate}, ${e.category})`).join("\n")
     : "No calendar events.";
 
+  // Inject environment context (time, location, GPS)
+  const environmentFormatted = (payload._environmentContextFormatted as string) || "";
+  let environmentBlock = "";
+  if (environmentFormatted) {
+    environmentBlock = `\n${environmentFormatted}\n`;
+  }
+
+  // Inject scheduling context from coordinator (if available)
+  const schedulingContextFormatted = (payload._schedulingContextFormatted as string) || "";
+  let schedulingBlock = "";
+  if (schedulingContextFormatted) {
+    schedulingBlock = `\n${schedulingContextFormatted}\n`;
+  }
+
   const contextBlock = `USER CONTEXT:
-Goals: 
+${environmentBlock}${schedulingBlock}Goals:
 ${goalsSummary}
 
 Today's tasks (${completedCount}/${todayTasks.length} done, cognitive load: ${totalWeight}/12):

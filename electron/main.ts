@@ -45,6 +45,7 @@ import { insertJob, getJob, listJobs, cancelJob } from "./job-db";
 import { JobRunner } from "./job-runner";
 import { setModelOverrides, getModelConfig } from "./model-config";
 import type { ModelTier, ClaudeModel } from "./model-config";
+import { getEnvironmentContext, formatEnvironmentContext } from "./environment";
 
 // Load .env file in development
 const envPath = path.join(__dirname, "../.env");
@@ -499,6 +500,17 @@ function setupIPC() {
   ipcMain.handle("model-config:set-overrides", (_event, overrides: Partial<Record<ModelTier, ClaudeModel>>) => {
     setModelOverrides(overrides);
     return { ok: true };
+  });
+
+  // ── Environment Context IPC ─────────────────────────────
+
+  ipcMain.handle("environment:get", async () => {
+    try {
+      const env = await getEnvironmentContext(mainWindow);
+      return { ok: true, data: env, formatted: formatEnvironmentContext(env) };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
   });
 
   // ── Memory System IPC ──────────────────────────────────

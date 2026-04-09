@@ -26,6 +26,8 @@ import { researchGoal, getPeerContext, generateNewsBriefing } from "./research-a
 import { loadMemory, buildMemoryContext } from "../memory";
 import { evaluateSchedulingContext, formatSchedulingContext } from "./context-evaluator";
 import { getMonthlyContext } from "../database";
+import { getEnvironmentContext, formatEnvironmentContext } from "../environment";
+import { BrowserWindow } from "electron";
 
 /** Track whether first-time research has already been done for each goal */
 const goalResearchCache = new Map<string, ResearchResult>();
@@ -184,6 +186,16 @@ export async function coordinateRequest(
     if (schedulingContext) {
       enrichedPayload._schedulingContext = schedulingContext;
       enrichedPayload._schedulingContextFormatted = formatSchedulingContext(schedulingContext, monthlyCtxCache);
+    }
+
+    // Inject environment context (time, location, GPS)
+    try {
+      const win = BrowserWindow.getAllWindows()[0] || null;
+      const envCtx = await getEnvironmentContext(win);
+      enrichedPayload._environmentContext = envCtx;
+      enrichedPayload._environmentContextFormatted = formatEnvironmentContext(envCtx);
+    } catch {
+      // Environment context is best-effort
     }
 
     const data = await executeTask(
