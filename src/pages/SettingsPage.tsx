@@ -3,7 +3,7 @@
    ────────────────────────────────────────────────────────── */
 
 import { useState, useEffect, useCallback } from "react";
-import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X } from "lucide-react";
+import { Key, Heart, Newspaper, RotateCcw, Save, Monitor, Brain, Sparkles, Trash2, Globe, User, Plus, X, Cpu } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, LANGUAGE_OPTIONS } from "../i18n";
 import type { Language } from "../i18n";
@@ -27,6 +27,44 @@ export default function SettingsPage() {
   const [profileDirty, setProfileDirty] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileLoaded, setProfileLoaded] = useState(false);
+
+  // ── Model configuration state ──
+  type ModelTier = "heavy" | "medium" | "light";
+  type ClaudeModel = "claude-opus-4-6" | "claude-sonnet-4-6" | "claude-haiku-4-5-20251001";
+  const MODEL_LABELS: Record<ClaudeModel, string> = {
+    "claude-opus-4-6": "Opus (most capable)",
+    "claude-sonnet-4-6": "Sonnet (balanced)",
+    "claude-haiku-4-5-20251001": "Haiku (fastest)",
+  };
+  const TIER_LABELS: Record<ModelTier, { label: string; desc: string }> = {
+    heavy: { label: "Complex tasks", desc: "Goal plans, breakdowns, reallocation" },
+    medium: { label: "Standard tasks", desc: "Daily tasks, chat, onboarding" },
+    light: { label: "Simple tasks", desc: "Classification, quick analysis, reflection" },
+  };
+
+  const [modelConfig, setModelConfig] = useState<{
+    tiers: Record<ModelTier, ClaudeModel>;
+    tasks: Record<string, ModelTier>;
+    availableModels: ClaudeModel[];
+  } | null>(null);
+  const [modelSaved, setModelSaved] = useState(false);
+
+  useEffect(() => {
+    window.electronAPI.invoke("model-config:get").then((config: any) => {
+      setModelConfig(config);
+    }).catch(() => {});
+  }, []);
+
+  const handleModelTierChange = async (tier: ModelTier, model: ClaudeModel) => {
+    if (!modelConfig) return;
+    const newTiers = { ...modelConfig.tiers, [tier]: model };
+    setModelConfig({ ...modelConfig, tiers: newTiers });
+    await window.electronAPI.invoke("model-config:set-overrides", newTiers);
+    // Also persist in user settings so it survives restarts
+    updateSettings({ modelOverrides: newTiers } as any);
+    setModelSaved(true);
+    setTimeout(() => setModelSaved(false), 2000);
+  };
 
   const PROFILE_CATEGORIES = [
     "Schedule", "Preferences", "Work capacity", "Motivation",
@@ -104,6 +142,37 @@ export default function SettingsPage() {
             </button>
           </div>
         </section>
+
+        {/* AI Model Configuration */}
+        {modelConfig && (
+          <section className="settings-section card animate-fade-in">
+            <div className="settings-section-header">
+              <Cpu size={18} />
+              <h3>AI Model Tiers</h3>
+            </div>
+            <p className="settings-desc">
+              Assign different Claude models to different task types. Use Opus for complex planning, Haiku for fast simple tasks, or Sonnet for everything.
+              {modelSaved && <span className="settings-saved-inline"> Saved!</span>}
+            </p>
+            {(Object.keys(TIER_LABELS) as ModelTier[]).map((tier) => (
+              <div key={tier} className="model-tier-row">
+                <div className="model-tier-info">
+                  <span className="model-tier-label">{TIER_LABELS[tier].label}</span>
+                  <span className="model-tier-desc">{TIER_LABELS[tier].desc}</span>
+                </div>
+                <select
+                  className="model-tier-select"
+                  value={modelConfig.tiers[tier]}
+                  onChange={(e) => handleModelTierChange(tier, e.target.value as ClaudeModel)}
+                >
+                  {modelConfig.availableModels.map((m) => (
+                    <option key={m} value={m}>{MODEL_LABELS[m]}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </section>
+        )}
 
         {/* Opt-in Features */}
         <section className="settings-section card animate-fade-in">

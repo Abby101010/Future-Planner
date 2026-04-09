@@ -8,8 +8,7 @@ import { quickReflect, runReflection, captureSessionStart } from "./reflection";
 import { coordinateRequest } from "./agents/coordinator";
 import type { CoordinatorTaskType, ProgressCallback } from "./agents/types";
 import { getMonthlyContext } from "./database";
-
-const MODEL = "claude-sonnet-4-6";
+import { getModelForTask } from "./model-config";
 
 export type RequestType =
   | "onboarding"
@@ -673,7 +672,7 @@ async function handleOnboarding(
   messages.push({ role: "user", content: payload.userInput as string });
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("onboarding"),
     max_tokens: 1024,
     system: personalizeSystem(ONBOARDING_SYSTEM, memoryContext),
     messages,
@@ -715,7 +714,7 @@ async function handleGoalBreakdown(
   }
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("goal-breakdown"),
     max_tokens: 16384,
     system: personalizeSystem(GOAL_BREAKDOWN_SYSTEM, memoryContext),
     messages: [
@@ -781,7 +780,7 @@ async function handleReallocate(
   }
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("reallocate"),
     max_tokens: 16384,
     system: personalizeSystem(REALLOCATE_SYSTEM, memoryContext),
     messages: [
@@ -996,7 +995,7 @@ MONTHLY CONTEXT (${currentMonth}):
   }
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("daily-tasks"),
     max_tokens: 4096,
     system: personalizeSystem(DAILY_TASKS_SYSTEM, memoryContext),
     messages: [
@@ -1145,7 +1144,7 @@ async function handleRecovery(
   });
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("recovery"),
     max_tokens: 2048,
     system: personalizeSystem(RECOVERY_SYSTEM, memoryContext),
     messages: [
@@ -1187,7 +1186,7 @@ async function handlePaceCheck(
   const logs = payload.logs;
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("pace-check"),
     max_tokens: 2048,
     system: personalizeSystem(PACE_CHECK_SYSTEM, memoryContext),
     messages: [
@@ -1297,7 +1296,7 @@ async function handleClassifyGoal(
   const description = (payload.description as string) || "";
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("classify-goal"),
     max_tokens: 1024,
     system: personalizeSystem(CLASSIFY_GOAL_SYSTEM, memoryContext),
     messages: [
@@ -1516,7 +1515,7 @@ async function handleGoalPlanChat(
   const planBlock = currentPlan ? `\n\n${summarizePlanForChat(currentPlan)}` : "";
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("goal-plan-chat"),
     max_tokens: 4096,
     system: personalizeSystem(
       `${GOAL_PLAN_CHAT_SYSTEM}\n\nGOAL CONTEXT:\n${goalContext}${planBlock}`,
@@ -1589,7 +1588,7 @@ async function handleGoalPlanEdit(
   ].join("\n");
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("goal-plan-edit"),
     max_tokens: 512,     // lightweight — keep it fast and cheap
     system: personalizeSystem(
       `${GOAL_PLAN_EDIT_SYSTEM}\n\nGOAL: "${goalTitle}"\n\n${planSummary}`,
@@ -1729,7 +1728,7 @@ Do NOT ignore this data. If research says something takes 6 months, don't plan f
   }
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("generate-goal-plan"),
     max_tokens: 8192,
     system: personalizeSystem(
       `${GENERATE_GOAL_PLAN_SYSTEM}\n\nGOAL CONTEXT:\n${goalContext}${researchBlock}`,
@@ -1801,7 +1800,7 @@ async function handleAnalyzeQuickTask(
   }
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("analyze-quick-task"),
     max_tokens: 512,
     system: personalizeSystem(ANALYZE_QUICK_TASK_SYSTEM, memoryContext),
     messages: [
@@ -1874,7 +1873,7 @@ async function handleAnalyzeMonthlyContext(
   const description = payload.description as string;
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("analyze-monthly-context"),
     max_tokens: 256,
     system: personalizeSystem(ANALYZE_MONTHLY_CONTEXT_SYSTEM, memoryContext),
     messages: [
@@ -1935,7 +1934,7 @@ ${calendarSummary}`;
   messages.push({ role: "user", content: userInput });
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("home-chat"),
     max_tokens: 512,
     system: personalizeSystem(`${HOME_CHAT_SYSTEM}\n\n${contextBlock}`, memoryContext),
     messages,

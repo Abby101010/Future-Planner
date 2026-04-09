@@ -30,8 +30,7 @@ import {
   type SignalType,
   type FactCategory,
 } from "./memory";
-
-const MODEL = "claude-sonnet-4-6";
+import { getModelForTask } from "./model-config";
 
 // ── Reflection System Prompt ────────────────────────────
 
@@ -247,7 +246,7 @@ Include day names and times in your fact values and preference tags.`;
 
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: getModelForTask("reflection"),
       max_tokens: 4096,
       system: REFLECTION_SYSTEM,
       messages: [{ role: "user", content: userMessage }],

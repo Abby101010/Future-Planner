@@ -43,6 +43,8 @@ import { initAutoUpdater } from "./auto-updater";
 import type { AgentProgressEvent, NewsBriefing, JobStatus } from "./agents/types";
 import { insertJob, getJob, listJobs, cancelJob } from "./job-db";
 import { JobRunner } from "./job-runner";
+import { setModelOverrides, getModelConfig } from "./model-config";
+import type { ModelTier, ClaudeModel } from "./model-config";
 
 // Load .env file in development
 const envPath = path.join(__dirname, "../.env");
@@ -488,6 +490,17 @@ function setupIPC() {
     }
   });
 
+  // ── Model Configuration IPC ─────────────────────────────
+
+  ipcMain.handle("model-config:get", () => {
+    return getModelConfig();
+  });
+
+  ipcMain.handle("model-config:set-overrides", (_event, overrides: Partial<Record<ModelTier, ClaudeModel>>) => {
+    setModelOverrides(overrides);
+    return { ok: true };
+  });
+
   // ── Memory System IPC ──────────────────────────────────
 
   // Get memory summary for UI display
@@ -775,6 +788,18 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn("[API] API server failed to start (non-fatal):", err);
   }
+
+  // Initialize model overrides from saved settings
+  try {
+    const data = loadDataSync();
+    const user = data.user as Record<string, unknown> | undefined;
+    const settings = user?.settings as Record<string, unknown> | undefined;
+    const modelOverrides = settings?.modelOverrides as Partial<Record<ModelTier, ClaudeModel>> | undefined;
+    if (modelOverrides) {
+      setModelOverrides(modelOverrides);
+      console.log("[Models] Loaded user model overrides:", modelOverrides);
+    }
+  } catch { /* no overrides yet */ }
 
   setupIPC();
   createWindow();

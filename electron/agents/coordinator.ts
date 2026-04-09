@@ -27,8 +27,6 @@ import { loadMemory, buildMemoryContext } from "../memory";
 import { evaluateSchedulingContext, formatSchedulingContext } from "./context-evaluator";
 import { getMonthlyContext } from "../database";
 
-const MODEL = "claude-sonnet-4-6";
-
 /** Track whether first-time research has already been done for each goal */
 const goalResearchCache = new Map<string, ResearchResult>();
 

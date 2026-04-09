@@ -10,8 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { ResearchResult, PeerContext, NewsBriefing, ProgressCallback } from "./types";
-
-const MODEL = "claude-sonnet-4-6";
+import { getModelForTask } from "../model-config";
 
 /** Web search tool config for Claude API */
 const WEB_SEARCH_TOOL = { type: "web_search_20250305" as const, name: "web_search" as const };
@@ -69,7 +68,7 @@ Please search for:
 4. Best practices from people who've done this successfully`;
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("research"),
     max_tokens: 4096,
     system: systemPrompt,
     tools: [WEB_SEARCH_TOOL],
@@ -132,7 +131,7 @@ export async function getPeerContext(
   });
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("research"),
     max_tokens: 4096,
     system: `You are a research assistant. Search the web to find what peers and communities
 say about pursuing this type of goal. Look for Reddit posts, forum discussions, blog posts,
@@ -203,7 +202,7 @@ export async function generateNewsBriefing(
   const topics = [...goalTitles, ...userInterests].join(", ");
 
   const response = await client.messages.create({
-    model: MODEL,
+    model: getModelForTask("research"),
     max_tokens: 4096,
     system: `You are a news curator for a goal-tracking productivity app. Search for the latest
 news, articles, and updates related to the user's goals and interests.

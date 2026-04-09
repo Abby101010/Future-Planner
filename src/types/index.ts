@@ -34,6 +34,7 @@ export interface UserSettings {
   theme: "light" | "dark" | "system";
   language: "en" | "zh";
   apiKey?: string;
+  modelOverrides?: Partial<Record<"heavy" | "medium" | "light", string>>;
 }
 
 // Onboarding
