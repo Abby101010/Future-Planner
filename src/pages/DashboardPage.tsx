@@ -176,7 +176,7 @@ export default function DashboardPage() {
       : query;
 
     // Add user message to store
-    const msgId = `msg-${Date.now()}`;
+    const msgId = crypto.randomUUID();
     addHomeChatMessage({
       id: msgId,
       role: "user",
@@ -291,14 +291,14 @@ export default function DashboardPage() {
                 if (planResult.plan) {
                   setGoalPlan(targetGoal.id, planResult.plan);
                   const aiMsg: GoalPlanMessage = {
-                    id: `msg-${Date.now()}`,
+                    id: crypto.randomUUID(),
                     role: "assistant",
                     content: planResult.reply,
                     timestamp: new Date().toISOString(),
                   };
                   addGoalPlanMessage(targetGoal.id, aiMsg);
                   addHomeChatMessage({
-                    id: `msg-${Date.now()}-plan-ready`,
+                    id: crypto.randomUUID(),
                     role: "assistant",
                     content: sanitizeAIText(`The plan for "${targetGoal.title}" has been refreshed! Check it out in the Planning tab.`),
                     timestamp: new Date().toISOString(),
@@ -306,7 +306,7 @@ export default function DashboardPage() {
                 }
               }).catch(() => {
                 addHomeChatMessage({
-                  id: `msg-${Date.now()}-plan-err`,
+                  id: crypto.randomUUID(),
                   role: "assistant",
                   content: `I had trouble regenerating the plan for "${targetGoal.title}". You can try again later.`,
                   timestamp: new Date().toISOString(),
@@ -332,7 +332,7 @@ export default function DashboardPage() {
 
       // Add assistant message to store (sanitized — no emojis or stray symbols)
       addHomeChatMessage({
-        id: `msg-${Date.now()}-reply`,
+        id: crypto.randomUUID(),
         role: "assistant",
         content: sanitizeAIText(displayText),
         timestamp: new Date().toISOString(),
@@ -368,7 +368,7 @@ export default function DashboardPage() {
       }
     } catch {
       addHomeChatMessage({
-        id: `msg-${Date.now()}-error`,
+        id: crypto.randomUUID(),
         role: "assistant",
         content: t.home.chatError,
         timestamp: new Date().toISOString(),

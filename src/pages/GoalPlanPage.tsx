@@ -345,7 +345,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       if (updatedPlan && updatedPlan.years) {
         updateGoal(goal.id, { plan: updatedPlan });
         addGoalPlanMessage(goal.id, {
-          id: `msg-${Date.now()}`,
+          id: crypto.randomUUID(),
           role: "assistant",
           content: "I've adjusted your timeline to be more realistic based on your current progress. The remaining tasks have been redistributed.",
           timestamp: new Date().toISOString(),
@@ -375,7 +375,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         try {
           const result = await pollJobUntilDone<{ reply: string; plan: import("../types").GoalPlan }>(storedJobId);
           const aiMsg: GoalPlanMessage = {
-            id: `msg-${Date.now()}`,
+            id: crypto.randomUUID(),
             role: "assistant",
             content: result.reply,
             timestamp: new Date().toISOString(),
@@ -423,7 +423,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       const result = await pollJobUntilDone<{ reply: string; plan: import("../types").GoalPlan }>(jobId);
 
       const aiMsg: GoalPlanMessage = {
-        id: `msg-${Date.now()}`,
+        id: crypto.randomUUID(),
         role: "assistant",
         content: result.reply,
         timestamp: new Date().toISOString(),
@@ -452,7 +452,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     if (!goal || !chatInput.trim()) return;
 
     const userMsg: GoalPlanMessage = {
-      id: `msg-${Date.now()}`,
+      id: crypto.randomUUID(),
       role: "user",
       content: chatInput.trim(),
       timestamp: new Date().toISOString(),
@@ -474,7 +474,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       );
 
       const aiMsg: GoalPlanMessage = {
-        id: `msg-${Date.now() + 1}`,
+        id: crypto.randomUUID(),
         role: "assistant",
         content: result.reply,
         timestamp: new Date().toISOString(),
