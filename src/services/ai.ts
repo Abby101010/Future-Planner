@@ -552,7 +552,7 @@ export async function reallocateGoalPlan(
 function normalizeBreakdown(raw: Record<string, unknown>): GoalBreakdown {
   const yearly = (raw.yearly_breakdown || raw.yearlyBreakdown || []) as Array<Record<string, unknown>>;
   return {
-    id: (raw.id as string) || `breakdown-${Date.now()}`,
+    id: raw.id as string,  // backend is authoritative — no client-side fallback
     goalSummary: (raw.goal_summary || raw.goalSummary || "") as string,
     totalEstimatedHours: (raw.total_estimated_hours || raw.totalEstimatedHours || 0) as number,
     projectedCompletion: (raw.projected_completion || raw.projectedCompletion || "") as string,

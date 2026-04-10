@@ -238,7 +238,16 @@ export const entitiesRepo = {
       throw new Error(r.error || "newBehaviorEntry failed");
     return r.entry;
   },
-  async newConfirmedTask(input: Partial<DailyTask>): Promise<DailyTask> {
+  async newConfirmedTask(
+    input: Partial<DailyTask> & {
+      isScheduledToday?: boolean;
+      currentTasks?: Array<{
+        cognitiveWeight?: number;
+        durationMinutes?: number;
+        priority?: string;
+      }>;
+    },
+  ): Promise<DailyTask> {
     const r = await invoke<{
       ok: boolean;
       task?: DailyTask;

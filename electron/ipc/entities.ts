@@ -19,6 +19,10 @@
 
 import { ipcMain } from "electron";
 import { randomUUID } from "node:crypto";
+import {
+  downgradeIfOverBudget,
+  type TaskPriority,
+} from "../../shared/domain/cognitiveBudget";
 
 // Shapes mirror src/types/index.ts. Duplicated rather than imported
 // because electron/ is a separate tsconfig project.
@@ -316,22 +320,44 @@ export function registerEntitiesIpc(): void {
 
   // ── Confirmed task (from pending task analysis) ─────────
   // The renderer previously generated task-confirmed-${Date.now()}
-  // inline in confirmPendingTask. Backend now owns the id and
-  // timestamp so the cognitive-budget decision and signal recording
-  // stay on the server side of the boundary in Pass 3.
+  // inline AND ran downgradeIfOverBudget client-side. Backend now
+  // owns both so the cognitive-budget domain rule lives entirely
+  // server-side — the renderer has no imports from shared/domain.
   ipcMain.handle("entities:new-confirmed-task", async (_event, payload) => {
     try {
       const p = (payload || {}) as Record<string, unknown>;
+      const requestedPriority = String(p.priority || "should-do") as TaskPriority;
+      const durationMinutes =
+        typeof p.durationMinutes === "number" ? p.durationMinutes : 30;
+      const cognitiveWeight =
+        typeof p.cognitiveWeight === "number" ? p.cognitiveWeight : 3;
+
+      // Cognitive-budget enforcement runs here when the task is
+      // being scheduled for today. If the task is scheduled for a
+      // future date the renderer passes isScheduledToday=false and
+      // the requested priority is preserved.
+      const isScheduledToday = Boolean(p.isScheduledToday);
+      const currentTasks = (Array.isArray(p.currentTasks) ? p.currentTasks : []) as Array<{
+        cognitiveWeight?: number;
+        durationMinutes?: number;
+        priority?: string;
+      }>;
+      const finalPriority: TaskPriority = isScheduledToday
+        ? downgradeIfOverBudget(
+            currentTasks,
+            { cognitiveWeight, durationMinutes },
+            requestedPriority,
+          )
+        : requestedPriority;
+
       const task = {
         id: randomUUID(),
         title: String(p.title || ""),
         description: String(p.description || ""),
-        durationMinutes:
-          typeof p.durationMinutes === "number" ? p.durationMinutes : 30,
-        cognitiveWeight:
-          typeof p.cognitiveWeight === "number" ? p.cognitiveWeight : 3,
+        durationMinutes,
+        cognitiveWeight,
         whyToday: String(p.whyToday || ""),
-        priority: String(p.priority || "should-do"),
+        priority: finalPriority,
         isMomentumTask: Boolean(p.isMomentumTask),
         progressContribution: String(p.progressContribution || ""),
         category: String(p.category || "planning"),

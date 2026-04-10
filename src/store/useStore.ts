@@ -37,8 +37,6 @@ import {
   shouldAutoReflect,
   triggerReflection,
 } from "../services/memory";
-import { downgradeIfOverBudget } from "../../shared/domain/cognitiveBudget";
-import type { TaskPriority } from "../../shared/domain/cognitiveBudget";
 import { memoryRepo, reminderRepo, chatRepo, appDataRepo, entitiesRepo } from "../repositories";
 
 const DEFAULT_INTEGRATIONS: DeviceIntegrations = {
@@ -582,30 +580,27 @@ const useStore = create<Store>((set, get) => ({
     const todayLog = get().todayLog;
     const today = new Date().toISOString().split("T")[0];
 
-    // ── Cognitive budget enforcement (rules live in shared/domain/cognitiveBudget) ──
+    // Backend assigns the task ID, applies defaults, AND runs the
+    // cognitive-budget downgrade rule. The renderer just forwards
+    // today's task snapshot so the backend can decide whether to
+    // demote the priority to "bonus".
     const isScheduledToday = task.analysis.suggestedDate === today;
-    const finalPriority: TaskPriority = isScheduledToday
-      ? downgradeIfOverBudget(
-          todayLog?.tasks ?? [],
-          {
-            cognitiveWeight: task.analysis.cognitiveWeight,
-            durationMinutes: task.analysis.durationMinutes,
-          },
-          task.analysis.priority as TaskPriority,
-        )
-      : (task.analysis.priority as TaskPriority);
-
-    // Backend assigns the task ID, applies defaults.
     const newTask = (await entitiesRepo.newConfirmedTask({
       title: task.analysis.title,
       description: task.analysis.description,
       durationMinutes: task.analysis.durationMinutes,
       cognitiveWeight: task.analysis.cognitiveWeight,
-      priority: finalPriority,
+      priority: task.analysis.priority,
       category: task.analysis.category,
       whyToday: task.analysis.reasoning,
       progressContribution: "Quick task added via chat",
       isMomentumTask: false,
+      isScheduledToday,
+      currentTasks: (todayLog?.tasks ?? []).map((t) => ({
+        cognitiveWeight: t.cognitiveWeight,
+        durationMinutes: t.durationMinutes,
+        priority: t.priority,
+      })),
     })) as import("../types").DailyTask;
 
     if (todayLog) {
@@ -637,7 +632,7 @@ const useStore = create<Store>((set, get) => ({
       pendingTasks: s.pendingTasks.filter((t) => t.id !== id),
     }));
     get().saveToDisk();
-    recordSignal("task_confirmed", "quick_task", `${task.analysis.title} [${finalPriority}]`).catch(() => {});
+    recordSignal("task_confirmed", "quick_task", `${task.analysis.title} [${newTask.priority}]`).catch(() => {});
   },
 
   // ── Reminders ──
