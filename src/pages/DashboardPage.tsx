@@ -28,8 +28,8 @@ import {
 import ReactMarkdown from "react-markdown";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
-import { analyzeQuickTask, sendHomeChatMessage } from "../services/ai";
-import type { PendingTask, HomeChatMessage, CalendarEvent, Goal } from "../types";
+import { analyzeQuickTask, sendHomeChatMessage, generateGoalPlan, submitGoalPlanJob } from "../services/ai";
+import type { PendingTask, HomeChatMessage, CalendarEvent, Goal, Reminder, GoalPlanMessage } from "../types";
 import "./DashboardPage.css";
 
 /** Strip emojis and stray unicode symbols from AI text */
@@ -83,6 +83,11 @@ export default function DashboardPage() {
     setView,
     addCalendarEvent,
     addGoal,
+    addReminder,
+    removeGoal,
+    updateGoal,
+    setGoalPlan,
+    addGoalPlanMessage,
   } = useStore();
 
   const t = useT();
@@ -278,11 +283,106 @@ export default function DashboardPage() {
             repeatSchedule: null,
           };
           addGoal(newGoal);
-          displayText = `I've created "${newGoal.title}" as a ${goalType} goal. Head to the Planning tab to build out the plan.`;
+
+          // Eagerly kick off plan generation for big goals so the multi-agent
+          // pipeline starts immediately. The jobId is stashed in localStorage
+          // under the same key (`planJobId:${goalId}`) that GoalPlanPage's
+          // mount-time reattach effect reads — so by the time the user opens
+          // the goal, the AI thought process picks up where it left off (or
+          // is already done) instead of starting fresh.
+          if (goalType === "big") {
+            try {
+              const jobId = await submitGoalPlanJob(
+                newGoal.title,
+                newGoal.targetDate,
+                newGoal.importance,
+                newGoal.isHabit,
+                newGoal.description,
+              );
+              localStorage.setItem(`planJobId:${newGoal.id}`, jobId);
+            } catch (err) {
+              // Silent — the user can still trigger generation manually
+              // from the goal page if the eager submit failed.
+              console.error("[home-chat] eager plan job submit failed:", err);
+            }
+            displayText = `I've created "${newGoal.title}" and started planning it in the background. Open it in Planning to watch the AI work or see the result.`;
+          } else {
+            displayText = `I've created "${newGoal.title}" as a ${goalType} goal. Head to the Planning tab to build out the plan.`;
+          }
+        } else if (parsed.is_reminder) {
+          const today = new Date().toISOString().split("T")[0];
+          const reminder: Reminder = {
+            id: `reminder-${Date.now()}`,
+            title: parsed.title || query,
+            description: parsed.description || "",
+            reminderTime: parsed.reminderTime || `${today}T09:00:00`,
+            date: parsed.date || today,
+            acknowledged: false,
+            repeat: parsed.repeat || null,
+            source: "chat",
+            createdAt: new Date().toISOString(),
+          };
+          addReminder(reminder);
+          const timeStr = new Date(reminder.reminderTime).toLocaleTimeString(undefined, {
+            hour: "numeric", minute: "2-digit",
+          });
+          const dateStr = new Date(reminder.date + "T12:00:00").toLocaleDateString(undefined, {
+            weekday: "short", month: "short", day: "numeric",
+          });
+          displayText = `I'll remind you: "${reminder.title}" on ${dateStr} at ${timeStr}.`;
+          if (reminder.repeat) {
+            displayText += ` This will repeat ${reminder.repeat}.`;
+          }
         } else if (parsed.is_task) {
           isTask = true;
           taskDescription = parsed.task_description || query;
           displayText = t.home.taskDetected;
+        } else if (parsed.manage_goal) {
+          const targetGoal = goals.find((g) => g.id === parsed.goalId);
+          if (!targetGoal) {
+            displayText = `I couldn't find that goal. Could you clarify which goal you mean?`;
+          } else if (parsed.action === "refresh_plan") {
+            displayText = `Regenerating the plan for "${targetGoal.title}"... This may take a moment.`;
+            // Fire plan generation in background
+            updateGoal(targetGoal.id, { plan: null, status: "planning", planChat: [] });
+            generateGoalPlan(
+              targetGoal.title,
+              targetGoal.targetDate,
+              targetGoal.importance,
+              targetGoal.isHabit,
+              targetGoal.description
+            ).then((planResult) => {
+              if (planResult.plan) {
+                setGoalPlan(targetGoal.id, planResult.plan);
+                const aiMsg: GoalPlanMessage = {
+                  id: `msg-${Date.now()}`,
+                  role: "assistant",
+                  content: planResult.reply,
+                  timestamp: new Date().toISOString(),
+                };
+                addGoalPlanMessage(targetGoal.id, aiMsg);
+                addHomeChatMessage({
+                  id: `msg-${Date.now()}-plan-ready`,
+                  role: "assistant",
+                  content: sanitizeAIText(`The plan for "${targetGoal.title}" has been refreshed! Check it out in the Planning tab.`),
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }).catch(() => {
+              addHomeChatMessage({
+                id: `msg-${Date.now()}-plan-err`,
+                role: "assistant",
+                content: `I had trouble regenerating the plan for "${targetGoal.title}". You can try again later.`,
+                timestamp: new Date().toISOString(),
+              });
+            });
+          } else if (parsed.action === "delete") {
+            removeGoal(targetGoal.id);
+            displayText = `I've removed "${targetGoal.title}" from your goals.`;
+          } else if (parsed.action === "archive") {
+            updateGoal(targetGoal.id, { status: "archived" });
+            displayText = `I've archived "${targetGoal.title}".`;
+          }
         } else if (parsed.context_change) {
           displayText = parsed.suggestion
             ? `I noticed a change in your situation. ${parsed.suggestion}\n\nYou can update your monthly context in the Planning tab.`

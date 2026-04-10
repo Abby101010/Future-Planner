@@ -13,6 +13,14 @@
   gap: var(--space-xl);
 }
 
+/* Direct children of the scroll container should never shrink —
+   the scroll container itself handles overflow. Without this, a
+   small viewport squeezes blocks like .gp-chat (which has
+   overflow: hidden), cutting off its input row at the bottom. */
+.goal-plan-scroll > * {
+  flex-shrink: 0;
+}
+
 .goal-plan-empty {
   height: 100%;
   display: flex;
@@ -327,6 +335,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  min-width: 150px;
+  flex-shrink: 0;
 }
 
 .gp-level-icon {
@@ -346,11 +356,10 @@
   font-size: 13px;
   color: var(--text-muted);
   font-weight: 400;
+  margin-left: auto;
   text-align: right;
-  max-width: 50%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 60%;
+  line-height: 1.4;
 }
 
 /* Month level */
@@ -639,24 +648,44 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-.gp-chat-header {
+/* Prominent chat — always visible right after the header */
+.gp-chat-prominent {
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.gp-chat-header-static {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-lg);
-  cursor: pointer;
   color: var(--text-secondary);
-  transition: background var(--transition-fast);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
 }
 
-.gp-chat-header:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.gp-chat-header h3 {
+.gp-chat-header-static h3 {
   flex: 1;
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.gp-chat-count {
+  font-size: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
   font-weight: 500;
+}
+
+.gp-chat-empty {
+  padding: var(--space-md) var(--space-lg);
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .gp-chat-messages {
@@ -730,6 +759,9 @@
 
 .gp-chat-input {
   flex: 1;
+  min-height: 40px;
+  padding: 10px 14px;
+  font-size: 14px;
 }
 
 /* ── Loading state ── */
@@ -747,6 +779,36 @@
 
 .gp-generating h3 {
   color: var(--text-primary);
+}
+
+/* ── Empty state — plan failed/interrupted ── */
+
+.gp-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-3xl);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.gp-empty-state h3 {
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.gp-empty-state p {
+  font-size: 13px;
+  max-width: 320px;
+}
+
+.gp-empty-state .btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
 }
 
 /* ── Inline Editing ── */
@@ -767,43 +829,55 @@
   min-width: 0;
 }
 
-.gp-edit-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s;
-}
-
-.gp-edit-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-  color: var(--accent);
-}
-
-.gp-year-header-row:hover .gp-edit-btn,
-.gp-month-header-row:hover .gp-edit-btn,
-.gp-week-header-row:hover .gp-edit-btn,
-.gp-task:hover .gp-edit-btn-task {
-  display: flex;
-}
-
-.gp-edit-btn-task {
-  width: 20px;
-  height: 20px;
-  margin-left: var(--space-xs);
-}
-
 .gp-task-title-row {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* ── Reschedule Banner ── */
+
+.gp-reschedule-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: var(--radius-lg);
+}
+
+.gp-reschedule-content {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  flex: 1;
+}
+
+.gp-reschedule-content svg {
+  color: #f59e0b;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.gp-reschedule-content strong {
+  font-size: 13px;
+  color: var(--text-primary);
+  display: block;
+}
+
+.gp-reschedule-content p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}
+
+.gp-reschedule-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
 }
 
 /* ── Inline Edit Input ── */
@@ -811,18 +885,17 @@
 .gp-inline-edit {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   flex: 1;
-  min-width: 0;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .gp-inline-edit-input {
   flex: 1;
   font-size: 13px;
-  padding: 4px 8px;
-  height: 28px;
-  min-width: 0;
+  padding: 8px 12px;
+  min-height: 36px;
+  min-width: 250px;
   background: #ffffff;
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
@@ -864,138 +937,6 @@
 .gp-inline-edit-spinner {
   color: var(--accent);
   flex-shrink: 0;
-}
-
-/* ── Edit Suggestion Overlay ── */
-
-.gp-edit-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: var(--space-xl);
-  backdrop-filter: blur(4px);
-}
-
-.gp-edit-overlay-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-xl);
-  max-width: 480px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
-}
-
-.gp-edit-verdict {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  font-weight: 600;
-  font-size: 14px;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-}
-
-.gp-edit-verdict-approve {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
-}
-
-.gp-edit-verdict-caution {
-  background: rgba(250, 204, 21, 0.12);
-  color: #facc15;
-}
-
-.gp-edit-verdict-warn {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
-}
-
-.gp-edit-verdict-label {
-  text-transform: capitalize;
-}
-
-.gp-edit-reason {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.gp-edit-cascading {
-  background: rgba(0, 0, 0, 0.025);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-md);
-}
-
-.gp-edit-cascading h4 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: var(--space-sm);
-}
-
-.gp-edit-cascade-item {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  font-size: 12px;
-  padding: var(--space-xs) 0;
-  color: var(--text-secondary);
-  align-items: baseline;
-}
-
-.gp-cascade-badge {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--accent);
-  text-transform: uppercase;
-}
-
-.gp-cascade-field {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.gp-cascade-value {
-  color: var(--accent);
-  font-style: italic;
-}
-
-.gp-cascade-reason {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.gp-edit-replan-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  font-size: 13px;
-  color: #facc15;
-  background: rgba(250, 204, 21, 0.08);
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-}
-
-.gp-edit-overlay-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--border);
 }
 
 /* Notes section */

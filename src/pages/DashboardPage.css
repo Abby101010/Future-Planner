@@ -578,6 +578,45 @@
   font-size: 13px;
 }
 
+/* ── Error card with retry/dismiss ── */
+
+.error-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  background: var(--red-soft);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.error-card-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.error-card-content svg {
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+.error-card-content p {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0;
+}
+
+.error-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
 /* Progress row */
 
 .progress-row {

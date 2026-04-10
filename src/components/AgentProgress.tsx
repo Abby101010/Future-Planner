@@ -33,19 +33,19 @@ interface AgentProgressProps {
   jobId?: string | null;
 }
 
-/** Map agent IDs to display info */
+/** Map agent IDs to display info — monochrome for minimalist theme */
 function getAgentInfo(agentId: AgentId, t: ReturnType<typeof useT>) {
   switch (agentId) {
     case "coordinator":
-      return { label: t.agents.coordinator, icon: Brain, color: "#a78bfa" };
+      return { label: t.agents.coordinator, icon: Brain };
     case "research":
-      return { label: t.agents.research, icon: Search, color: "#60a5fa" };
+      return { label: t.agents.research, icon: Search };
     case "planner":
-      return { label: t.agents.planner, icon: Target, color: "#34d399" };
+      return { label: t.agents.planner, icon: Target };
     case "task":
-      return { label: t.agents.task, icon: Zap, color: "#fbbf24" };
+      return { label: t.agents.task, icon: Zap };
     case "news":
-      return { label: t.agents.news, icon: Globe, color: "#f472b6" };
+      return { label: t.agents.news, icon: Globe };
   }
 }
 
@@ -110,10 +110,11 @@ export default function AgentProgress({ visible, title, jobId }: AgentProgressPr
       setEvents((prev) => [...prev, event]);
     };
 
-    window.electronAPI.on("agent:progress", handler);
+    const unsubscribe = window.electronAPI.on("agent:progress", handler);
 
     return () => {
-      // Clean up is handled by component unmount
+      // Properly remove the IPC listener so we don't leak events across mounts
+      if (typeof unsubscribe === "function") unsubscribe();
     };
   }, [visible, jobId]);
 
@@ -160,14 +161,14 @@ export default function AgentProgress({ visible, title, jobId }: AgentProgressPr
               key={i}
               className={`agent-progress__event ${event.status === "error" ? "agent-progress__event--error" : ""} ${event.status === "done" ? "agent-progress__event--done" : ""}`}
             >
-              <div className="agent-progress__event-icon" style={{ color: agent.color }}>
+              <div className="agent-progress__event-icon">
                 <StatusIcon
                   size={12}
                   className={isActive ? "agent-progress__spin" : ""}
                 />
               </div>
               <div className="agent-progress__event-content">
-                <span className="agent-progress__event-agent" style={{ color: agent.color }}>
+                <span className="agent-progress__event-agent">
                   {agent.label}
                 </span>
                 <span className="agent-progress__event-msg">

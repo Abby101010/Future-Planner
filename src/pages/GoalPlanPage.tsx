@@ -23,17 +23,13 @@ import {
   Flag,
   Calendar,
   Unlock,
-  Pencil,
-  Check,
-  X,
   AlertTriangle,
-  Info,
-  ShieldCheck,
   FileText,
+  RefreshCw,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
-import { sendGoalPlanMessage, generateGoalPlan, analyzeGoalPlanEdit } from "../services/ai";
+import { sendGoalPlanMessage, generateGoalPlan, submitGoalPlanJob, pollJobUntilDone, reallocateGoalPlan } from "../services/ai";
 import AgentProgress from "../components/AgentProgress";
 import RichTextToolbar, { IconPicker } from "../components/RichTextToolbar";
 import type {
@@ -42,9 +38,6 @@ import type {
   GoalPlanWeek,
   GoalPlanTask,
   GoalPlanMilestone,
-  PlanEdit,
-  PlanEditSuggestion,
-  PlanEditLevel,
 } from "../types";
 import "./GoalPlanPage.css";
 
@@ -171,70 +164,6 @@ function unlockNextWeek(plan: GoalPlan): GoalPlan {
   };
 }
 
-// ── Helper: apply a targeted field edit deep in the plan tree ──
-function applyFieldEdit(
-  plan: GoalPlan,
-  level: PlanEditLevel,
-  targetId: string,
-  field: string,
-  value: string
-): GoalPlan {
-  if (level === "milestone") {
-    return {
-      ...plan,
-      milestones: plan.milestones.map((ms) =>
-        ms.id === targetId ? { ...ms, [field]: value } : ms
-      ),
-    };
-  }
-
-  return {
-    ...plan,
-    years: plan.years.map((yr) => {
-      if (level === "year" && yr.id === targetId) {
-        return { ...yr, [field]: value };
-      }
-      return {
-        ...yr,
-        months: yr.months.map((mo) => {
-          if (level === "month" && mo.id === targetId) {
-            return { ...mo, [field]: value };
-          }
-          return {
-            ...mo,
-            weeks: mo.weeks.map((wk) => {
-              if (level === "week" && wk.id === targetId) {
-                return { ...wk, [field]: value };
-              }
-              return {
-                ...wk,
-                days: wk.days.map((dy) => {
-                  if (level === "day" && dy.id === targetId) {
-                    return { ...dy, [field]: value };
-                  }
-                  return {
-                    ...dy,
-                    tasks: dy.tasks.map((tk) => {
-                      if (level === "task" && tk.id === targetId) {
-                        // Handle numeric fields
-                        if (field === "durationMinutes") {
-                          return { ...tk, [field]: parseInt(value, 10) || tk.durationMinutes };
-                        }
-                        return { ...tk, [field]: value };
-                      }
-                      return tk;
-                    }),
-                  };
-                }),
-              };
-            }),
-          };
-        }),
-      };
-    }),
-  };
-}
-
 // ── Helper: apply a plan patch (merge partial updates from AI chat) ──
 function applyPlanPatch(
   plan: GoalPlan,
@@ -310,8 +239,15 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
 
   const goal = goals.find((g) => g.id === goalId);
   const [chatInput, setChatInput] = useState("");
-  const [showChat, setShowChat] = useState(false);
-  const [showAgentProgress, setShowAgentProgress] = useState(false);
+  // Initialize from localStorage so an in-flight job's progress reattaches on re-entry
+  const [planJobId, setPlanJobId] = useState<string | null>(
+    () => localStorage.getItem(`planJobId:${goalId}`)
+  );
+  const [showAgentProgress, setShowAgentProgress] = useState<boolean>(
+    () => !!localStorage.getItem(`planJobId:${goalId}`)
+  );
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [rescheduleDismissed, setRescheduleDismissed] = useState(false);
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
@@ -332,25 +268,12 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     gpChatInputRef.current?.focus();
   }, []);
 
-  // ── Inline editing state ──
-  const [editingItem, setEditingItem] = useState<{
-    level: PlanEditLevel;
-    id: string;
-    field: string;
-    path: { yearId?: string; monthId?: string; weekId?: string; dayId?: string };
-  } | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [editOriginalValue, setEditOriginalValue] = useState("");
-  const [editSuggestion, setEditSuggestion] = useState<PlanEditSuggestion | null>(null);
-  const [isAnalyzingEdit, setIsAnalyzingEdit] = useState(false);
-
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
   const t = useT();
   const lang = useStore((s) => s.user?.settings?.language || "en");
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [goal?.planChat]);
 
   // Auto-expand unlocked weeks on first render
@@ -377,9 +300,99 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalId]);
 
-  // Generate initial plan if none exists
+  // Count overdue tasks (unlocked, past date, incomplete)
+  const overdueTasks = (() => {
+    if (!goal?.plan) return 0;
+    const today = new Date().toISOString().split("T")[0];
+    let count = 0;
+    for (const yr of goal.plan.years) {
+      for (const mo of yr.months) {
+        for (const wk of mo.weeks) {
+          if (wk.locked) continue;
+          for (const dy of wk.days) {
+            // Try to parse the day label as a date
+            const dayDate = dy.label; // e.g., "Jan 6" or "Monday"
+            // Count incomplete tasks in unlocked past weeks
+            for (const task of dy.tasks) {
+              if (!task.completed) count++;
+            }
+          }
+        }
+      }
+    }
+    // Only show if there are significant incomplete tasks
+    return count;
+  })();
+
+  const showRescheduleBanner = overdueTasks > 5 && !rescheduleDismissed && !isRescheduling && goal?.planConfirmed;
+
+  const handleReschedule = useCallback(async () => {
+    if (!goal?.plan) return;
+    setIsRescheduling(true);
+    try {
+      const calendarEvents = useStore.getState().calendarEvents;
+      const updatedPlan = await reallocateGoalPlan(
+        goal.plan,
+        `User has ${overdueTasks} incomplete tasks and is falling behind schedule. Redistribute remaining tasks to realistic future dates.`,
+        calendarEvents
+      );
+      if (updatedPlan && updatedPlan.years) {
+        updateGoal(goal.id, { plan: updatedPlan });
+        addGoalPlanMessage(goal.id, {
+          id: `msg-${Date.now()}`,
+          role: "assistant",
+          content: "I've adjusted your timeline to be more realistic based on your current progress. The remaining tasks have been redistributed.",
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reschedule");
+    } finally {
+      setIsRescheduling(false);
+    }
+  }, [goal, overdueTasks, updateGoal, addGoalPlanMessage, setError]);
+
+  // Generate initial plan if none exists. If a job is already in flight (jobId
+  // persisted in localStorage from a previous mount), reattach to it instead of
+  // submitting a new one — that way the AI's progress display picks up where it
+  // left off when the user navigates away and back.
   useEffect(() => {
-    if (goal && !goal.plan && goal.planChat.length === 0 && goal.status === "pending") {
+    if (!goal) return;
+
+    const storedJobId = localStorage.getItem(`planJobId:${goal.id}`);
+    if (storedJobId && !goal.plan) {
+      // Reattach to in-flight job
+      setLoading(true);
+      setShowAgentProgress(true);
+      setPlanJobId(storedJobId);
+      (async () => {
+        try {
+          const result = await pollJobUntilDone<{ reply: string; plan: import("../types").GoalPlan }>(storedJobId);
+          const aiMsg: GoalPlanMessage = {
+            id: `msg-${Date.now()}`,
+            role: "assistant",
+            content: result.reply,
+            timestamp: new Date().toISOString(),
+          };
+          addGoalPlanMessage(goal.id, aiMsg);
+          if (result.plan) setGoalPlan(goal.id, result.plan);
+
+          // Success — clean up
+          setLoading(false);
+          setShowAgentProgress(false);
+          setPlanJobId(null);
+          localStorage.removeItem(`planJobId:${goal.id}`);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to generate plan");
+          // Keep progress + jobId so the user can still see the AI's partial
+          // thought process and retry from the empty state below.
+          setLoading(false);
+        }
+      })();
+      return;
+    }
+
+    if (!goal.plan && (goal.planChat?.length ?? 0) === 0 && goal.status === "pending") {
       handleGenerateInitialPlan();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -389,10 +402,19 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     if (!goal) return;
     setLoading(true);
     setShowAgentProgress(true);
+    setPlanJobId(null);
+    localStorage.removeItem(`planJobId:${goal.id}`);
     updateGoal(goal.id, { status: "planning" });
 
     try {
-      const result = await generateGoalPlan(goal.title, goal.targetDate, goal.importance, goal.isHabit, goal.description);
+      // Submit job and capture jobId for progress tracking
+      const jobId = await submitGoalPlanJob(goal.title, goal.targetDate, goal.importance, goal.isHabit, goal.description);
+      setPlanJobId(jobId);
+      // Persist so progress reattaches if the user navigates away and back
+      localStorage.setItem(`planJobId:${goal.id}`, jobId);
+
+      // Poll until done — AgentProgress will display live progress via jobId
+      const result = await pollJobUntilDone<{ reply: string; plan: import("../types").GoalPlan }>(jobId);
 
       const aiMsg: GoalPlanMessage = {
         id: `msg-${Date.now()}`,
@@ -406,12 +428,17 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         setGoalPlan(goal.id, result.plan);
       }
 
-      setShowChat(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate plan");
-    } finally {
+      // Success — clean up progress display and persisted job id
       setLoading(false);
       setShowAgentProgress(false);
+      setPlanJobId(null);
+      localStorage.removeItem(`planJobId:${goal.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate plan");
+      // Keep showAgentProgress + planJobId around on failure so the user can
+      // still see the AI's partial thought process, and so a re-mount can
+      // reattach if the backend job is still running.
+      setLoading(false);
     }
   }, [goal, setLoading, updateGoal, addGoalPlanMessage, setGoalPlan, setError]);
 
@@ -435,7 +462,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         goal.importance,
         goal.isHabit,
         goal.description,
-        [...goal.planChat, userMsg],
+        [...(goal.planChat ?? []), userMsg],
         userMsg.content,
         goal.plan    // pass current plan so AI can reference it
       );
@@ -484,120 +511,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     updateGoal(goal.id, { plan: updated });
   }, [goal, updateGoal]);
 
-  // ── Inline Editing Handlers ──
-
-  /** Build a compact plan summary string for the AI */
-  const buildPlanSummary = useCallback((): string => {
-    if (!goal?.plan) return "No plan yet.";
-    const lines: string[] = ["PLAN STRUCTURE:"];
-    for (const ms of goal.plan.milestones) {
-      lines.push(`  MS: [${ms.completed ? "✓" : " "}] ${ms.title} (${ms.targetDate})`);
-    }
-    for (const yr of goal.plan.years) {
-      lines.push(`  Year: ${yr.label} — ${yr.objective}`);
-      for (const mo of yr.months) {
-        lines.push(`    Month: ${mo.label} — ${mo.objective}`);
-        for (const wk of mo.weeks) {
-          const taskCount = wk.days.reduce((s, d) => s + d.tasks.length, 0);
-          lines.push(`      Week: ${wk.label} ${wk.locked ? "🔒" : "🔓"} — ${wk.objective} (${taskCount} tasks)`);
-        }
-      }
-    }
-    return lines.join("\n");
-  }, [goal?.plan]);
-
-  /** Start editing a field inline */
-  const startEdit = useCallback((
-    level: PlanEditLevel,
-    id: string,
-    field: string,
-    currentValue: string,
-    path: { yearId?: string; monthId?: string; weekId?: string; dayId?: string }
-  ) => {
-    setEditingItem({ level, id, field, path });
-    setEditValue(currentValue);
-    setEditOriginalValue(currentValue);
-    setEditSuggestion(null);
-    setTimeout(() => editInputRef.current?.focus(), 50);
-  }, []);
-
-  /** Cancel editing */
-  const cancelEdit = useCallback(() => {
-    setEditingItem(null);
-    setEditValue("");
-    setEditOriginalValue("");
-    setEditSuggestion(null);
-    setIsAnalyzingEdit(false);
-  }, []);
-
-  /** Submit edit for AI review (not yet committed) */
-  const submitEditForReview = useCallback(async () => {
-    if (!editingItem || !goal?.plan || editValue === editOriginalValue) {
-      cancelEdit();
-      return;
-    }
-
-    setIsAnalyzingEdit(true);
-
-    try {
-      const edit: PlanEdit = {
-        level: editingItem.level,
-        targetId: editingItem.id,
-        field: editingItem.field,
-        oldValue: editOriginalValue,
-        newValue: editValue,
-        path: editingItem.path,
-      };
-
-      const suggestion = await analyzeGoalPlanEdit(
-        goal.title,
-        edit,
-        buildPlanSummary()
-      );
-
-      setEditSuggestion(suggestion);
-    } catch (err) {
-      // If AI analysis fails, still let user apply the edit
-      setEditSuggestion({
-        verdict: "approve",
-        reason: "Unable to analyze — but this looks like a safe change.",
-        requiresReplan: false,
-      });
-    } finally {
-      setIsAnalyzingEdit(false);
-    }
-  }, [editingItem, goal, editValue, editOriginalValue, cancelEdit, buildPlanSummary]);
-
-  /** Apply the confirmed edit to the plan (deep update) */
-  const confirmEdit = useCallback(() => {
-    if (!editingItem || !goal?.plan) return;
-
-    let updatedPlan = applyFieldEdit(
-      goal.plan,
-      editingItem.level,
-      editingItem.id,
-      editingItem.field,
-      editValue
-    );
-
-    // Apply AI-suggested cascading changes
-    if (editSuggestion?.cascadingChanges) {
-      for (const cascade of editSuggestion.cascadingChanges) {
-        updatedPlan = applyFieldEdit(
-          updatedPlan,
-          cascade.level,
-          cascade.targetId,
-          cascade.field,
-          cascade.suggestedValue
-        );
-      }
-    }
-
-    const synced = syncMilestoneCompletion(updatedPlan);
-    updateGoal(goal.id, { plan: synced });
-    cancelEdit();
-  }, [editingItem, goal, editValue, editSuggestion, updateGoal, cancelEdit]);
-
   const toggleSet = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     setter((prev) => {
       const next = new Set(prev);
@@ -622,6 +535,10 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       </div>
     );
   }
+
+  // Defensive default — old goals saved before the planChat field existed
+  // can have it as undefined, which would crash the chat render below.
+  const planChat = goal.planChat ?? [];
 
   const importanceColors: Record<string, string> = {
     low: "badge-blue",
@@ -710,6 +627,22 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           </div>
         </header>
 
+        {/* AI thought process — rendered right after the header while the
+            plan is being generated so the user actually sees the agents
+            working (previously it was at the bottom of the page, below the
+            fold on small windows). The spinner + heading always show so
+            there's something visible before the first progress event arrives. */}
+        {(showAgentProgress || isLoading) && !goal.plan && (
+          <div className="gp-generating animate-fade-in">
+            <Loader2 size={32} className="spin" />
+            <h3>{t.goalPlan.creatingPlan}</h3>
+            <p>{t.goalPlan.creatingPlanDesc}</p>
+            {showAgentProgress && (
+              <AgentProgress visible={true} title={t.goalPlan.creatingPlan} jobId={planJobId} />
+            )}
+          </div>
+        )}
+
         {/* ── Milestone Timeline ── */}
         {goal.plan && goal.plan.milestones.length > 0 && (() => {
           const milestoneProgress = computeMilestoneProgress(goal.plan!);
@@ -779,28 +712,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
                       <Calendar size={16} className="gp-level-icon year-icon" />
                       <span className="gp-level-label">{year.label}</span>
                     </div>
-                    {editingItem?.id !== year.id && (
-                      <span className="gp-level-objective">{year.objective}</span>
-                    )}
+                    <span className="gp-level-objective">{year.objective}</span>
                   </button>
-                  {editingItem?.id === year.id ? (
-                    <InlineEditInput
-                      value={editValue}
-                      onChange={setEditValue}
-                      onSubmit={submitEditForReview}
-                      onCancel={cancelEdit}
-                      isLoading={isAnalyzingEdit}
-                      inputRef={editInputRef}
-                    />
-                  ) : (
-                    <button
-                      className="gp-edit-btn"
-                      onClick={(e) => { e.stopPropagation(); startEdit("year", year.id, "objective", year.objective, { yearId: year.id }); }}
-                      title={t.goalPlan.editObjective}
-                    >
-                      <Pencil size={12} />
-                    </button>
-                  )}
                 </div>
 
                 {expandedYears.has(year.id) && (
@@ -816,28 +729,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
                               {expandedMonths.has(month.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                               <span className="gp-level-label">{month.label}</span>
                             </div>
-                            {editingItem?.id !== month.id && (
-                              <span className="gp-level-objective">{month.objective}</span>
-                            )}
+                            <span className="gp-level-objective">{month.objective}</span>
                           </button>
-                          {editingItem?.id === month.id ? (
-                            <InlineEditInput
-                              value={editValue}
-                              onChange={setEditValue}
-                              onSubmit={submitEditForReview}
-                              onCancel={cancelEdit}
-                              isLoading={isAnalyzingEdit}
-                              inputRef={editInputRef}
-                            />
-                          ) : (
-                            <button
-                              className="gp-edit-btn"
-                              onClick={(e) => { e.stopPropagation(); startEdit("month", month.id, "objective", month.objective, { yearId: year.id, monthId: month.id }); }}
-                              title={t.goalPlan.editObjective}
-                            >
-                              <Pencil size={12} />
-                            </button>
-                          )}
                         </div>
 
                         {expandedMonths.has(month.id) && (
@@ -849,15 +742,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
                                 isExpanded={expandedWeeks.has(week.id)}
                                 onToggle={() => toggleSet(expandedWeeks, week.id, setExpandedWeeks)}
                                 onToggleTask={handleToggleTask}
-                                onStartEdit={startEdit}
-                                editingItem={editingItem}
-                                editValue={editValue}
-                                setEditValue={setEditValue}
-                                submitEditForReview={submitEditForReview}
-                                cancelEdit={cancelEdit}
-                                isAnalyzingEdit={isAnalyzingEdit}
-                                editInputRef={editInputRef}
-                                parentPath={{ yearId: year.id, monthId: month.id }}
                                 lang={lang}
                                 t={t}
                               />
@@ -881,70 +765,117 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           </section>
         )}
 
-        {/* ── Edit suggestion overlay ── */}
-        {editSuggestion && editingItem && (
-          <div className="gp-edit-overlay animate-fade-in">
-            <div className="gp-edit-overlay-card">
-              <div className={`gp-edit-verdict gp-edit-verdict-${editSuggestion.verdict}`}>
-                {editSuggestion.verdict === "approve" && <ShieldCheck size={18} />}
-                {editSuggestion.verdict === "caution" && <Info size={18} />}
-                {editSuggestion.verdict === "warn" && <AlertTriangle size={18} />}
-                <span className="gp-edit-verdict-label">
-                  {editSuggestion.verdict === "approve" && t.goalPlan.editApproved}
-                  {editSuggestion.verdict === "caution" && t.goalPlan.editCaution}
-                  {editSuggestion.verdict === "warn" && t.goalPlan.editWarning}
-                </span>
-              </div>
+        {/* Chat — always visible, primary way to discuss/modify the plan.
+            Positioned after the generated tasks and before the confirm bar. */}
+        <div className="gp-chat gp-chat-prominent animate-slide-up">
+          <div className="gp-chat-header-static">
+            <MessageSquare size={16} />
+            <h3>{t.goalPlan.planningChat}</h3>
+            {planChat.length > 0 && (
+              <span className="gp-chat-count">{planChat.length}</span>
+            )}
+          </div>
 
-              <p className="gp-edit-reason">{editSuggestion.reason}</p>
-
-              {editSuggestion.cascadingChanges && editSuggestion.cascadingChanges.length > 0 && (
-                <div className="gp-edit-cascading">
-                  <h4>{t.goalPlan.suggestedChanges}</h4>
-                  {editSuggestion.cascadingChanges.map((c, i) => (
-                    <div key={i} className="gp-edit-cascade-item">
-                      <span className="gp-cascade-badge">{c.level}</span>
-                      <span className="gp-cascade-field">{c.field}:</span>
-                      <span className="gp-cascade-value">"{c.suggestedValue}"</span>
-                      <span className="gp-cascade-reason">— {c.reason}</span>
-                    </div>
-                  ))}
+          {planChat.length > 0 && (
+            <div className="gp-chat-messages">
+              {planChat.map((msg) => (
+                <div key={msg.id} className={`gp-chat-msg ${msg.role}`}>
+                  <div className="gp-chat-msg-avatar">
+                    {msg.role === "assistant" ? (
+                      <Sparkles size={14} />
+                    ) : (
+                      <Edit3 size={14} />
+                    )}
+                  </div>
+                  <div className="gp-chat-msg-content">
+                    <p>{msg.content}</p>
+                    <span className="gp-chat-msg-time">
+                      {new Date(msg.timestamp).toLocaleTimeString(getDateLocale(lang), {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="gp-chat-msg assistant">
+                  <div className="gp-chat-msg-avatar">
+                    <Loader2 size={14} className="spin" />
+                  </div>
+                  <div className="gp-chat-msg-content">
+                    <p className="gp-typing">{t.goalPlan.thinking}</p>
+                  </div>
                 </div>
               )}
+              <div ref={chatEndRef} />
+            </div>
+          )}
 
-              {editSuggestion.requiresReplan && (
-                <p className="gp-edit-replan-warning">
-                  <AlertTriangle size={14} />
-                  {t.goalPlan.requiresReplan}
-                </p>
-              )}
+          {planChat.length === 0 && (
+            <div className="gp-chat-empty">
+              <p>Ask the AI to adjust your plan, change timelines, add tasks, or discuss strategy.</p>
+            </div>
+          )}
 
-              <div className="gp-edit-overlay-actions">
-                <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>
-                  {t.common.cancel}
-                </button>
-                {!editSuggestion.requiresReplan && (
-                  <button className="btn btn-primary btn-sm" onClick={confirmEdit}>
-                    <Check size={14} />
-                    {t.goalPlan.applyEdit}
-                  </button>
-                )}
-                {editSuggestion.requiresReplan && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      // Open chat with the edit as a message so AI can replan
-                      setShowChat(true);
-                      setChatInput(`I want to change the ${editingItem.level} "${editOriginalValue}" to "${editValue}". Can you adjust the plan?`);
-                      cancelEdit();
-                    }}
-                  >
-                    <MessageSquare size={14} />
-                    {t.goalPlan.discussInChat}
-                  </button>
-                )}
+          <div className="gp-chat-input-area">
+            <RichTextToolbar
+              onInsertText={handleInsertTextToGpChat}
+              compact
+            />
+            <div className="gp-chat-input-row">
+              <input
+                ref={gpChatInputRef}
+                className="input gp-chat-input"
+                placeholder={t.goalPlan.chatPlaceholder}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                disabled={isLoading}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleSendMessage}
+                disabled={isLoading || !chatInput.trim()}
+              >
+                {isLoading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Reschedule banner — too many incomplete tasks */}
+        {showRescheduleBanner && (
+          <div className="gp-reschedule-banner animate-slide-up">
+            <div className="gp-reschedule-content">
+              <AlertTriangle size={16} />
+              <div>
+                <strong>You have {overdueTasks} incomplete tasks.</strong>
+                <p>Want me to adjust the timeline to be more realistic?</p>
               </div>
             </div>
+            <div className="gp-reschedule-actions">
+              <button className="btn btn-primary btn-sm" onClick={handleReschedule}>
+                <RefreshCw size={13} />
+                Adjust Timeline
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setRescheduleDismissed(true)}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isRescheduling && (
+          <div className="gp-generating animate-fade-in">
+            <Loader2 size={32} className="spin" />
+            <h3>Adjusting your timeline...</h3>
+            <p>Redistributing tasks based on your progress and schedule.</p>
           </div>
         )}
 
@@ -953,13 +884,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           <div className="gp-confirm-bar animate-slide-up">
             <p>{t.goalPlan.reviewPlan}</p>
             <div className="gp-confirm-actions">
-              <button
-                className="btn btn-ghost"
-                onClick={() => setShowChat(true)}
-              >
-                <MessageSquare size={16} />
-                {t.goalPlan.discussChanges}
-              </button>
               <button
                 className="btn btn-primary"
                 onClick={handleConfirmPlan}
@@ -1002,146 +926,25 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           )}
         </div>
 
-        {/* Chat section */}
-        {(showChat || goal.planChat.length > 0) && (
-          <div className="gp-chat animate-slide-up">
-            <div className="gp-chat-header" onClick={() => setShowChat(!showChat)}>
-              <MessageSquare size={16} />
-              <h3>{t.goalPlan.planningChat}</h3>
-              {showChat ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </div>
 
-            {showChat && (
-              <>
-                <div className="gp-chat-messages">
-                  {goal.planChat.map((msg) => (
-                    <div key={msg.id} className={`gp-chat-msg ${msg.role}`}>
-                      <div className="gp-chat-msg-avatar">
-                        {msg.role === "assistant" ? (
-                          <Sparkles size={14} />
-                        ) : (
-                          <Edit3 size={14} />
-                        )}
-                      </div>
-                      <div className="gp-chat-msg-content">
-                        <p>{msg.content}</p>
-                        <span className="gp-chat-msg-time">
-                          {new Date(msg.timestamp).toLocaleTimeString(getDateLocale(lang), {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  {isLoading && (
-                    <div className="gp-chat-msg assistant">
-                      <div className="gp-chat-msg-avatar">
-                        <Loader2 size={14} className="spin" />
-                      </div>
-                      <div className="gp-chat-msg-content">
-                        <p className="gp-typing">{t.goalPlan.thinking}</p>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-
-                <div className="gp-chat-input-area">
-                  <RichTextToolbar
-                    onInsertText={handleInsertTextToGpChat}
-                    compact
-                  />
-                  <div className="gp-chat-input-row">
-                    <input
-                      ref={gpChatInputRef}
-                      className="input gp-chat-input"
-                      placeholder={t.goalPlan.chatPlaceholder}
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                      }}
-                      disabled={isLoading}
-                    />
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={handleSendMessage}
-                      disabled={isLoading || !chatInput.trim()}
-                    >
-                      {isLoading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Loading state for initial plan generation — now shows agent progress */}
-        {isLoading && !goal.plan && (
-          <div className="gp-generating animate-fade-in">
-            {showAgentProgress ? (
-              <AgentProgress visible={true} title={t.goalPlan.creatingPlan} />
-            ) : (
-              <>
-                <Loader2 size={32} className="spin" />
-                <h3>{t.goalPlan.creatingPlan}</h3>
-                <p>{t.goalPlan.creatingPlanDesc}</p>
-              </>
-            )}
+        {/* Empty / retry state — plan failed, timed out, or was interrupted.
+            Shows below the AgentProgress so the user can both see the partial
+            thought process and retry. */}
+        {!isLoading && !goal.plan && (
+          <div className="gp-empty-state animate-fade-in">
+            <RefreshCw size={32} />
+            <h3>No plan yet</h3>
+            <p>The plan may not have finished generating. Hit the button below to try again.</p>
+            <button
+              className="btn btn-primary"
+              onClick={handleGenerateInitialPlan}
+            >
+              <RefreshCw size={14} />
+              Generate Plan
+            </button>
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ── Inline Edit Input ──
-
-function InlineEditInput({
-  value,
-  onChange,
-  onSubmit,
-  onCancel,
-  isLoading,
-  inputRef,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-  isLoading: boolean;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-}) {
-  return (
-    <div className="gp-inline-edit" onClick={(e) => e.stopPropagation()}>
-      <input
-        ref={inputRef as React.RefObject<HTMLInputElement>}
-        className="input gp-inline-edit-input"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); onSubmit(); }
-          if (e.key === "Escape") onCancel();
-        }}
-        disabled={isLoading}
-      />
-      {isLoading ? (
-        <Loader2 size={14} className="spin gp-inline-edit-spinner" />
-      ) : (
-        <>
-          <button className="gp-inline-edit-btn confirm" onClick={onSubmit} title="Submit for review">
-            <Check size={13} />
-          </button>
-          <button className="gp-inline-edit-btn cancel" onClick={onCancel} title="Cancel">
-            <X size={13} />
-          </button>
-        </>
-      )}
     </div>
   );
 }
@@ -1153,15 +956,6 @@ function WeekCard({
   isExpanded,
   onToggle,
   onToggleTask,
-  onStartEdit,
-  editingItem,
-  editValue,
-  setEditValue,
-  submitEditForReview,
-  cancelEdit,
-  isAnalyzingEdit,
-  editInputRef,
-  parentPath,
   lang,
   t,
 }: {
@@ -1169,15 +963,6 @@ function WeekCard({
   isExpanded: boolean;
   onToggle: () => void;
   onToggleTask: (weekId: string, dayId: string, taskId: string) => void;
-  onStartEdit: (level: PlanEditLevel, id: string, field: string, currentValue: string, path: { yearId?: string; monthId?: string; weekId?: string; dayId?: string }) => void;
-  editingItem: { level: PlanEditLevel; id: string; field: string; path: Record<string, string | undefined> } | null;
-  editValue: string;
-  setEditValue: (v: string) => void;
-  submitEditForReview: () => void;
-  cancelEdit: () => void;
-  isAnalyzingEdit: boolean;
-  editInputRef: React.RefObject<HTMLInputElement | null>;
-  parentPath: { yearId: string; monthId: string };
   lang: string;
   t: any;
 }) {
@@ -1201,7 +986,6 @@ function WeekCard({
     0
   );
   const allDone = totalTasks > 0 && completedTasks === totalTasks;
-  const weekPath = { ...parentPath, weekId: week.id };
 
   return (
     <div className={`gp-week ${isExpanded ? "expanded" : ""} ${allDone ? "all-done" : ""}`}>
@@ -1212,32 +996,12 @@ function WeekCard({
             <span className="gp-level-label">{week.label}</span>
           </div>
           <div className="gp-week-right">
-            {editingItem?.id !== week.id && (
-              <span className="gp-level-objective">{week.objective}</span>
-            )}
+            <span className="gp-level-objective">{week.objective}</span>
             <span className="gp-section-count">
               {completedTasks}/{totalTasks}
             </span>
           </div>
         </button>
-        {editingItem?.id === week.id ? (
-          <InlineEditInput
-            value={editValue}
-            onChange={setEditValue}
-            onSubmit={submitEditForReview}
-            onCancel={cancelEdit}
-            isLoading={isAnalyzingEdit}
-            inputRef={editInputRef}
-          />
-        ) : (
-          <button
-            className="gp-edit-btn"
-            onClick={(e) => { e.stopPropagation(); onStartEdit("week", week.id, "objective", week.objective, weekPath); }}
-            title={t.goalPlan.editObjective}
-          >
-            <Pencil size={12} />
-          </button>
-        )}
       </div>
 
       {isExpanded && (
@@ -1246,10 +1010,7 @@ function WeekCard({
             <div key={day.id} className="gp-day">
               <div className="gp-day-label">{day.label}</div>
               <div className="gp-day-tasks">
-                {day.tasks.map((task) => {
-                  const isEditingThisTask = editingItem?.id === task.id;
-                  const taskPath = { ...weekPath, dayId: day.id };
-                  return (
+                {day.tasks.map((task) => (
                     <div
                       key={task.id}
                       className={`gp-task ${task.completed ? "completed" : ""}`}
@@ -1261,45 +1022,22 @@ function WeekCard({
                         {task.completed && <CheckCircle2 size={14} />}
                       </div>
                       <div className="gp-task-info">
-                        {isEditingThisTask ? (
-                          <InlineEditInput
-                            value={editValue}
-                            onChange={setEditValue}
-                            onSubmit={submitEditForReview}
-                            onCancel={cancelEdit}
-                            isLoading={isAnalyzingEdit}
-                            inputRef={editInputRef}
-                          />
-                        ) : (
-                          <>
-                            <div className="gp-task-title-row">
-                              <span className="gp-task-title">{task.title}</span>
-                              <button
-                                className="gp-edit-btn gp-edit-btn-task"
-                                onClick={(e) => { e.stopPropagation(); onStartEdit("task", task.id, "title", task.title, taskPath); }}
-                                title={t.goalPlan.editTask}
-                              >
-                                <Pencil size={10} />
-                              </button>
-                            </div>
-                            {task.description && (
-                              <p className="gp-task-desc">{task.description}</p>
-                            )}
-                            <div className="gp-task-meta">
-                              <span className="gp-task-duration">
-                                <Clock size={11} />
-                                {task.durationMinutes}m
-                              </span>
-                              <span className={`gp-task-priority priority-${task.priority}`}>
-                                {task.priority}
-                              </span>
-                            </div>
-                          </>
+                        <span className="gp-task-title">{task.title}</span>
+                        {task.description && (
+                          <p className="gp-task-desc">{task.description}</p>
                         )}
+                        <div className="gp-task-meta">
+                          <span className="gp-task-duration">
+                            <Clock size={11} />
+                            {task.durationMinutes}m
+                          </span>
+                          <span className={`gp-task-priority priority-${task.priority}`}>
+                            {task.priority}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
+                ))}
               </div>
             </div>
           ))}

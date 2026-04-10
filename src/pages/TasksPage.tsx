@@ -20,16 +20,18 @@ import {
   X,
   Palmtree,
   TrendingUp,
+  Bell,
+  AlertTriangle,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
-import { generateDailyTasks } from "../services/ai";
+import { generateDailyTasks, getActiveJobId } from "../services/ai";
 import { shouldAutoReflect, triggerReflection, recordSignal } from "../services/memory";
 import Heatmap from "../components/Heatmap";
 import RecoveryModal from "../components/RecoveryModal";
 import MilestoneCelebration from "../components/MilestoneCelebration";
 import AgentProgress from "../components/AgentProgress";
-import type { DailyTask, ContextualNudge } from "../types";
+import type { DailyTask, ContextualNudge, Reminder } from "../types";
 import "./TasksPage.css";
 
 function formatDate(): string {
@@ -65,6 +67,8 @@ export default function TasksPage() {
     respondToNudge,
     vacationMode,
     setVacationMode,
+    reminders,
+    acknowledgeReminder,
   } = useStore();
 
   const [showRecovery, setShowRecovery] = useState(false);
@@ -72,6 +76,7 @@ export default function TasksPage() {
   const [showAgentProgress, setShowAgentProgress] = useState(false);
   const [showVacationInput, setShowVacationInput] = useState(false);
   const [showAllTasks, setShowAllTasks] = useState(false);
+  const [taskJobId, setTaskJobId] = useState<string | null>(null);
   const [vacStartDate, setVacStartDate] = useState("");
   const [vacEndDate, setVacEndDate] = useState("");
   const t = useT();
@@ -108,6 +113,12 @@ export default function TasksPage() {
       tasks: log.tasks,
     }));
 
+  // Today's active reminders
+  const todayDate = formatDate();
+  const todayReminders = reminders.filter(
+    (r) => r.date === todayDate && !r.acknowledged
+  ).sort((a, b) => a.reminderTime.localeCompare(b.reminderTime));
+
   // Count incomplete tasks across all logs
   const totalIncompleteTasks = dailyLogs.reduce(
     (sum, log) => sum + log.tasks.filter((t) => !t.completed && !t.skipped).length,
@@ -120,6 +131,7 @@ export default function TasksPage() {
     if (!goalBreakdown && !roadmap && goals.length === 0) return;
     setLoading(true);
     setShowAgentProgress(true);
+    setTaskJobId(null);
     setError(null);
     try {
       const today = formatDate();
@@ -128,6 +140,11 @@ export default function TasksPage() {
       const confirmedToday = todayLog?.tasks.filter((t) =>
         t.progressContribution === "Quick task added via chat"
       ) || [];
+      // Capture jobId for progress display after a short delay
+      setTimeout(async () => {
+        const jid = await getActiveJobId("daily-tasks");
+        if (jid) setTaskJobId(jid);
+      }, 500);
       const log = await generateDailyTasks(
         plan as any,
         dailyLogs,
@@ -151,6 +168,7 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
       setShowAgentProgress(false);
+      setTaskJobId(null);
     }
   }, [goalBreakdown, roadmap, goals, calendarEvents, deviceIntegrations, dailyLogs, heatmapData, todayLog, setLoading, setError, setTodayLog, addDailyLog, setHeatmapData]);
 
@@ -289,12 +307,26 @@ export default function TasksPage() {
         </header>
 
         {error && (
-          <div className="dashboard-error animate-fade-in">
-            <p>{error}</p>
+          <div className="error-card animate-fade-in">
+            <div className="error-card-content">
+              <AlertTriangle size={16} />
+              <p>{error}</p>
+            </div>
+            <div className="error-card-actions">
+              {hasActivePlan && (
+                <button className="btn btn-primary btn-sm" onClick={() => { setError(null); loadTodayTasks(); }}>
+                  <RefreshCw size={13} />
+                  Retry
+                </button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}>
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
 
-        <AgentProgress visible={showAgentProgress} />
+        <AgentProgress visible={showAgentProgress} jobId={taskJobId} />
 
         {/* ── Vacation Mode ── */}
         {vacationMode?.active ? (
@@ -491,6 +523,50 @@ export default function TasksPage() {
             </div>
           )}
         </section>
+
+        {/* ── Reminders ── */}
+        {todayReminders.length > 0 && (
+          <section className="reminders-section animate-slide-up">
+            <div className="reminders-header">
+              <Bell size={14} />
+              <span>Reminders</span>
+            </div>
+            {todayReminders.map((reminder) => {
+              const isPast = new Date(reminder.reminderTime) <= new Date();
+              const timeStr = new Date(reminder.reminderTime).toLocaleTimeString(undefined, {
+                hour: "numeric", minute: "2-digit",
+              });
+              return (
+                <div
+                  key={reminder.id}
+                  className={`reminder-card ${isPast ? "reminder-card-active" : ""}`}
+                >
+                  <div className="reminder-card-glow" />
+                  <div className="reminder-card-content">
+                    <div className="reminder-card-time">
+                      <Bell size={12} />
+                      <span>{timeStr}</span>
+                      {reminder.repeat && (
+                        <span className="reminder-repeat">{reminder.repeat}</span>
+                      )}
+                    </div>
+                    <div className="reminder-card-title">{reminder.title}</div>
+                    {reminder.description && (
+                      <div className="reminder-card-desc">{reminder.description}</div>
+                    )}
+                  </div>
+                  <button
+                    className="reminder-acknowledge-btn"
+                    onClick={() => acknowledgeReminder(reminder.id)}
+                    title="Dismiss"
+                  >
+                    <Check size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </section>
+        )}
 
         {/* ── All Tasks (collapsible) ── */}
         {allTasksByDate.length > 0 && (

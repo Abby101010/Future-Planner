@@ -43,6 +43,11 @@ import {
   insertChatAttachment,
   getAttachmentsForSession,
   getAttachmentsDir,
+  getAllReminders,
+  getRemindersByDate,
+  upsertReminder,
+  acknowledgeReminder,
+  deleteReminder,
 } from "./database";
 import { startAPIServer, stopAPIServer, setAPIDBAvailable } from "./api-server";
 import { coordinateNewsBriefing } from "./agents/coordinator";
@@ -595,6 +600,46 @@ function setupIPC() {
     try {
       const attachments = getAttachmentsForSession(payload.sessionId);
       return { ok: true, data: attachments };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // ── Reminders IPC ──────────────────────────────────────
+
+  ipcMain.handle("reminder:list", async (_event, payload) => {
+    try {
+      const data = payload?.date
+        ? await getRemindersByDate(payload.date)
+        : await getAllReminders();
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("reminder:upsert", async (_event, payload) => {
+    try {
+      await upsertReminder(payload);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("reminder:acknowledge", async (_event, payload) => {
+    try {
+      await acknowledgeReminder(payload.id);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("reminder:delete", async (_event, payload) => {
+    try {
+      await deleteReminder(payload.id);
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
     }

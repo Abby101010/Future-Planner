@@ -260,6 +260,21 @@ export async function runMigrations(): Promise<void> {
       ON chat_attachments (session_id);
     CREATE INDEX IF NOT EXISTS idx_chat_attachments_message
       ON chat_attachments (message_id);
+
+    CREATE TABLE IF NOT EXISTS reminders (
+      id              TEXT PRIMARY KEY,
+      title           TEXT NOT NULL,
+      description     TEXT NOT NULL DEFAULT '',
+      reminder_time   TEXT NOT NULL,
+      date            TEXT NOT NULL,
+      acknowledged    INTEGER NOT NULL DEFAULT 0,
+      acknowledged_at TEXT,
+      repeat          TEXT,
+      source          TEXT NOT NULL DEFAULT 'chat',
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reminders_date
+      ON reminders(date);
   `);
 
   console.log("[DB] Migrations complete");
@@ -377,6 +392,65 @@ export async function upsertCalendarEvent(event: {
 export async function deleteCalendarEvent(id: string): Promise<void> {
   const d = getDB();
   d.prepare("DELETE FROM calendar_events WHERE id = ?").run(id);
+}
+
+// ── Reminders ───────────────────────────────────────────
+
+export interface DBReminder {
+  id: string;
+  title: string;
+  description: string;
+  reminder_time: string;
+  date: string;
+  acknowledged: number;
+  acknowledged_at: string | null;
+  repeat: string | null;
+  source: string;
+  created_at: string;
+}
+
+export async function getAllReminders(): Promise<DBReminder[]> {
+  const d = getDB();
+  return d.prepare("SELECT * FROM reminders ORDER BY reminder_time").all() as DBReminder[];
+}
+
+export async function getRemindersByDate(date: string): Promise<DBReminder[]> {
+  const d = getDB();
+  return d.prepare("SELECT * FROM reminders WHERE date = ? ORDER BY reminder_time").all(date) as DBReminder[];
+}
+
+export async function upsertReminder(r: {
+  id: string;
+  title: string;
+  description: string;
+  reminderTime: string;
+  date: string;
+  acknowledged: boolean;
+  repeat: string | null;
+  source: string;
+}): Promise<void> {
+  const d = getDB();
+  d.prepare(
+    `INSERT INTO reminders (id, title, description, reminder_time, date, acknowledged, repeat, source)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT (id) DO UPDATE SET
+       title=excluded.title, description=excluded.description,
+       reminder_time=excluded.reminder_time, date=excluded.date,
+       acknowledged=excluded.acknowledged, repeat=excluded.repeat,
+       source=excluded.source`
+  ).run(r.id, r.title, r.description, r.reminderTime, r.date, r.acknowledged ? 1 : 0, r.repeat, r.source);
+}
+
+export async function acknowledgeReminder(id: string): Promise<void> {
+  const d = getDB();
+  d.prepare(
+    "UPDATE reminders SET acknowledged = 1, acknowledged_at = datetime('now') WHERE id = ?"
+  ).run(id);
+}
+
+export async function deleteReminder(id: string): Promise<void> {
+  const d = getDB();
+  d.prepare("DELETE FROM reminders WHERE id = ?").run(id);
 }
 
 // ── Memory DB Operations ────────────────────────────────

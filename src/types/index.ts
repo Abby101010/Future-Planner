@@ -673,6 +673,24 @@ export interface PendingTask {
   createdAt: string;
 }
 
+/** A daily reminder (created via chat, displayed on Tasks page) */
+export interface Reminder {
+  id: string;
+  title: string;
+  description: string;
+  /** When to remind the user (ISO string) */
+  reminderTime: string;
+  /** Date this reminder is for (YYYY-MM-DD) */
+  date: string;
+  /** Whether the reminder has been acknowledged/dismissed */
+  acknowledged: boolean;
+  acknowledgedAt?: string;
+  /** Repeat schedule: null = one-time */
+  repeat: "daily" | "weekly" | "monthly" | null;
+  source: "chat" | "manual";
+  createdAt: string;
+}
+
 /** Chat message on the home page */
 export interface HomeChatMessage {
   id: string;

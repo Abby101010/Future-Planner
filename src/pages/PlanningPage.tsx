@@ -14,6 +14,7 @@ import {
   X,
   Calendar,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
@@ -188,8 +189,16 @@ export default function PlanningPage() {
         </header>
 
         {error && (
-          <div className="dashboard-error animate-fade-in">
-            <p>{error}</p>
+          <div className="error-card animate-fade-in">
+            <div className="error-card-content">
+              <AlertTriangle size={16} />
+              <p>{error}</p>
+            </div>
+            <div className="error-card-actions">
+              <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}>
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
 

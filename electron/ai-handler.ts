@@ -551,6 +551,25 @@ DETECTION RULES:
   - If the user says "plan X for me" or "help me with X" where X is a multi-step endeavor, that's a BIG goal.
   - Set targetDate based on context. If none given, leave empty for habits or set a reasonable default (e.g. 3 months out for fitness).
   - Importance: default to "high" if they seem motivated, "medium" otherwise.
+- If the user wants to be REMINDED about something at a specific time or date
+  (e.g., "remind me to take medicine at 5pm", "don't forget to submit the report by Friday",
+  "remind me to call mom tomorrow morning"), respond with ONLY this JSON:
+  {"is_reminder": true, "title": "short reminder title", "description": "optional context", "reminderTime": "YYYY-MM-DDTHH:MM:SS", "date": "YYYY-MM-DD", "repeat": null}
+  RULES for reminders:
+  - Use today's date context to resolve relative dates ("tomorrow", "Thursday")
+  - If no specific time given, default to 9:00 AM on the specified date
+  - If "every day" or "daily" -> repeat: "daily". "every week" -> "weekly". "every month" -> "monthly"
+  - Reminders are NOT tasks — they are simple time-based notifications, not work items
+  - If the user says "remind me" -> always REMINDER, never TASK
+- If the user wants to MANAGE an existing goal (refresh plan, delete, archive, update), respond with:
+  {"manage_goal": true, "action": "refresh_plan|delete|archive", "goalId": "the goal's ID from context", "goalTitle": "goal title for confirmation"}
+  RULES for goal management:
+  - You can see the user's existing goals with their IDs, plan status, and confirmation state in the context
+  - "refresh_plan" = regenerate the plan from scratch (use when user says "refresh", "redo the plan", "regenerate", "try again")
+  - "delete" = remove the goal entirely
+  - "archive" = mark as archived
+  - Match the user's request to the closest goal by title. If ambiguous, ask which goal they mean.
+  - If a goal has no plan (hasPlan: false), suggest refreshing it.
 - If the user mentions a significant context change (schedule shift, new deadline, cancelled plans,
   energy change, illness, unexpected free time, etc.), respond with:
   {"context_change": true, "summary": "brief description of what changed", "suggestion": "what you recommend"}
@@ -589,15 +608,18 @@ ENVIRONMENT AWARENESS:
   that require being at home if they're clearly elsewhere.
 - Never creepily reference their exact coordinates. Use city/region naturally if relevant.
 
-DISTINGUISHING TASKS vs EVENTS vs GOALS:
+DISTINGUISHING TASKS vs EVENTS vs GOALS vs REMINDERS:
 - GOAL: something the user wants to achieve over time, a plan, a project, a habit, a learning objective.
   Examples: "I want to get fit", "plan a study schedule for finals", "help me learn guitar", "start a fitness plan"
 - EVENT: has a specific date+time slot, involves other people or appointments, is a fixed commitment.
   Examples: "meeting at 3pm", "dentist Friday 10am", "dinner with Sarah 7pm"
 - TASK: is flexible, can be done anytime, is a single action the user controls.
   Examples: "buy groceries", "call the dentist", "review notes"
+- REMINDER: user wants to be notified about something at a specific time. They say "remind me", "don't forget", "don't let me forget".
+  Examples: "remind me to take medicine at 5pm", "remind me about the meeting tomorrow", "don't forget to water the plants"
+- If the user says "remind me" → always REMINDER, never TASK.
 - If the user says "plan X for me", "I want to start X", "help me with X" → GOAL (not task).
-- When ambiguous, prefer GOAL if it's multi-step or ongoing, EVENT if it has a specific time, TASK otherwise.
+- When ambiguous, prefer GOAL if it's multi-step or ongoing, EVENT if it has a specific time, REMINDER if they say "remind", TASK otherwise.
 
 When responding conversationally (not a task/event/goal), just reply naturally.
 When it's a task, event, or goal, respond ONLY with the raw JSON object — no markdown fences, no \`\`\`json blocks, no extra text. Just the { } object.
@@ -676,6 +698,36 @@ export async function handleAIRequest(
 }
 
 /**
+ * Replace any lone UTF-16 surrogate with U+FFFD. The Anthropic API rejects
+ * request bodies containing unpaired surrogates with:
+ *   400 invalid_request_error: "no low surrogate in string ..."
+ * Lone surrogates can sneak in via corrupted input, emoji fragments, or
+ * database strings that were truncated mid-codepoint. Sanitize everything
+ * that crosses the network boundary so the user never sees that failure mode.
+ */
+function stripLoneSurrogates(s: string): string {
+  // High surrogate not followed by low surrogate, OR low surrogate not preceded
+  // by high surrogate → replace with U+FFFD.
+  return s.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g,
+    (_m, pre = "", low = "") => (low ? `${pre}\uFFFD` : "\uFFFD"),
+  );
+}
+
+function sanitizeForJSON<T>(value: T): T {
+  if (typeof value === "string") return stripLoneSurrogates(value) as unknown as T;
+  if (Array.isArray(value)) return value.map(sanitizeForJSON) as unknown as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeForJSON(v);
+    }
+    return out as unknown as T;
+  }
+  return value;
+}
+
+/**
  * Direct handler — executes a specific AI request without coordinator overhead.
  * Called by the coordinator after it has done research/preprocessing.
  * Also used as fallback for non-coordinator-routed requests.
@@ -686,6 +738,10 @@ export async function handleAIRequestDirect(
   memoryContext: string,
   client: Anthropic
 ): Promise<unknown> {
+  // Strip lone surrogates from everything crossing the Anthropic API boundary.
+  payload = sanitizeForJSON(payload);
+  memoryContext = stripLoneSurrogates(memoryContext);
+
   switch (type) {
     case "onboarding":
       return handleOnboarding(client, payload, memoryContext);
@@ -1426,6 +1482,16 @@ YOUR ROLE:
 - If the goal is a habit (no due date), focus on building sustainable routines, progressive
   difficulty, and tracking milestones rather than deadline-based phases.
 
+IMPORTANT — CHAT IS THE ONLY WAY TO MODIFY THE PLAN:
+- The user cannot edit tasks or objectives directly in the UI. This chat is their only way to request changes.
+- The current plan structure (with IDs and task details) is provided below. When the user refers to
+  specific days ("Monday"), weeks ("week 2"), tasks ("the reading task"), or time periods, match them
+  against the plan data to understand what they mean.
+- Examples: "change Monday's task to something easier" → find the Monday task in the current week,
+  "move week 2 tasks to week 3" → swap those weeks' contents, "make the first week lighter" → reduce
+  task count or duration for week 1.
+- Always produce a planPatch when making targeted changes rather than regenerating the full plan.
+
 PLAN MODIFICATION RULES (when a plan already exists):
 - When the user asks to change something specific (e.g. "make week 2 easier", "swap month 3 and 4"),
   produce a PATCH — only the changed portions — rather than regenerating the whole plan.
@@ -1547,9 +1613,10 @@ function summarizePlanForChat(plan: Record<string, unknown>): string {
     lines.push(`Year: ${yr.label} — ${yr.objective}`);
     const months = (yr.months || []) as Array<Record<string, unknown>>;
     for (const mo of months) {
+      lines.push(`  ${mo.label}: ${mo.objective}`);
       const weeks = (mo.weeks || []) as Array<Record<string, unknown>>;
-      const weekSummary = weeks.map((w) => {
-        const locked = w.locked ? "🔒" : "🔓";
+      for (const w of weeks) {
+        const locked = w.locked as boolean;
         const days = (w.days || []) as Array<Record<string, unknown>>;
         const taskCount = days.reduce((sum: number, d) => {
           const tasks = (d.tasks || []) as Array<Record<string, unknown>>;
@@ -1559,9 +1626,24 @@ function summarizePlanForChat(plan: Record<string, unknown>): string {
           const tasks = (d.tasks || []) as Array<Record<string, unknown>>;
           return sum + tasks.filter((t) => t.completed).length;
         }, 0);
-        return `${locked}${w.label}(${completedCount}/${taskCount})`;
-      }).join(", ");
-      lines.push(`  ${mo.label}: ${mo.objective} [${weekSummary}]`);
+
+        if (locked) {
+          lines.push(`    ${locked ? "🔒" : "🔓"} ${w.label}: ${w.objective} (${completedCount}/${taskCount} tasks)`);
+        } else {
+          lines.push(`    🔓 ${w.label} [id:${w.id}]: ${w.objective} (${completedCount}/${taskCount} tasks)`);
+          for (const d of days) {
+            const day = d as Record<string, unknown>;
+            const tasks = (day.tasks || []) as Array<Record<string, unknown>>;
+            if (tasks.length > 0) {
+              lines.push(`      ${day.label} [id:${day.id}]:`);
+              for (const t of tasks) {
+                const done = t.completed ? "✓" : " ";
+                lines.push(`        [${done}] ${t.title} (${t.durationMinutes}min, ${t.priority}) [id:${t.id}]`);
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1603,7 +1685,7 @@ async function handleGoalPlanChat(
 
   const response = await client.messages.create({
     model: getModelForTask("goal-plan-chat"),
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: personalizeSystem(
       `${GOAL_PLAN_CHAT_SYSTEM}\n\nGOAL CONTEXT:\n${goalContext}${planBlock}`,
       memoryContext

@@ -24,6 +24,7 @@ import type {
   PendingTask,
   HomeChatMessage,
   ChatSession,
+  Reminder,
 } from "../types";
 import {
   recordTaskCompleted,
@@ -148,6 +149,12 @@ interface Store {
   updatePendingTask: (id: string, updates: Partial<PendingTask>) => void;
   removePendingTask: (id: string) => void;
   confirmPendingTask: (id: string) => void;
+
+  // ── Reminders ──
+  reminders: Reminder[];
+  addReminder: (reminder: Reminder) => void;
+  acknowledgeReminder: (id: string) => void;
+  removeReminder: (id: string) => void;
 
   // ── Home Chat ──
   chatSessions: ChatSession[];
@@ -652,6 +659,38 @@ const useStore = create<Store>((set, get) => ({
     recordSignal("task_confirmed", "quick_task", `${task.analysis.title} [${finalPriority}]`).catch(() => {});
   },
 
+  // ── Reminders ──
+  reminders: [],
+  addReminder: (reminder) => {
+    set((s) => ({ reminders: [...s.reminders, reminder] }));
+    get().saveToDisk();
+    window.electronAPI.invoke("reminder:upsert", {
+      id: reminder.id,
+      title: reminder.title,
+      description: reminder.description,
+      reminderTime: reminder.reminderTime,
+      date: reminder.date,
+      acknowledged: reminder.acknowledged,
+      repeat: reminder.repeat,
+      source: reminder.source,
+    }).catch(() => {});
+    recordSignal("reminder_created", "reminder", reminder.title).catch(() => {});
+  },
+  acknowledgeReminder: (id) => {
+    set((s) => ({
+      reminders: s.reminders.map((r) =>
+        r.id === id ? { ...r, acknowledged: true, acknowledgedAt: new Date().toISOString() } : r
+      ),
+    }));
+    get().saveToDisk();
+    window.electronAPI.invoke("reminder:acknowledge", { id }).catch(() => {});
+  },
+  removeReminder: (id) => {
+    set((s) => ({ reminders: s.reminders.filter((r) => r.id !== id) }));
+    get().saveToDisk();
+    window.electronAPI.invoke("reminder:delete", { id }).catch(() => {});
+  },
+
   // ── Home Chat ──
   chatSessions: [],
   activeChatId: null,
@@ -789,6 +828,27 @@ const useStore = create<Store>((set, get) => ({
         }
       } catch { /* chat sessions are optional */ }
 
+      // Load reminders from DB
+      try {
+        const reminderResult = await window.electronAPI.invoke("reminder:list") as { ok?: boolean; data?: Reminder[] };
+        if (reminderResult?.ok && reminderResult.data) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const reminders: Reminder[] = (reminderResult.data as any[]).map((r: any) => ({
+            id: r.id as string,
+            title: r.title as string,
+            description: (r.description || "") as string,
+            reminderTime: (r.reminder_time || r.reminderTime) as string,
+            date: r.date as string,
+            acknowledged: !!(r.acknowledged),
+            acknowledgedAt: (r.acknowledged_at || r.acknowledgedAt || undefined) as string | undefined,
+            repeat: (r.repeat || null) as Reminder["repeat"],
+            source: (r.source || "chat") as Reminder["source"],
+            createdAt: (r.created_at || r.createdAt || new Date().toISOString()) as string,
+          }));
+          set({ reminders });
+        }
+      } catch { /* reminders are optional */ }
+
       if (d.vacationMode)
         set({ vacationMode: d.vacationMode as { active: boolean; startDate: string; endDate: string } });
       if (d.monthlyContexts)
@@ -843,6 +903,7 @@ const useStore = create<Store>((set, get) => ({
       heatmapData: [],
       conversations: [],
       pendingTasks: [],
+      reminders: [],
       homeChatMessages: [],
       vacationMode: null,
       monthlyContexts: [],

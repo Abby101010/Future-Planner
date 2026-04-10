@@ -7,10 +7,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.send(channel, data);
   },
   on: (channel: string, callback: (...args: unknown[]) => void) => {
-    ipcRenderer.on(channel, (_event, ...args) => callback(...args));
-    // Return an unsubscribe function
+    const wrapped = (_event: unknown, ...args: unknown[]) => callback(...args);
+    ipcRenderer.on(channel, wrapped);
+    // Return an unsubscribe function that removes the actual wrapper we registered
     return () => {
-      ipcRenderer.removeListener(channel, callback);
+      ipcRenderer.removeListener(channel, wrapped);
     };
   },
   invoke: (channel: string, ...args: unknown[]) => {

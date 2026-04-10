@@ -35,7 +35,7 @@ import type { NewsBriefing } from "../types/agents";
 // ── Job Queue Helpers ──────────────────────────────────
 
 const POLL_INTERVAL_MS = 1000;
-const JOB_TIMEOUT_MS = 120_000; // 2 minutes
+const JOB_TIMEOUT_MS = 900_000; // 15 minutes — plan generation with deep hierarchies can legitimately take >5m
 
 // Shape of IPC responses
 interface JobSubmitResult { ok: boolean; jobId: string; error?: string }
@@ -468,6 +468,41 @@ export async function generateGoalPlan(
   });
 }
 
+/** Submit goal plan generation and return the jobId for progress tracking */
+export async function submitGoalPlanJob(
+  goalTitle: string,
+  targetDate: string,
+  importance: GoalImportance,
+  isHabit: boolean,
+  description: string
+): Promise<string> {
+  return submitJob("generate-goal-plan", {
+    goalTitle,
+    targetDate,
+    importance,
+    isHabit,
+    description,
+  });
+}
+
+/** Poll a specific job until done */
+export { pollJobUntilDone };
+
+/** Reallocate a goal plan — shift tasks when user is falling behind */
+export async function reallocateGoalPlan(
+  plan: GoalPlan,
+  reason: string,
+  calendarEvents?: CalendarEvent[]
+): Promise<GoalPlan> {
+  const result = await submitAndWait<Record<string, unknown>>("reallocate", {
+    breakdown: plan,
+    reason,
+    inAppEvents: calendarEvents || [],
+  });
+  // The reallocate handler returns the updated plan structure
+  return (result as unknown) as GoalPlan;
+}
+
 // Normalize snake_case AI output to camelCase types
 function normalizeBreakdown(raw: Record<string, unknown>): GoalBreakdown {
   const yearly = (raw.yearly_breakdown || raw.yearlyBreakdown || []) as Array<Record<string, unknown>>;
@@ -633,7 +668,7 @@ export async function sendHomeChatMessage(
   return submitAndWait<{ reply: string }>("home-chat", {
     userInput,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
-    goals: goals.map((g) => ({ title: g.title, scope: g.scope, status: g.status })),
+    goals: goals.map((g) => ({ id: g.id, title: g.title, scope: g.scope, goalType: g.goalType, status: g.status, hasPlan: !!g.plan, planConfirmed: g.planConfirmed })),
     todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
     attachments,

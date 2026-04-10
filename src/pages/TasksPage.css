@@ -193,6 +193,124 @@
   background: linear-gradient(90deg, var(--green), #10b981);
 }
 
+/* ── Reminders — neon minimalistic ── */
+
+.reminders-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.reminders-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 11px;
+  color: #00d4ff;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 600;
+}
+
+.reminder-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  transition: all var(--transition-fast);
+  overflow: hidden;
+}
+
+.reminder-card:hover {
+  border-color: rgba(0, 212, 255, 0.28);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.06);
+}
+
+.reminder-card-active {
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.1), 0 0 4px rgba(0, 212, 255, 0.15);
+}
+
+.reminder-card-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(180deg, #00d4ff, #0099cc);
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.3);
+}
+
+.reminder-card-active .reminder-card-glow {
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5), 0 0 20px rgba(0, 212, 255, 0.15);
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+
+@keyframes neon-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.reminder-card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-sm);
+}
+
+.reminder-card-time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 11px;
+  color: #00d4ff;
+  font-weight: 500;
+}
+
+.reminder-repeat {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 212, 255, 0.06);
+  color: #00b8d9;
+}
+
+.reminder-card-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.reminder-card-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.reminder-acknowledge-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #00d4ff;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.reminder-acknowledge-btn:hover {
+  background: rgba(0, 212, 255, 0.06);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.12);
+}
+
 /* ── All Tasks (collapsible) ── */
 
 .all-tasks-section {
