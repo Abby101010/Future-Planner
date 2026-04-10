@@ -29,6 +29,7 @@ import type {
   PlanEdit,
   PlanEditSuggestion,
   RepeatSchedule,
+  Reminder,
 } from "../types";
 import type { NewsBriefing } from "../types/agents";
 
@@ -697,7 +698,7 @@ export async function sendHomeChatMessage(
   todayTasks: DailyTask[],
   calendarEvents?: CalendarEvent[],
   attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>
-): Promise<{ reply: string }> {
+): Promise<HomeChatResult> {
   const today = new Date().toISOString().split("T")[0];
   const todayEvents = (calendarEvents || []).filter((e) => {
     const eventDate = e.startDate.split("T")[0];
@@ -721,8 +722,39 @@ export async function sendHomeChatMessage(
     todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
     attachments,
-  })) as { reply: string };
+  })) as HomeChatResult;
   return result;
+}
+
+// Intent shape returned by the backend home-chat handler.
+// Mirrors electron/ai/handlers/homeChat.ts HomeChatIntent. Fields are
+// fully populated by the backend (server-assigned IDs, defaults applied);
+// the renderer only dispatches the entity to the existing store setters.
+export type HomeChatIntent =
+  | { kind: "event"; entity: CalendarEvent }
+  | {
+      kind: "goal";
+      entity: Goal;
+      /** Present when the backend eagerly dispatched generate-goal-plan */
+      planJobId?: string;
+    }
+  | { kind: "reminder"; entity: Reminder }
+  | {
+      kind: "task";
+      pendingTask: {
+        id: string;
+        userInput: string;
+        analysis: null;
+        status: "analyzing";
+        createdAt: string;
+      };
+    }
+  | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
+  | { kind: "context-change"; suggestion: string };
+
+export interface HomeChatResult {
+  reply: string;
+  intent: HomeChatIntent | null;
 }
 
 // ── Multi-Agent Functions ────────────────────────────────

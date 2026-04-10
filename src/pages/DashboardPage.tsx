@@ -28,7 +28,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
-import { analyzeQuickTask, sendHomeChatMessage, generateGoalPlan, submitGoalPlanJob } from "../services/ai";
+import { analyzeQuickTask, sendHomeChatMessage, generateGoalPlan } from "../services/ai";
 import { setPlanJobId } from "../services/jobPersistence";
 import { chatRepo } from "../repositories";
 import type { PendingTask, HomeChatMessage, CalendarEvent, Goal, Reminder, GoalPlanMessage } from "../types";
@@ -221,177 +221,113 @@ export default function DashboardPage() {
         attachmentData.length > 0 ? attachmentData : undefined
       );
 
-      const replyText = result.reply;
+      // The backend parses the LLM reply, builds fully-populated entities
+      // (server-assigned UUIDs, defaulted fields, persisted or job-dispatched
+      // as appropriate), and returns a structured intent. This page only
+      // dispatches the intent to the existing store setters and formats a
+      // user-facing confirmation sentence. No LLM output is parsed here,
+      // no IDs are generated here, no domain fields are defaulted here.
 
-      // Check if AI detected a task, event, or context change
-      let isTask = false;
-      let isEvent = false;
-      let taskDescription = "";
-      let displayText = replyText;
+      let displayText = result.reply;
+      let pendingTaskToAnalyze: PendingTask | null = null;
 
-      try {
-        // Strip markdown code fences if the AI wrapped JSON in ```json ... ```
-        let jsonStr = replyText;
-        const fenceMatch = replyText.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (fenceMatch) {
-          jsonStr = fenceMatch[1].trim();
-        }
-        // Also try extracting a raw JSON object if there's extra text around it
-        if (!jsonStr.startsWith("{")) {
-          const objMatch = jsonStr.match(/\{[\s\S]*\}/);
-          if (objMatch) jsonStr = objMatch[0];
-        }
-        const parsed = JSON.parse(jsonStr);
-        if (parsed.is_event) {
-          isEvent = true;
-          const startDate = parsed.startDate || new Date().toISOString();
-          const endDate = parsed.endDate || new Date(new Date(startDate).getTime() + 60 * 60 * 1000).toISOString();
-          const durationMs = new Date(endDate).getTime() - new Date(startDate).getTime();
-          const event: CalendarEvent = {
-            id: `event-${Date.now()}`,
-            title: parsed.title || query,
-            startDate,
-            endDate,
-            isAllDay: parsed.isAllDay || false,
-            durationMinutes: Math.round(durationMs / 60000),
-            category: parsed.category || "other",
-            isVacation: false,
-            source: "manual",
-            notes: parsed.notes || undefined,
-          };
-          setPendingEvent(event);
-          const dateStr = new Date(startDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-          const timeStr = parsed.isAllDay ? "all day" : new Date(startDate).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-          displayText = `Got it — I'll add "${event.title}" on ${dateStr} at ${timeStr} to your calendar.`;
-        } else if (parsed.is_goal) {
-          const goalType = parsed.goalType || "big";
-          const newGoal: Goal = {
-            id: `goal-${Date.now()}`,
-            title: parsed.title || query,
-            description: parsed.description || "",
-            targetDate: parsed.targetDate || "",
-            isHabit: goalType === "everyday" || goalType === "repeating",
-            importance: parsed.importance || "high",
-            scope: goalType === "big" ? "big" : "small",
-            goalType,
-            status: "pending",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            planChat: [],
-            plan: null,
-            flatPlan: null,
-            planConfirmed: false,
-            scopeReasoning: "Created via home chat",
-            repeatSchedule: null,
-          };
-          addGoal(newGoal);
-
-          // Eagerly kick off plan generation for big goals so the multi-agent
-          // pipeline starts immediately. The jobId is stashed in localStorage
-          // under the same key (`planJobId:${goalId}`) that GoalPlanPage's
-          // mount-time reattach effect reads — so by the time the user opens
-          // the goal, the AI thought process picks up where it left off (or
-          // is already done) instead of starting fresh.
-          if (goalType === "big") {
-            try {
-              const jobId = await submitGoalPlanJob(
-                newGoal.title,
-                newGoal.targetDate,
-                newGoal.importance,
-                newGoal.isHabit,
-                newGoal.description,
-              );
-              setPlanJobId(newGoal.id, jobId);
-            } catch (err) {
-              // Silent — the user can still trigger generation manually
-              // from the goal page if the eager submit failed.
-              console.error("[home-chat] eager plan job submit failed:", err);
+      if (result.intent) {
+        switch (result.intent.kind) {
+          case "event": {
+            const event = result.intent.entity;
+            setPendingEvent(event);
+            const dateStr = new Date(event.startDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+            const timeStr = event.isAllDay ? "all day" : new Date(event.startDate).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+            displayText = `Got it — I'll add "${event.title}" on ${dateStr} at ${timeStr} to your calendar.`;
+            break;
+          }
+          case "goal": {
+            const newGoal = result.intent.entity;
+            addGoal(newGoal);
+            // The backend already dispatched generate-goal-plan for big goals
+            // and returned the jobId. Stash it under the same localStorage key
+            // GoalPlanPage reads on mount so the in-flight job reattaches.
+            if (result.intent.planJobId) {
+              setPlanJobId(newGoal.id, result.intent.planJobId);
             }
-            displayText = `I've created "${newGoal.title}" and started planning it in the background. Open it in Planning to watch the AI work or see the result.`;
-          } else {
-            displayText = `I've created "${newGoal.title}" as a ${goalType} goal. Head to the Planning tab to build out the plan.`;
+            displayText =
+              newGoal.goalType === "big"
+                ? `I've created "${newGoal.title}" and started planning it in the background. Open it in Planning to watch the AI work or see the result.`
+                : `I've created "${newGoal.title}" as a ${newGoal.goalType} goal. Head to the Planning tab to build out the plan.`;
+            break;
           }
-        } else if (parsed.is_reminder) {
-          const today = new Date().toISOString().split("T")[0];
-          const reminder: Reminder = {
-            id: `reminder-${Date.now()}`,
-            title: parsed.title || query,
-            description: parsed.description || "",
-            reminderTime: parsed.reminderTime || `${today}T09:00:00`,
-            date: parsed.date || today,
-            acknowledged: false,
-            repeat: parsed.repeat || null,
-            source: "chat",
-            createdAt: new Date().toISOString(),
-          };
-          addReminder(reminder);
-          const timeStr = new Date(reminder.reminderTime).toLocaleTimeString(undefined, {
-            hour: "numeric", minute: "2-digit",
-          });
-          const dateStr = new Date(reminder.date + "T12:00:00").toLocaleDateString(undefined, {
-            weekday: "short", month: "short", day: "numeric",
-          });
-          displayText = `I'll remind you: "${reminder.title}" on ${dateStr} at ${timeStr}.`;
-          if (reminder.repeat) {
-            displayText += ` This will repeat ${reminder.repeat}.`;
+          case "reminder": {
+            const reminder = result.intent.entity;
+            addReminder(reminder);
+            const timeStr = new Date(reminder.reminderTime).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+            const dateStr = new Date(reminder.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+            displayText = `I'll remind you: "${reminder.title}" on ${dateStr} at ${timeStr}.`;
+            if (reminder.repeat) {
+              displayText += ` This will repeat ${reminder.repeat}.`;
+            }
+            break;
           }
-        } else if (parsed.is_task) {
-          isTask = true;
-          taskDescription = parsed.task_description || query;
-          displayText = t.home.taskDetected;
-        } else if (parsed.manage_goal) {
-          const targetGoal = goals.find((g) => g.id === parsed.goalId);
-          if (!targetGoal) {
-            displayText = `I couldn't find that goal. Could you clarify which goal you mean?`;
-          } else if (parsed.action === "refresh_plan") {
-            displayText = `Regenerating the plan for "${targetGoal.title}"... This may take a moment.`;
-            // Fire plan generation in background
-            updateGoal(targetGoal.id, { plan: null, status: "planning", planChat: [] });
-            generateGoalPlan(
-              targetGoal.title,
-              targetGoal.targetDate,
-              targetGoal.importance,
-              targetGoal.isHabit,
-              targetGoal.description
-            ).then((planResult) => {
-              if (planResult.plan) {
-                setGoalPlan(targetGoal.id, planResult.plan);
-                const aiMsg: GoalPlanMessage = {
-                  id: `msg-${Date.now()}`,
-                  role: "assistant",
-                  content: planResult.reply,
-                  timestamp: new Date().toISOString(),
-                };
-                addGoalPlanMessage(targetGoal.id, aiMsg);
+          case "task": {
+            pendingTaskToAnalyze = result.intent.pendingTask;
+            displayText = t.home.taskDetected;
+            break;
+          }
+          case "manage-goal": {
+            const intent = result.intent;
+            const targetGoal = goals.find((g) => g.id === intent.goalId);
+            if (!targetGoal) {
+              displayText = `I couldn't find that goal. Could you clarify which goal you mean?`;
+            } else if (intent.action === "refresh_plan") {
+              displayText = `Regenerating the plan for "${targetGoal.title}"... This may take a moment.`;
+              // Fire plan generation in background
+              updateGoal(targetGoal.id, { plan: null, status: "planning", planChat: [] });
+              generateGoalPlan(
+                targetGoal.title,
+                targetGoal.targetDate,
+                targetGoal.importance,
+                targetGoal.isHabit,
+                targetGoal.description
+              ).then((planResult) => {
+                if (planResult.plan) {
+                  setGoalPlan(targetGoal.id, planResult.plan);
+                  const aiMsg: GoalPlanMessage = {
+                    id: `msg-${Date.now()}`,
+                    role: "assistant",
+                    content: planResult.reply,
+                    timestamp: new Date().toISOString(),
+                  };
+                  addGoalPlanMessage(targetGoal.id, aiMsg);
+                  addHomeChatMessage({
+                    id: `msg-${Date.now()}-plan-ready`,
+                    role: "assistant",
+                    content: sanitizeAIText(`The plan for "${targetGoal.title}" has been refreshed! Check it out in the Planning tab.`),
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              }).catch(() => {
                 addHomeChatMessage({
-                  id: `msg-${Date.now()}-plan-ready`,
+                  id: `msg-${Date.now()}-plan-err`,
                   role: "assistant",
-                  content: sanitizeAIText(`The plan for "${targetGoal.title}" has been refreshed! Check it out in the Planning tab.`),
+                  content: `I had trouble regenerating the plan for "${targetGoal.title}". You can try again later.`,
                   timestamp: new Date().toISOString(),
                 });
-              }
-            }).catch(() => {
-              addHomeChatMessage({
-                id: `msg-${Date.now()}-plan-err`,
-                role: "assistant",
-                content: `I had trouble regenerating the plan for "${targetGoal.title}". You can try again later.`,
-                timestamp: new Date().toISOString(),
               });
-            });
-          } else if (parsed.action === "delete") {
-            removeGoal(targetGoal.id);
-            displayText = `I've removed "${targetGoal.title}" from your goals.`;
-          } else if (parsed.action === "archive") {
-            updateGoal(targetGoal.id, { status: "archived" });
-            displayText = `I've archived "${targetGoal.title}".`;
+            } else if (intent.action === "delete") {
+              removeGoal(targetGoal.id);
+              displayText = `I've removed "${targetGoal.title}" from your goals.`;
+            } else if (intent.action === "archive") {
+              updateGoal(targetGoal.id, { status: "archived" });
+              displayText = `I've archived "${targetGoal.title}".`;
+            }
+            break;
           }
-        } else if (parsed.context_change) {
-          displayText = parsed.suggestion
-            ? `I noticed a change in your situation. ${parsed.suggestion}\n\nYou can update your monthly context in the Planning tab.`
-            : "It sounds like things have changed. Update your monthly context in the Planning tab.";
+          case "context-change": {
+            displayText = result.intent.suggestion
+              ? `I noticed a change in your situation. ${result.intent.suggestion}\n\nYou can update your monthly context in the Planning tab.`
+              : "It sounds like things have changed. Update your monthly context in the Planning tab.";
+            break;
+          }
         }
-      } catch {
-        // Not JSON — regular response
       }
 
       // Add assistant message to store (sanitized — no emojis or stray symbols)
@@ -402,25 +338,17 @@ export default function DashboardPage() {
         timestamp: new Date().toISOString(),
       });
 
-      if (isTask) {
-        const pendingId = `pending-${Date.now()}`;
-        const pending: PendingTask = {
-          id: pendingId,
-          userInput: taskDescription,
-          analysis: null,
-          status: "analyzing",
-          createdAt: new Date().toISOString(),
-        };
-        addPendingTask(pending);
+      if (pendingTaskToAnalyze) {
+        addPendingTask(pendingTaskToAnalyze);
 
         try {
           const analysis = await analyzeQuickTask(
-            taskDescription,
+            pendingTaskToAnalyze.userInput,
             todayLog?.tasks || [],
             goals,
             calendarEvents
           );
-          updatePendingTask(pendingId, {
+          updatePendingTask(pendingTaskToAnalyze.id, {
             status: "ready",
             analysis: {
               title: analysis.title,
@@ -435,7 +363,7 @@ export default function DashboardPage() {
             },
           });
         } catch {
-          updatePendingTask(pendingId, { status: "rejected" });
+          updatePendingTask(pendingTaskToAnalyze.id, { status: "rejected" });
         }
       }
     } catch {
