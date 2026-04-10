@@ -9,6 +9,7 @@ import { useT, LANGUAGE_OPTIONS } from "../i18n";
 import type { Language } from "../i18n";
 import { triggerReflection, clearMemory, getBehaviorProfile, saveBehaviorProfile } from "../services/memory";
 import type { BehaviorProfileEntry } from "../services/memory";
+import { modelConfigRepo } from "../repositories";
 import WeeklyAvailabilityGrid from "../components/WeeklyAvailabilityGrid";
 import type { TimeBlock } from "../types";
 import "./SettingsPage.css";
@@ -63,8 +64,8 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    window.electronAPI.invoke("model-config:get").then((config: any) => {
-      setModelConfig(config);
+    modelConfigRepo.get().then((config) => {
+      setModelConfig(config as typeof modelConfig);
     }).catch(() => {});
   }, []);
 
@@ -72,7 +73,7 @@ export default function SettingsPage() {
     if (!modelConfig) return;
     const newTiers = { ...modelConfig.tiers, [tier]: model };
     setModelConfig({ ...modelConfig, tiers: newTiers });
-    await window.electronAPI.invoke("model-config:set-overrides", newTiers);
+    await modelConfigRepo.setOverrides(newTiers);
     // Also persist in user settings so it survives restarts
     updateSettings({ modelOverrides: newTiers } as any);
     setModelSaved(true);

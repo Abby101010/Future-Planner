@@ -29,6 +29,8 @@ import ReactMarkdown from "react-markdown";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
 import { analyzeQuickTask, sendHomeChatMessage, generateGoalPlan, submitGoalPlanJob } from "../services/ai";
+import { setPlanJobId } from "../services/jobPersistence";
+import { chatRepo } from "../repositories";
 import type { PendingTask, HomeChatMessage, CalendarEvent, Goal, Reminder, GoalPlanMessage } from "../types";
 import "./DashboardPage.css";
 
@@ -187,7 +189,7 @@ export default function DashboardPage() {
     const sessionId = useStore.getState().activeChatId;
     if (sessionId && currentAttachments.length > 0) {
       for (const att of currentAttachments) {
-        window.electronAPI.invoke("chat:save-attachment", {
+        chatRepo.saveAttachment({
           id: att.id,
           sessionId,
           messageId: msgId,
@@ -299,7 +301,7 @@ export default function DashboardPage() {
                 newGoal.isHabit,
                 newGoal.description,
               );
-              localStorage.setItem(`planJobId:${newGoal.id}`, jobId);
+              setPlanJobId(newGoal.id, jobId);
             } catch (err) {
               // Silent — the user can still trigger generation manually
               // from the goal page if the eager submit failed.

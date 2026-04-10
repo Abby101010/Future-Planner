@@ -37,6 +37,9 @@ import {
   shouldAutoReflect,
   triggerReflection,
 } from "../services/memory";
+import { downgradeIfOverBudget } from "../../shared/domain/cognitiveBudget";
+import type { TaskPriority } from "../../shared/domain/cognitiveBudget";
+import { memoryRepo, reminderRepo, chatRepo, appDataRepo } from "../repositories";
 
 const DEFAULT_INTEGRATIONS: DeviceIntegrations = {
   calendar: { enabled: false, selectedCalendars: [] },
@@ -517,11 +520,8 @@ const useStore = create<Store>((set, get) => ({
   memorySummary: null,
   refreshMemorySummary: async () => {
     try {
-      const result = await window.electronAPI.invoke("memory:summary");
-      const r = result as { ok: boolean; data?: MemorySummary };
-      if (r.ok && r.data) {
-        set({ memorySummary: r.data });
-      }
+      const summary = await memoryRepo.getSummary();
+      if (summary) set({ memorySummary: summary });
     } catch {
       console.warn("Could not load memory summary");
     }
@@ -582,35 +582,18 @@ const useStore = create<Store>((set, get) => ({
     const todayLog = get().todayLog;
     const today = new Date().toISOString().split("T")[0];
 
-    // ── Cognitive budget enforcement (psychological principles) ──
-    // Max 12 cognitive points/day, max 5 daily tasks, 3-hour deep-work ceiling
-    const existingTasks = todayLog?.tasks || [];
-    const currentWeight = existingTasks.reduce((sum, t) => sum + (t.cognitiveWeight || 3), 0);
-    const currentMinutes = existingTasks.reduce((sum, t) => sum + (t.durationMinutes || 30), 0);
-    const dailyTaskCount = existingTasks.filter((t) => t.priority === "must-do" || t.priority === "should-do").length;
-
-    const maxBudget = 12;
-    const maxDailyTasks = 5; // decision fatigue threshold
-    const maxDeepMinutes = 180; // 3-hour ceiling
-
-    // Determine if this should be a daily task or bonus
-    // If adding it would exceed cognitive budget, task count, or deep-work time → bonus
-    const taskWeight = task.analysis.cognitiveWeight || 3;
-    const taskMinutes = task.analysis.durationMinutes || 30;
+    // ── Cognitive budget enforcement (rules live in shared/domain/cognitiveBudget) ──
     const isScheduledToday = task.analysis.suggestedDate === today;
-
-    let finalPriority = task.analysis.priority;
-
-    if (isScheduledToday) {
-      const wouldExceedBudget = (currentWeight + taskWeight) > maxBudget;
-      const wouldExceedTasks = dailyTaskCount >= maxDailyTasks;
-      const wouldExceedTime = (currentMinutes + taskMinutes) > maxDeepMinutes;
-
-      if (wouldExceedBudget || wouldExceedTasks || wouldExceedTime) {
-        // Downgrade to bonus — don't overload the user
-        finalPriority = "bonus";
-      }
-    }
+    const finalPriority: TaskPriority = isScheduledToday
+      ? downgradeIfOverBudget(
+          todayLog?.tasks ?? [],
+          {
+            cognitiveWeight: task.analysis.cognitiveWeight,
+            durationMinutes: task.analysis.durationMinutes,
+          },
+          task.analysis.priority as TaskPriority,
+        )
+      : (task.analysis.priority as TaskPriority);
 
     const newTask: import("../types").DailyTask = {
       id: `task-confirmed-${Date.now()}`,
@@ -664,16 +647,7 @@ const useStore = create<Store>((set, get) => ({
   addReminder: (reminder) => {
     set((s) => ({ reminders: [...s.reminders, reminder] }));
     get().saveToDisk();
-    window.electronAPI.invoke("reminder:upsert", {
-      id: reminder.id,
-      title: reminder.title,
-      description: reminder.description,
-      reminderTime: reminder.reminderTime,
-      date: reminder.date,
-      acknowledged: reminder.acknowledged,
-      repeat: reminder.repeat,
-      source: reminder.source,
-    }).catch(() => {});
+    reminderRepo.upsert(reminder).catch(() => {});
     recordSignal("reminder_created", "reminder", reminder.title).catch(() => {});
   },
   acknowledgeReminder: (id) => {
@@ -683,12 +657,12 @@ const useStore = create<Store>((set, get) => ({
       ),
     }));
     get().saveToDisk();
-    window.electronAPI.invoke("reminder:acknowledge", { id }).catch(() => {});
+    reminderRepo.acknowledge(id).catch(() => {});
   },
   removeReminder: (id) => {
     set((s) => ({ reminders: s.reminders.filter((r) => r.id !== id) }));
     get().saveToDisk();
-    window.electronAPI.invoke("reminder:delete", { id }).catch(() => {});
+    reminderRepo.delete(id).catch(() => {});
   },
 
   // ── Home Chat ──
@@ -715,7 +689,7 @@ const useStore = create<Store>((set, get) => ({
         activeChatId: newSession.id,
       });
       // Persist to DB
-      window.electronAPI.invoke("chat:save-session", newSession).catch(() => {});
+      chatRepo.saveSession(newSession).catch(() => {});
     } else {
       // Update active session
       const updatedAt = new Date().toISOString();
@@ -731,7 +705,7 @@ const useStore = create<Store>((set, get) => ({
       // Persist to DB
       const session = updatedSessions.find((s) => s.id === activeChatId);
       if (session) {
-        window.electronAPI.invoke("chat:save-session", session).catch(() => {});
+        chatRepo.saveSession(session).catch(() => {});
       }
     }
 
@@ -739,7 +713,7 @@ const useStore = create<Store>((set, get) => ({
     if (msg.role === "assistant" && messages.length > 1) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
       if (lastUserMsg) {
-        window.electronAPI.invoke("memory:chat-insight", {
+        memoryRepo.recordChatInsight({
           userMessage: lastUserMsg.content,
           aiReply: msg.content,
         }).catch(() => {});
@@ -765,13 +739,13 @@ const useStore = create<Store>((set, get) => ({
       ...(isActive ? { homeChatMessages: [], activeChatId: null } : {}),
     });
     // Delete from DB (also removes attachment files)
-    window.electronAPI.invoke("chat:delete-session", { id: sessionId }).catch(() => {});
+    chatRepo.deleteSession(sessionId).catch(() => {});
   },
 
   // ── Persistence via Electron IPC ──
   loadFromDisk: async () => {
     try {
-      const data = await window.electronAPI.invoke("store:load");
+      const data = await appDataRepo.load();
       if (!data || typeof data !== "object") {
         // Empty or invalid → first launch → stay on "welcome"
         return;
@@ -822,31 +796,26 @@ const useStore = create<Store>((set, get) => ({
         set({ pendingTasks: d.pendingTasks as PendingTask[] });
       // Load chat sessions from DB
       try {
-        const chatResult = await window.electronAPI.invoke("chat:list-sessions") as { ok?: boolean; data?: ChatSession[] };
-        if (chatResult?.ok && chatResult.data) {
-          set({ chatSessions: chatResult.data });
-        }
+        const sessions = await chatRepo.listSessions();
+        if (sessions.length) set({ chatSessions: sessions });
       } catch { /* chat sessions are optional */ }
 
       // Load reminders from DB
       try {
-        const reminderResult = await window.electronAPI.invoke("reminder:list") as { ok?: boolean; data?: Reminder[] };
-        if (reminderResult?.ok && reminderResult.data) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const reminders: Reminder[] = (reminderResult.data as any[]).map((r: any) => ({
-            id: r.id as string,
-            title: r.title as string,
-            description: (r.description || "") as string,
-            reminderTime: (r.reminder_time || r.reminderTime) as string,
-            date: r.date as string,
-            acknowledged: !!(r.acknowledged),
-            acknowledgedAt: (r.acknowledged_at || r.acknowledgedAt || undefined) as string | undefined,
-            repeat: (r.repeat || null) as Reminder["repeat"],
-            source: (r.source || "chat") as Reminder["source"],
-            createdAt: (r.created_at || r.createdAt || new Date().toISOString()) as string,
-          }));
-          set({ reminders });
-        }
+        const rawReminders = (await reminderRepo.list()) as unknown as Array<Record<string, unknown>>;
+        const reminders: Reminder[] = rawReminders.map((r) => ({
+          id: r.id as string,
+          title: r.title as string,
+          description: ((r.description as string) || "") as string,
+          reminderTime: ((r.reminder_time as string) || (r.reminderTime as string)) as string,
+          date: r.date as string,
+          acknowledged: !!r.acknowledged,
+          acknowledgedAt: ((r.acknowledged_at as string) || (r.acknowledgedAt as string) || undefined),
+          repeat: (r.repeat || null) as Reminder["repeat"],
+          source: ((r.source as string) || "chat") as Reminder["source"],
+          createdAt: ((r.created_at as string) || (r.createdAt as string) || new Date().toISOString()),
+        }));
+        if (reminders.length) set({ reminders });
       } catch { /* reminders are optional */ }
 
       if (d.vacationMode)
@@ -872,7 +841,7 @@ const useStore = create<Store>((set, get) => ({
   saveToDisk: async () => {
     const s = get();
     try {
-      await window.electronAPI.invoke("store:save", {
+      await appDataRepo.save({
         user: s.user,
         roadmap: s.roadmap,
         goalBreakdown: s.goalBreakdown,

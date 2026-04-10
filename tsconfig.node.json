@@ -14,5 +14,5 @@
     "declarationMap": true,
     "emitDeclarationOnly": true
   },
-  "include": ["vite.config.ts", "electron"]
+  "include": ["vite.config.ts", "electron", "shared"]
 }

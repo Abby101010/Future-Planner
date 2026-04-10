@@ -7,6 +7,7 @@ import { useState } from "react";
 import { CalendarDays, Loader2, Send, Pencil, Trash2 } from "lucide-react";
 import useStore from "../store/useStore";
 import type { MonthlyContext as MonthlyContextType } from "../types";
+import { monthlyContextRepo } from "../repositories";
 import "./MonthlyContext.css";
 
 const INTENSITY_LABELS: Record<string, { label: string; color: string }> = {
@@ -38,16 +39,10 @@ export default function MonthlyContext() {
     setError(null);
 
     try {
-      const result = await window.electronAPI.invoke("monthly-context:analyze", {
+      const result = await monthlyContextRepo.analyze({
         month: currentMonth,
         description: description.trim(),
-      }) as {
-        intensity?: string;
-        intensityReasoning?: string;
-        capacityMultiplier?: number;
-        maxDailyTasks?: number;
-        error?: string;
-      };
+      });
 
       if (result && !result.error) {
         const newCtx: MonthlyContextType = {
@@ -63,7 +58,7 @@ export default function MonthlyContext() {
         setMonthlyContext(newCtx);
 
         // Persist to database
-        await window.electronAPI.invoke("monthly-context:upsert", {
+        await monthlyContextRepo.upsert({
           month: newCtx.month,
           description: newCtx.description,
           intensity: newCtx.intensity,
@@ -87,7 +82,7 @@ export default function MonthlyContext() {
   const handleDelete = async () => {
     removeMonthlyContext(currentMonth);
     try {
-      await window.electronAPI.invoke("monthly-context:delete", { month: currentMonth });
+      await monthlyContextRepo.delete(currentMonth);
     } catch { /* ignore */ }
     setIsEditing(false);
   };

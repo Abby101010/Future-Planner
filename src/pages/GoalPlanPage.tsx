@@ -30,6 +30,12 @@ import {
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
 import { sendGoalPlanMessage, generateGoalPlan, submitGoalPlanJob, pollJobUntilDone, reallocateGoalPlan } from "../services/ai";
+import {
+  getPlanJobId as readStoredJobId,
+  setPlanJobId as storeJobId,
+  clearPlanJobId as clearStoredJobId,
+  hasPlanJobId,
+} from "../services/jobPersistence";
 import AgentProgress from "../components/AgentProgress";
 import RichTextToolbar, { IconPicker } from "../components/RichTextToolbar";
 import type {
@@ -239,12 +245,12 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
 
   const goal = goals.find((g) => g.id === goalId);
   const [chatInput, setChatInput] = useState("");
-  // Initialize from localStorage so an in-flight job's progress reattaches on re-entry
+  // Initialize from persisted job-id so an in-flight job's progress reattaches on re-entry
   const [planJobId, setPlanJobId] = useState<string | null>(
-    () => localStorage.getItem(`planJobId:${goalId}`)
+    () => readStoredJobId(goalId)
   );
   const [showAgentProgress, setShowAgentProgress] = useState<boolean>(
-    () => !!localStorage.getItem(`planJobId:${goalId}`)
+    () => hasPlanJobId(goalId)
   );
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [rescheduleDismissed, setRescheduleDismissed] = useState(false);
@@ -359,7 +365,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   useEffect(() => {
     if (!goal) return;
 
-    const storedJobId = localStorage.getItem(`planJobId:${goal.id}`);
+    const storedJobId = readStoredJobId(goal.id);
     if (storedJobId && !goal.plan) {
       // Reattach to in-flight job
       setLoading(true);
@@ -381,7 +387,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           setLoading(false);
           setShowAgentProgress(false);
           setPlanJobId(null);
-          localStorage.removeItem(`planJobId:${goal.id}`);
+          clearStoredJobId(goal.id);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Failed to generate plan");
           // Keep progress + jobId so the user can still see the AI's partial
@@ -403,7 +409,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     setLoading(true);
     setShowAgentProgress(true);
     setPlanJobId(null);
-    localStorage.removeItem(`planJobId:${goal.id}`);
+    clearStoredJobId(goal.id);
     updateGoal(goal.id, { status: "planning" });
 
     try {
@@ -411,7 +417,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       const jobId = await submitGoalPlanJob(goal.title, goal.targetDate, goal.importance, goal.isHabit, goal.description);
       setPlanJobId(jobId);
       // Persist so progress reattaches if the user navigates away and back
-      localStorage.setItem(`planJobId:${goal.id}`, jobId);
+      storeJobId(goal.id, jobId);
 
       // Poll until done — AgentProgress will display live progress via jobId
       const result = await pollJobUntilDone<{ reply: string; plan: import("../types").GoalPlan }>(jobId);

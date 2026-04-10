@@ -9,6 +9,12 @@ import { coordinateRequest } from "./agents/coordinator";
 import type { CoordinatorTaskType, ProgressCallback } from "./agents/types";
 import { getMonthlyContext } from "./database";
 import { getModelForTask } from "./model-config";
+import {
+  enforceBudgetSnake,
+  bonusTaskFits,
+  COGNITIVE_BUDGET,
+} from "../shared/domain/cognitiveBudget";
+import { stripLoneSurrogates, sanitizeForJSON } from "./ai/sanitize";
 
 export type RequestType =
   | "onboarding"
@@ -698,36 +704,6 @@ export async function handleAIRequest(
 }
 
 /**
- * Replace any lone UTF-16 surrogate with U+FFFD. The Anthropic API rejects
- * request bodies containing unpaired surrogates with:
- *   400 invalid_request_error: "no low surrogate in string ..."
- * Lone surrogates can sneak in via corrupted input, emoji fragments, or
- * database strings that were truncated mid-codepoint. Sanitize everything
- * that crosses the network boundary so the user never sees that failure mode.
- */
-function stripLoneSurrogates(s: string): string {
-  // High surrogate not followed by low surrogate, OR low surrogate not preceded
-  // by high surrogate → replace with U+FFFD.
-  return s.replace(
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g,
-    (_m, pre = "", low = "") => (low ? `${pre}\uFFFD` : "\uFFFD"),
-  );
-}
-
-function sanitizeForJSON<T>(value: T): T {
-  if (typeof value === "string") return stripLoneSurrogates(value) as unknown as T;
-  if (Array.isArray(value)) return value.map(sanitizeForJSON) as unknown as T;
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = sanitizeForJSON(v);
-    }
-    return out as unknown as T;
-  }
-  return value;
-}
-
-/**
  * Direct handler — executes a specific AI request without coordinator overhead.
  * Called by the coordinator after it has done research/preprocessing.
  * Also used as fallback for non-coordinator-routed requests.
@@ -1184,38 +1160,34 @@ Generate EXACTLY ${recommendedCount.split(" ")[0]} core tasks for today. Include
   const parsed = JSON.parse(cleaned);
 
   // ── Post-processing guardrails ──
-  // Even if the AI generates too many tasks, we enforce the hard limits here.
-  let coreTasks: Array<Record<string, unknown>> = parsed.tasks || [];
-
-  // HARD LIMIT: Never more than maxDailyTasks (from monthly context) or 5 core tasks
-  const taskHardLimit = capacityProfile.maxDailyTasks ?? 5;
-  if (coreTasks.length > taskHardLimit) {
-    console.warn(`[NorthStar] AI returned ${coreTasks.length} tasks — trimming to ${taskHardLimit} highest priority`);
-    // Sort by priority (must-do first), then by cognitive weight (higher first for impact)
-    const priorityOrder: Record<string, number> = { "must-do": 0, "should-do": 1, "bonus": 2 };
-    coreTasks.sort((a, b) => {
-      const pa = priorityOrder[(a.priority as string) || "should-do"] ?? 1;
-      const pb = priorityOrder[(b.priority as string) || "should-do"] ?? 1;
-      if (pa !== pb) return pa - pb;
-      return ((b.cognitive_weight as number) || 3) - ((a.cognitive_weight as number) || 3);
-    });
-    coreTasks = coreTasks.slice(0, taskHardLimit);
+  // Hard limits enforced via shared/domain/cognitiveBudget so the renderer
+  // and the AI pipeline always agree on the same policy.
+  const rawTasks: Array<Record<string, unknown>> = parsed.tasks || [];
+  const taskHardLimit = capacityProfile.maxDailyTasks ?? COGNITIVE_BUDGET.MAX_DAILY_TASKS;
+  const coreTasks = enforceBudgetSnake(
+    rawTasks as Array<Record<string, unknown>> & {
+      cognitive_weight?: number;
+      duration_minutes?: number;
+      priority?: string;
+    }[],
+    taskHardLimit,
+    capacityProfile.capacityBudget,
+  ) as Array<Record<string, unknown>>;
+  if (rawTasks.length !== coreTasks.length) {
+    console.warn(
+      `[NorthStar] AI returned ${rawTasks.length} tasks — trimmed to ${coreTasks.length} via cognitive budget`,
+    );
   }
 
-  // Enforce cognitive weight budget
-  let totalWeight = coreTasks.reduce((sum, t) => sum + ((t.cognitive_weight as number) || 3), 0);
-  while (totalWeight > capacityProfile.capacityBudget && coreTasks.length > 2) {
-    // Remove the lowest-priority task (last after sorting)
-    const removed = coreTasks.pop()!;
-    totalWeight -= ((removed.cognitive_weight as number) || 3);
-    console.warn(`[NorthStar] Budget exceeded (${totalWeight + ((removed.cognitive_weight as number) || 3)}/${capacityProfile.capacityBudget}) — removed "${removed.title}"`);
-  }
-
-  // Map bonus_task separately (only if within budget)
+  // Map bonus_task separately (only if within bonus grace)
+  const totalWeight = coreTasks.reduce(
+    (sum, t) => sum + ((t.cognitive_weight as number) ?? COGNITIVE_BUDGET.DEFAULT_WEIGHT),
+    0,
+  );
   const allTasks = [...coreTasks];
   if (parsed.bonus_task) {
     const bonusWeight = (parsed.bonus_task.cognitive_weight as number) || 2;
-    if (totalWeight + bonusWeight <= capacityProfile.capacityBudget + 2) { // +2 grace for bonus
+    if (bonusTaskFits(totalWeight, bonusWeight, capacityProfile.capacityBudget)) {
       allTasks.push({ ...parsed.bonus_task, priority: "bonus" });
     }
   }
