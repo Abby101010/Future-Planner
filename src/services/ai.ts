@@ -34,7 +34,10 @@ import type { NewsBriefing } from "../types/agents";
 
 // ── Job Queue Helpers ──────────────────────────────────
 
-const POLL_INTERVAL_MS = 1000;
+// Safety-net poll interval. The main path is event-driven via "job:updated"
+// pushes from JobRunner.notifyRenderer — this timer only fires if an event
+// was dropped (e.g. window not focused at the exact moment). Keep it long.
+const SAFETY_POLL_INTERVAL_MS = 10_000;
 const JOB_TIMEOUT_MS = 900_000; // 15 minutes — plan generation with deep hierarchies can legitimately take >5m
 
 // Shape of IPC responses
@@ -69,7 +72,7 @@ async function submitJob(type: string, payload: Record<string, unknown>): Promis
   return result.jobId;
 }
 
-/** Poll a job until it completes or fails */
+/** Wait for a job to finish via push events, with a safety-net timer */
 async function pollJobUntilDone<T = unknown>(
   jobId: string,
   onProgress?: (progress: number, log: unknown[]) => void
@@ -77,15 +80,27 @@ async function pollJobUntilDone<T = unknown>(
   const startTime = Date.now();
 
   return new Promise<T>((resolve, reject) => {
-    const poll = async () => {
-      if (Date.now() - startTime > JOB_TIMEOUT_MS) {
-        reject(new Error("Job timed out"));
-        return;
-      }
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+    let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    let checking = false;
 
+    const cleanup = () => {
+      settled = true;
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+      if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+      if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; }
+    };
+
+    const check = async () => {
+      if (settled || checking) return;
+      checking = true;
       try {
         const result = (await window.electronAPI.invoke("job:status", { jobId })) as JobStatusResult;
+        if (settled) return;
         if (!result.ok) {
+          cleanup();
           reject(new Error(result.error || "Failed to get job status"));
           return;
         }
@@ -94,28 +109,57 @@ async function pollJobUntilDone<T = unknown>(
         onProgress?.(job.progress, job.progress_log);
 
         if (job.status === "completed") {
+          cleanup();
           resolve(job.result as T);
           return;
         }
-
         if (job.status === "failed") {
+          cleanup();
           reject(new Error(job.error || "Job failed"));
           return;
         }
-
         if (job.status === "cancelled") {
+          cleanup();
           reject(new Error("Job was cancelled"));
           return;
         }
-
-        // Still pending or running — poll again
-        setTimeout(poll, POLL_INTERVAL_MS);
+        // Still pending or running — wait for next push event / safety poll.
       } catch (err) {
+        cleanup();
         reject(err);
+      } finally {
+        checking = false;
       }
     };
 
-    poll();
+    // Overall timeout
+    timeoutTimer = setTimeout(() => {
+      if (settled) return;
+      cleanup();
+      reject(new Error("Job timed out"));
+    }, JOB_TIMEOUT_MS);
+
+    // Safety-net: in case a push event is missed, re-check on a slow cadence
+    const scheduleSafetyPoll = () => {
+      if (settled) return;
+      safetyTimer = setTimeout(async () => {
+        await check();
+        scheduleSafetyPoll();
+      }, SAFETY_POLL_INTERVAL_MS);
+    };
+
+    // Subscribe to JobRunner push events. Each event carries only the jobId,
+    // so we re-fetch status to get the authoritative row.
+    const off = window.electronAPI.on("job:updated", (...args: unknown[]) => {
+      const updatedId = args[0] as string;
+      if (updatedId === jobId) void check();
+    });
+    if (typeof off === "function") unsubscribe = off;
+
+    // Kick off immediately — covers the race where the job finished before
+    // the subscription was registered.
+    void check();
+    scheduleSafetyPoll();
   });
 }
 
@@ -665,14 +709,20 @@ export async function sendHomeChatMessage(
     category: e.category,
   }));
 
-  return submitAndWait<{ reply: string }>("home-chat", {
+  // Home chat bypasses the job queue for minimum latency: it's a single
+  // direct Claude call (no coordinator), and crash-resilience for a one-turn
+  // chat reply isn't worth the extra ~750ms of queue overhead. Any follow-up
+  // actions the dashboard dispatches based on the reply (plan generation,
+  // reallocation, etc.) make their own job-queue submissions independently.
+  const result = (await window.electronAPI.invoke("ai:home-chat", {
     userInput,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
     goals: goals.map((g) => ({ id: g.id, title: g.title, scope: g.scope, goalType: g.goalType, status: g.status, hasPlan: !!g.plan, planConfirmed: g.planConfirmed })),
     todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
     attachments,
-  });
+  })) as { reply: string };
+  return result;
 }
 
 // ── Multi-Agent Functions ────────────────────────────────
