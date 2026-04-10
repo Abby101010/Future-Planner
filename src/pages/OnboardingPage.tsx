@@ -8,6 +8,7 @@ import { Star, ArrowRight, Key, Check } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
 import WeeklyAvailabilityGrid from "../components/WeeklyAvailabilityGrid";
+import { entitiesRepo } from "../repositories";
 import type { TimeBlock } from "../types";
 import "./OnboardingPage.css";
 
@@ -35,36 +36,36 @@ export default function OnboardingPage() {
 
   // ── Step handlers ──
 
-  const handleApiKeySubmit = () => {
+  const handleApiKeySubmit = async () => {
     if (!apiKey.trim()) return;
-    const newUser = user || {
-      id: `user-${Date.now()}`,
-      name: "",
-      goalRaw: "",
-      createdAt: new Date().toISOString(),
-      settings: {
-        enableNewsFeed: false,
-        theme: "light" as const,
-        language: "en" as const,
-      },
-    };
+    const newUser =
+      user ||
+      (await entitiesRepo.newUser({
+        name: "",
+        goalRaw: "",
+        settings: {
+          enableNewsFeed: false,
+          theme: "light",
+          language: "en",
+        },
+      }));
     setUser({ ...newUser, settings: { ...newUser.settings, apiKey: apiKey.trim() } });
     setStep("intent");
   };
 
-  const handleIntentContinue = () => {
-    const newUser = user || {
-      id: `user-${Date.now()}`,
-      name: "",
-      goalRaw: "",
-      createdAt: new Date().toISOString(),
-      settings: {
-        enableNewsFeed: false,
-        theme: "light" as const,
-        language: "en" as const,
-        apiKey: apiKey || undefined,
-      },
-    };
+  const handleIntentContinue = async () => {
+    const newUser =
+      user ||
+      (await entitiesRepo.newUser({
+        name: "",
+        goalRaw: "",
+        settings: {
+          enableNewsFeed: false,
+          theme: "light",
+          language: "en",
+          apiKey: apiKey || undefined,
+        },
+      }));
     setUser({ ...newUser, goalRaw: intent.trim() || newUser.goalRaw });
     setStep("availability");
   };

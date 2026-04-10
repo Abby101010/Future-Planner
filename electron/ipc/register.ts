@@ -16,6 +16,7 @@ import { registerChatIpc } from "./chat";
 import { registerReminderIpc } from "./reminder";
 import { registerEnvironmentIpc } from "./environment";
 import { registerMemoryIpc } from "./memory";
+import { registerEntitiesIpc } from "./entities";
 
 export function setupIPC(): void {
   registerStoreIpc();
@@ -28,4 +29,5 @@ export function setupIPC(): void {
   registerReminderIpc();
   registerEnvironmentIpc();
   registerMemoryIpc();
+  registerEntitiesIpc();
 }

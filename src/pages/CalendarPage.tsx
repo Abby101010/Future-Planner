@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { listDeviceCalendars, importDeviceCalendarEvents } from "../services/ai";
+import { entitiesRepo } from "../repositories";
 import type { CalendarEvent, DeviceIntegrations } from "../types";
 import "./CalendarPage.css";
 
@@ -195,7 +196,7 @@ export default function CalendarPage() {
     setShowEventForm(true);
   };
 
-  const handleSaveEvent = () => {
+  const handleSaveEvent = async () => {
     if (!formTitle.trim() || !formDate) return;
 
     const startDate = formIsAllDay
@@ -223,8 +224,7 @@ export default function CalendarPage() {
         notes: formNotes.trim() || undefined,
       });
     } else {
-      const newEvent: CalendarEvent = {
-        id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      const newEvent = await entitiesRepo.newEvent({
         title: formTitle.trim(),
         startDate,
         endDate,
@@ -234,7 +234,7 @@ export default function CalendarPage() {
         isVacation: formIsVacation,
         source: "manual",
         notes: formNotes.trim() || undefined,
-      };
+      });
       addCalendarEvent(newEvent);
     }
 
@@ -297,21 +297,26 @@ export default function CalendarPage() {
         deviceIntegrations.calendar.selectedCalendars
       );
       if (result.ok && result.events.length > 0) {
-        // Convert device events to CalendarEvent format and merge
-        const imported: CalendarEvent[] = result.events.map((de) => ({
-          id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          title: (de.title as string) || "Untitled",
-          startDate: (de.startDate as string) || "",
-          endDate: (de.endDate as string) || "",
-          isAllDay: (de.isAllDay as boolean) || false,
-          durationMinutes: (de.durationMinutes as number) || 60,
-          category: "other" as const,
-          isVacation: (de.isAllDay as boolean) &&
-            ["vacation", "holiday", "pto", "off", "leave", "trip", "travel"]
-              .some((kw) => ((de.title as string) || "").toLowerCase().includes(kw)),
-          source: "device-calendar" as const,
-          sourceCalendar: (de.calendar as string) || "",
-        }));
+        // Convert device events to CalendarEvent format (backend-assigned IDs)
+        const imported: CalendarEvent[] = await Promise.all(
+          result.events.map((de) =>
+            entitiesRepo.newEvent({
+              title: (de.title as string) || "Untitled",
+              startDate: (de.startDate as string) || "",
+              endDate: (de.endDate as string) || "",
+              isAllDay: (de.isAllDay as boolean) || false,
+              durationMinutes: (de.durationMinutes as number) || 60,
+              category: "other",
+              isVacation:
+                (de.isAllDay as boolean) &&
+                ["vacation", "holiday", "pto", "off", "leave", "trip", "travel"].some(
+                  (kw) => ((de.title as string) || "").toLowerCase().includes(kw),
+                ),
+              source: "device-calendar",
+              sourceCalendar: (de.calendar as string) || "",
+            }),
+          ),
+        );
 
         // Remove old device-imported events and add fresh ones
         const manualEvents = calendarEvents.filter((e) => e.source !== "device-calendar");

@@ -39,7 +39,7 @@ import {
 } from "../services/memory";
 import { downgradeIfOverBudget } from "../../shared/domain/cognitiveBudget";
 import type { TaskPriority } from "../../shared/domain/cognitiveBudget";
-import { memoryRepo, reminderRepo, chatRepo, appDataRepo } from "../repositories";
+import { memoryRepo, reminderRepo, chatRepo, appDataRepo, entitiesRepo } from "../repositories";
 
 const DEFAULT_INTEGRATIONS: DeviceIntegrations = {
   calendar: { enabled: false, selectedCalendars: [] },
@@ -151,7 +151,7 @@ interface Store {
   addPendingTask: (task: PendingTask) => void;
   updatePendingTask: (id: string, updates: Partial<PendingTask>) => void;
   removePendingTask: (id: string) => void;
-  confirmPendingTask: (id: string) => void;
+  confirmPendingTask: (id: string) => Promise<void>;
 
   // ── Reminders ──
   reminders: Reminder[];
@@ -575,7 +575,7 @@ const useStore = create<Store>((set, get) => ({
     set((s) => ({ pendingTasks: s.pendingTasks.filter((t) => t.id !== id) }));
     get().saveToDisk();
   },
-  confirmPendingTask: (id) => {
+  confirmPendingTask: async (id) => {
     const task = get().pendingTasks.find((t) => t.id === id);
     if (!task || !task.analysis) return;
 
@@ -595,8 +595,8 @@ const useStore = create<Store>((set, get) => ({
         )
       : (task.analysis.priority as TaskPriority);
 
-    const newTask: import("../types").DailyTask = {
-      id: `task-confirmed-${Date.now()}`,
+    // Backend assigns the task ID, applies defaults.
+    const newTask = (await entitiesRepo.newConfirmedTask({
       title: task.analysis.title,
       description: task.analysis.description,
       durationMinutes: task.analysis.durationMinutes,
@@ -605,9 +605,8 @@ const useStore = create<Store>((set, get) => ({
       category: task.analysis.category,
       whyToday: task.analysis.reasoning,
       progressContribution: "Quick task added via chat",
-      completed: false,
       isMomentumTask: false,
-    };
+    })) as import("../types").DailyTask;
 
     if (todayLog) {
       const updated = { ...todayLog, tasks: [...todayLog.tasks, newTask] };
@@ -616,19 +615,18 @@ const useStore = create<Store>((set, get) => ({
         dailyLogs: s.dailyLogs.map((l) => (l.id === todayLog.id ? updated : l)),
       }));
     } else {
-      // No today log yet — create a minimal one
-      const newLog: import("../types").DailyLog = {
-        id: `log-${Date.now()}`,
+      // No today log yet — backend assigns ID + defaults the shape.
+      const baseLog = (await entitiesRepo.newLog({
         userId: get().user?.id || "",
         date: today,
         tasks: [newTask],
-        heatmapEntry: { date: today, completionLevel: 0, currentStreak: 0, totalActiveDays: 0, longestStreak: 0 },
-        notificationBriefing: "",
-        milestoneCelebration: null,
-        progress: { overallPercent: 0, milestonePercent: 0, currentMilestone: "", projectedCompletion: "", daysAheadOrBehind: 0 },
-        yesterdayRecap: null,
-        encouragement: "",
-        createdAt: new Date().toISOString(),
+      })) as unknown as import("../types").DailyLog;
+      // Preserve renderer-side heatmap/progress shape fields that live
+      // outside the backend create handler's generic defaults.
+      const newLog: import("../types").DailyLog = {
+        ...baseLog,
+        heatmapEntry: { date: today, completionLevel: 0, currentStreak: 0, totalActiveDays: 0, longestStreak: 0 } as unknown as import("../types").DailyLog["heatmapEntry"],
+        progress: { overallPercent: 0, milestonePercent: 0, currentMilestone: "", projectedCompletion: "", daysAheadOrBehind: 0 } as unknown as import("../types").DailyLog["progress"],
       };
       set({ todayLog: newLog });
       set((s) => ({ dailyLogs: [...s.dailyLogs, newLog] }));
@@ -677,7 +675,10 @@ const useStore = create<Store>((set, get) => ({
     if (!activeChatId) {
       const title = msg.role === "user" ? msg.content.slice(0, 50) : "New chat";
       const newSession: ChatSession = {
-        id: `chat-${Date.now()}`,
+        // Collision-safe UUID (client-generated but properly random;
+        // cloud migration will replace this with an HTTP call to
+        // entities:new-chat-session when the store is made async).
+        id: crypto.randomUUID(),
         title,
         messages,
         createdAt: new Date().toISOString(),

@@ -20,6 +20,7 @@ import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
 import { classifyGoal, generateGoalPlan } from "../services/ai";
 import { recordSignal } from "../services/memory";
+import { entitiesRepo } from "../repositories";
 import AgentProgress from "../components/AgentProgress";
 import MonthlyContext from "../components/MonthlyContext";
 import { IconPicker } from "../components/RichTextToolbar";
@@ -86,8 +87,9 @@ export default function PlanningPage() {
       const goalType: GoalType = classification.goalType || (classification.scope === "big" ? "big" : "everyday");
       recordSignal("goal_classified", goalType, `${goalTitle.trim()} → ${goalType}`).catch(() => {});
 
-      const newGoal: Goal = {
-        id: `goal-${Date.now()}`,
+      // Backend owns ID assignment, timestamps, default status,
+      // planConfirmed, and the everyday-goal flatPlan construction.
+      const newGoal = (await entitiesRepo.newGoal({
         title: goalTitle.trim(),
         description: goalDescription.trim(),
         targetDate: goalIsHabit ? "" : goalDate || "",
@@ -95,43 +97,15 @@ export default function PlanningPage() {
         importance: goalImportance,
         scope: classification.scope,
         goalType,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        planChat: [],
-        plan: null,
-        flatPlan: null,
-        planConfirmed: false,
         scopeReasoning: classification.reasoning,
+        suggestedTasks: classification.suggestedTasks || [],
         repeatSchedule: classification.repeatSchedule || null,
         suggestedTimeSlot: classification.suggestedTimeSlot || undefined,
-      };
+      })) as Goal;
 
       if (goalType === "repeating") {
-        newGoal.status = "active";
-        newGoal.planConfirmed = true;
         addGoal(newGoal);
       } else if (goalType === "everyday") {
-        newGoal.status = "active";
-        newGoal.planConfirmed = true;
-        if (classification.suggestedTasks && classification.suggestedTasks.length > 0) {
-          const planSection = {
-            id: `section-${Date.now()}`,
-            title: goalTitle.trim(),
-            content: "",
-            order: 1,
-            tasks: classification.suggestedTasks.map((task: any, i: number) => ({
-              id: `task-${Date.now()}-${i}`,
-              title: task.title,
-              description: task.description,
-              durationMinutes: task.durationMinutes,
-              priority: task.priority,
-              category: task.category,
-              completed: false,
-            })),
-          };
-          newGoal.flatPlan = [planSection];
-        }
         addGoal(newGoal);
       } else {
         addGoal(newGoal);
@@ -144,12 +118,10 @@ export default function PlanningPage() {
             goalIsHabit,
             goalDescription.trim()
           );
-          const aiMsg: GoalPlanMessage = {
-            id: `msg-${Date.now()}`,
+          const aiMsg = (await entitiesRepo.newChatMessage({
             role: "assistant",
             content: planResult.reply,
-            timestamp: new Date().toISOString(),
-          };
+          })) as GoalPlanMessage;
           addGoalPlanMessage(newGoal.id, aiMsg);
           if (planResult.plan) {
             setGoalPlan(newGoal.id, planResult.plan);

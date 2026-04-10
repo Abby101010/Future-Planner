@@ -18,6 +18,13 @@ import type {
   Reminder,
   ChatSession,
   MonthlyContext,
+  Goal,
+  CalendarEvent,
+  DailyLog,
+  UserProfile,
+  DailyTask,
+  GoalPlanMessage,
+  HomeChatMessage,
 } from "../types";
 
 // ── Generic helper ──────────────────────────────────────
@@ -128,6 +135,118 @@ export const monthlyContextRepo = {
   },
   delete(month: string): Promise<unknown> {
     return invoke("monthly-context:delete", { month });
+  },
+};
+
+// ── Entity creation (backend-assigned IDs + defaults) ──
+//
+// Every entity creation path the renderer used to handle inline
+// (goal-${Date.now()}, evt-${Date.now()}, user-${Date.now()}, etc.)
+// now goes through one of these wrappers so the backend owns IDs
+// and defaulting. The returned entity is fully populated and the
+// store setter is a pure reconciliation — no client-side defaulting.
+
+interface NewGoalInput {
+  title: string;
+  description: string;
+  targetDate: string;
+  isHabit: boolean;
+  importance: string;
+  scope: string;
+  goalType: string;
+  scopeReasoning: string;
+  suggestedTasks?: Array<{
+    title: string;
+    description?: string;
+    durationMinutes?: number;
+    priority?: string;
+    category?: string;
+  }>;
+  repeatSchedule?: unknown;
+  suggestedTimeSlot?: string;
+}
+
+export const entitiesRepo = {
+  async newGoal(input: NewGoalInput): Promise<Goal> {
+    const r = await invoke<{ ok: boolean; goal?: Goal; error?: string }>(
+      "entities:new-goal",
+      input,
+    );
+    if (!r.ok || !r.goal) throw new Error(r.error || "newGoal failed");
+    return r.goal;
+  },
+  async newEvent(input: Partial<CalendarEvent>): Promise<CalendarEvent> {
+    const r = await invoke<{
+      ok: boolean;
+      event?: CalendarEvent;
+      error?: string;
+    }>("entities:new-event", input);
+    if (!r.ok || !r.event) throw new Error(r.error || "newEvent failed");
+    return r.event;
+  },
+  async newUser(input: Partial<UserProfile>): Promise<UserProfile> {
+    const r = await invoke<{
+      ok: boolean;
+      user?: UserProfile;
+      error?: string;
+    }>("entities:new-user", input);
+    if (!r.ok || !r.user) throw new Error(r.error || "newUser failed");
+    return r.user;
+  },
+  async newLog(input: Partial<DailyLog>): Promise<DailyLog> {
+    const r = await invoke<{ ok: boolean; log?: DailyLog; error?: string }>(
+      "entities:new-log",
+      input,
+    );
+    if (!r.ok || !r.log) throw new Error(r.error || "newLog failed");
+    return r.log;
+  },
+  async newChatSession(
+    input: Partial<ChatSession>,
+  ): Promise<ChatSession> {
+    const r = await invoke<{
+      ok: boolean;
+      session?: ChatSession;
+      error?: string;
+    }>("entities:new-chat-session", input);
+    if (!r.ok || !r.session)
+      throw new Error(r.error || "newChatSession failed");
+    return r.session;
+  },
+  async newChatMessage(input: {
+    role: "user" | "assistant";
+    content: string;
+  }): Promise<HomeChatMessage & GoalPlanMessage> {
+    const r = await invoke<{
+      ok: boolean;
+      message?: HomeChatMessage & GoalPlanMessage;
+      error?: string;
+    }>("entities:new-chat-message", input);
+    if (!r.ok || !r.message)
+      throw new Error(r.error || "newChatMessage failed");
+    return r.message;
+  },
+  async newBehaviorEntry(
+    content: string,
+  ): Promise<{ id: string; content: string; createdAt: string }> {
+    const r = await invoke<{
+      ok: boolean;
+      entry?: { id: string; content: string; createdAt: string };
+      error?: string;
+    }>("entities:new-behavior-entry", { content });
+    if (!r.ok || !r.entry)
+      throw new Error(r.error || "newBehaviorEntry failed");
+    return r.entry;
+  },
+  async newConfirmedTask(input: Partial<DailyTask>): Promise<DailyTask> {
+    const r = await invoke<{
+      ok: boolean;
+      task?: DailyTask;
+      error?: string;
+    }>("entities:new-confirmed-task", input);
+    if (!r.ok || !r.task)
+      throw new Error(r.error || "newConfirmedTask failed");
+    return r.task;
   },
 };
 
