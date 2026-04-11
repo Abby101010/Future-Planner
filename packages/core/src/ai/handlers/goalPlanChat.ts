@@ -160,20 +160,95 @@ export function buildGoalPlanChatRequest(
 }
 
 /**
+ * Try to extract a top-level JSON object from `text`, tolerating leading /
+ * trailing prose, markdown fences, and truncated tails.  Returns the parsed
+ * object or null.
+ */
+function tryExtractJson(text: string): Record<string, unknown> | null {
+  // Strip markdown fences
+  let cleaned = text
+    .replace(/```json\n?/g, "")
+    .replace(/```\n?/g, "")
+    .trim();
+
+  // 1) Fast path — the whole string is valid JSON
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      return parsed as Record<string, unknown>;
+  } catch { /* continue */ }
+
+  // 2) Find the first `{` and try progressively trimming from the end
+  //    (handles truncated output from max_tokens).
+  const firstBrace = cleaned.indexOf("{");
+  if (firstBrace < 0) return null;
+  cleaned = cleaned.slice(firstBrace);
+
+  // Try the full substring first, then chop trailing garbage character
+  // by character (up to 200 chars) to recover from truncation.
+  for (let trim = 0; trim <= Math.min(200, cleaned.length); trim++) {
+    const candidate = trim === 0 ? cleaned : cleaned.slice(0, -trim);
+    // Only try if it ends with `}` (or we add one)
+    const tryStrings = candidate.endsWith("}")
+      ? [candidate]
+      : [`${candidate}}`];
+    // Also try adding `}` in case truncated mid-field — crude but effective
+    if (!candidate.endsWith("}")) tryStrings.push(`${candidate}"}`);
+
+    for (const s of tryStrings) {
+      try {
+        const parsed = JSON.parse(s);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+          return parsed as Record<string, unknown>;
+      } catch { /* next */ }
+    }
+  }
+  return null;
+}
+
+/**
+ * If `text` looks like a JSON envelope, extract just the "reply" string
+ * value so we never show raw JSON to the user.  Falls back to the
+ * original text if no JSON wrapper is detected.
+ */
+export function extractReplyFromText(text: string): string {
+  // Quick check: does the text contain a JSON-like reply field?
+  if (!text.includes('"reply"')) return text;
+
+  const parsed = tryExtractJson(text);
+  if (parsed && typeof parsed.reply === "string") return parsed.reply;
+
+  // Last-ditch: regex extraction for the reply value
+  const m = text.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (m) {
+    return m[1]
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\");
+  }
+  return text;
+}
+
+/**
  * Parse a completed goal-plan-chat LLM reply into a structured result.
  * Shared between the blocking handler and the SSE streaming route so
  * both produce identical shapes.
  */
 export function parseGoalPlanChatResult(text: string): GoalPlanChatResult {
-  const cleaned = text
-    .replace(/```json\n?/g, "")
-    .replace(/```\n?/g, "")
-    .trim();
+  const parsed = tryExtractJson(text);
 
-  try {
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+  if (parsed) {
+    // Even when the JSON parsed, make sure `reply` is a string.
+    // If the LLM omitted the field, fall back to extractReplyFromText
+    // which will return the raw text (without JSON wrapper) as a
+    // last resort — but never the raw JSON envelope.
+    const reply = typeof parsed.reply === "string"
+      ? parsed.reply
+      : extractReplyFromText(text);
+
     return {
-      reply: typeof parsed.reply === "string" ? parsed.reply : text,
+      reply,
       planReady: Boolean(parsed.planReady),
       plan:
         parsed.plan && typeof parsed.plan === "object"
@@ -184,9 +259,17 @@ export function parseGoalPlanChatResult(text: string): GoalPlanChatResult {
           ? (parsed.planPatch as Record<string, unknown>)
           : null,
     };
-  } catch {
-    return { reply: text, planReady: false, plan: null, planPatch: null };
   }
+
+  // JSON extraction failed entirely — the LLM may have replied in
+  // plain text (which is fine). Just make sure we strip any partial
+  // JSON wrapper that might have leaked.
+  return {
+    reply: extractReplyFromText(text),
+    planReady: false,
+    plan: null,
+    planPatch: null,
+  };
 }
 
 export async function handleGoalPlanChat(

@@ -10,6 +10,34 @@ import RichTextToolbar from "./RichTextToolbar";
 import type { GoalPlanMessage } from "@northstar/core";
 import { getDateLocale, type Language } from "../i18n";
 
+/**
+ * Sanitize an assistant message that may have been persisted as raw JSON
+ * (a bug from earlier versions).  Extracts the "reply" field if the
+ * content looks like a JSON envelope.
+ */
+function sanitizeContent(msg: GoalPlanMessage): string {
+  const text = msg.content;
+  if (msg.role !== "assistant") return text;
+  // Quick check — does it look like a JSON object with a reply field?
+  if (!text.trimStart().startsWith("{") || !text.includes('"reply"'))
+    return text;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.reply === "string") return parsed.reply;
+  } catch {
+    // Try regex extraction as fallback
+    const m = text.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (m) {
+      return m[1]
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\");
+    }
+  }
+  return text;
+}
+
 interface Props {
   planChat: GoalPlanMessage[];
   isLoading: boolean;
@@ -59,7 +87,7 @@ export default function GoalPlanChat({
                 )}
               </div>
               <div className="gp-chat-msg-content">
-                <p>{msg.content}</p>
+                <p>{sanitizeContent(msg)}</p>
                 <span className="gp-chat-msg-time">
                   {new Date(msg.timestamp).toLocaleTimeString(
                     getDateLocale(lang),

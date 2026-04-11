@@ -16,6 +16,7 @@ import {
   parseHomeChatIntent,
   buildGoalPlanChatRequest,
   parseGoalPlanChatResult,
+  extractReplyFromText,
 } from "@northstar/core/handlers";
 import type { AIPayloadMap, GoalPlan, GoalPlanMessage } from "@northstar/core";
 import { applyPlanPatch } from "@northstar/core";
@@ -405,15 +406,32 @@ aiRouter.post(
               });
             }
             if (result.reply) {
+              // Safety net: never persist raw JSON as a chat message.
+              // extractReplyFromText strips JSON envelopes if the reply
+              // somehow still contains one.
               nextChat.push({
                 id: randomUUID(),
                 role: "assistant",
-                content: result.reply,
+                content: extractReplyFromText(result.reply),
                 timestamp: new Date().toISOString(),
               });
             }
 
-            let nextPlan = goal.plan ?? null;
+            // Build the plan to patch against. Prefer reconstructing
+            // from flat goal_plan_nodes (the canonical source); fall
+            // back to inline goal.plan for legacy/simple cases.
+            let nextPlan: GoalPlan | null = null;
+            const planNodes = await repos.goalPlan.listForGoal(goalId);
+            if (planNodes.length > 0) {
+              const reconstructed = repos.goalPlan.reconstructPlan(planNodes);
+              if (reconstructed.years.length > 0 || reconstructed.milestones.length > 0) {
+                nextPlan = reconstructed;
+              }
+            }
+            if (!nextPlan) {
+              nextPlan = goal.plan ?? null;
+            }
+
             if (
               result.planReady &&
               result.plan &&
@@ -454,7 +472,7 @@ aiRouter.post(
       }
 
       send("done", {
-        reply: result.reply,
+        reply: extractReplyFromText(result.reply),
         planReady: result.planReady,
         plan: result.plan,
         planPatch: result.planPatch,

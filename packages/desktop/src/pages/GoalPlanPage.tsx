@@ -116,6 +116,38 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     setNotesValue(goal?.notes || "");
   }, [goal?.notes, goalId]);
 
+  // Progressively extract the "reply" field from the raw JSON being
+  // streamed so the chat bubble shows human-readable text, not the
+  // JSON envelope.
+  useEffect(() => {
+    if (!streamRunning || !streamedText) return;
+    // Look for the "reply":"..." pattern in the accumulated text.
+    const m = streamedText.match(/"reply"\s*:\s*"/);
+    if (!m) return;
+    const start = m.index! + m[0].length;
+    let extracted = "";
+    let i = start;
+    while (i < streamedText.length) {
+      if (streamedText[i] === "\\") {
+        if (i + 1 < streamedText.length) {
+          const esc = streamedText[i + 1];
+          if (esc === "n") extracted += "\n";
+          else if (esc === "t") extracted += "\t";
+          else extracted += esc;
+          i += 2;
+        } else {
+          break;
+        }
+      } else if (streamedText[i] === '"') {
+        break;
+      } else {
+        extracted += streamedText[i];
+        i += 1;
+      }
+    }
+    if (extracted) setStreamedReply(extracted);
+  }, [streamedText, streamRunning]);
+
   // Auto-scroll the chat panel whenever new messages arrive (persisted
   // history or streaming tokens).
   useEffect(() => {
@@ -244,42 +276,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         currentPlan: plan,
       }, {
         onDelta: (text) => {
-          setStreamedText((prev) => {
-            const full = prev + text;
-            // Try to progressively extract just the "reply" value from
-            // the JSON being streamed.  The LLM writes the full JSON
-            // envelope `{"reply":"…", …}` token by token.  We look for
-            // the opening `"reply":"` (or `"reply": "`) and pull out
-            // everything that follows until the JSON string closes.
-            const replyMatch = full.match(/"reply"\s*:\s*"/);
-            if (replyMatch) {
-              const start = replyMatch.index! + replyMatch[0].length;
-              // Walk forward, collecting characters, handling escapes.
-              let extracted = "";
-              let i = start;
-              while (i < full.length) {
-                if (full[i] === "\\") {
-                  // Escaped char — pass through the two-char sequence.
-                  if (i + 1 < full.length) {
-                    const esc = full[i + 1];
-                    if (esc === "n") extracted += "\n";
-                    else if (esc === "t") extracted += "\t";
-                    else extracted += esc;
-                    i += 2;
-                  } else {
-                    break; // incomplete escape at the very end
-                  }
-                } else if (full[i] === '"') {
-                  break; // end of JSON string value
-                } else {
-                  extracted += full[i];
-                  i += 1;
-                }
-              }
-              setStreamedReply(extracted);
-            }
-            return full;
-          });
+          setStreamedText((prev) => prev + text);
         },
         onDone: (result) => {
           // The server already persisted the messages and applied any

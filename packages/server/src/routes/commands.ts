@@ -30,6 +30,8 @@ import { emitViewInvalidate } from "../ws/events";
 import { commandToInvalidations } from "../views/_invalidation";
 import { handleAIRequest, type RequestType } from "../ai/router";
 import { loadMemory, buildMemoryContext } from "../memory";
+import { extractReplyFromText } from "@northstar/core/handlers";
+import { applyPlanPatch } from "@northstar/core";
 import type { TimeBlock, UserProfile, UserSettings } from "@northstar/core";
 
 const commandsRouter = Router();
@@ -360,7 +362,9 @@ async function cmdSendChatMessage(
     }
 
     // Persist assistant reply.
-    const replyText = typeof result?.reply === "string" ? result.reply : "";
+    const replyText = typeof result?.reply === "string"
+      ? extractReplyFromText(result.reply)
+      : "";
     if (replyText) {
       try {
         await appendGoalPlanChatMessage(goalId, {
@@ -374,7 +378,7 @@ async function cmdSendChatMessage(
       }
     }
 
-    // If the handler returned a full plan, replace the goal's plan tree.
+    // If the handler returned a full plan or a patch, apply it.
     let planReplaced = false;
     if (result?.planReady && result.plan && typeof result.plan === "object") {
       try {
@@ -389,6 +393,32 @@ async function cmdSendChatMessage(
         }
       } catch (err) {
         console.warn("[cmd:send-chat-message] replacePlan failed:", err);
+      }
+    } else if (result?.planPatch && typeof result.planPatch === "object") {
+      // Sparse patch — merge into existing plan.
+      try {
+        const existing = await repos.goals.get(goalId);
+        if (existing) {
+          // Reconstruct plan from flat nodes (canonical) or inline.
+          let currentPlan: import("@northstar/core").GoalPlan | null = null;
+          const planNodes = await repos.goalPlan.listForGoal(goalId);
+          if (planNodes.length > 0) {
+            const reconstructed = repos.goalPlan.reconstructPlan(planNodes);
+            if (reconstructed.years.length > 0 || reconstructed.milestones.length > 0) {
+              currentPlan = reconstructed;
+            }
+          }
+          if (!currentPlan) currentPlan = existing.plan ?? null;
+
+          if (currentPlan) {
+            const patched = applyPlanPatch(currentPlan, result.planPatch);
+            await repos.goalPlan.replacePlan(goalId, patched);
+            await repos.goals.upsert({ ...existing, plan: patched });
+            planReplaced = true;
+          }
+        }
+      } catch (err) {
+        console.warn("[cmd:send-chat-message] planPatch failed:", err);
       }
     }
 
