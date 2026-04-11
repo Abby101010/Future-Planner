@@ -7,36 +7,28 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Send,
   Loader2,
-  Target,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Clock,
-  Sparkles,
-  Edit3,
-  MessageSquare,
   ArrowLeft,
-  Calendar,
-  Unlock,
   AlertTriangle,
   FileText,
   RefreshCw,
 } from "lucide-react";
 import useStore from "../store/useStore";
-import { useT, getDateLocale } from "../i18n";
+import { useT } from "../i18n";
 import { sendGoalPlanMessage, generateGoalPlan, reallocateGoalPlan } from "../services/ai";
 import {
   getPlanJobId as readStoredJobId,
-  setPlanJobId as storeJobId,
   clearPlanJobId as clearStoredJobId,
   hasPlanJobId,
 } from "../services/jobPersistence";
 import AgentProgress from "../components/AgentProgress";
-import RichTextToolbar, { IconPicker } from "../components/RichTextToolbar";
-import GoalPlanWeekCard from "../components/GoalPlanWeekCard";
 import GoalPlanMilestoneTimeline from "../components/GoalPlanMilestoneTimeline";
+import GoalPlanHeader from "../components/GoalPlanHeader";
+import GoalPlanHierarchy from "../components/GoalPlanHierarchy";
+import GoalPlanChat from "../components/GoalPlanChat";
 import type {
   GoalPlanMessage,
   GoalPlan,
@@ -697,13 +689,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   // can have it as undefined, which would crash the chat render below.
   const planChat = goal.planChat ?? [];
 
-  const importanceColors: Record<string, string> = {
-    low: "badge-blue",
-    medium: "badge-yellow",
-    high: "badge-red",
-    critical: "badge-red",
-  };
-
   const { total: totalTasks, completed: completedTasks } = goal.plan && Array.isArray(goal.plan.years)
     ? countPlanTasks(goal.plan)
     : { total: 0, completed: 0 };
@@ -716,73 +701,19 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   return (
     <div className="goal-plan-page">
       <div className="goal-plan-scroll">
-        {/* Header */}
-        <header className="gp-header animate-fade-in">
-          <button className="btn btn-ghost btn-sm gp-back" onClick={() => setView("planning")}>
-            <ArrowLeft size={16} />
-            Planning
-          </button>
-          <div className="gp-header-main">
-            <div className="gp-header-info">
-              <button
-                className={`goal-icon-btn gp-header-icon-btn ${goal.icon ? "has-icon" : ""}`}
-                onClick={() => setShowIconPicker(!showIconPicker)}
-                title="Choose icon"
-              >
-                {goal.icon || <Target size={24} />}
-              </button>
-              {showIconPicker && (
-                <IconPicker
-                  currentIcon={goal.icon}
-                  onSelect={(icon) => updateGoal(goal.id, { icon })}
-                  onClose={() => setShowIconPicker(false)}
-                />
-              )}
-              <div>
-                <h2>{goal.title}</h2>
-                {goal.description && (
-                  <p className="gp-header-description">{goal.description}</p>
-                )}
-                <div className="gp-header-meta">
-                  <span className={`badge ${importanceColors[goal.importance]}`}>
-                    {goal.importance}
-                  </span>
-                  {goal.isHabit && (
-                    <span className="badge badge-purple">
-                      {t.common.habit}
-                    </span>
-                  )}
-                  {goal.targetDate && !goal.isHabit && (
-                    <span className="gp-meta-item">
-                      <Clock size={14} />
-                      {new Date(goal.targetDate).toLocaleDateString(getDateLocale(lang), {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </span>
-                  )}
-                  <span className={`badge ${goal.planConfirmed ? "badge-green" : "badge-yellow"}`}>
-                    {goal.planConfirmed ? t.common.active : t.common.planning}
-                  </span>
-                </div>
-              </div>
-            </div>
-            {totalTasks > 0 && (
-              <div className="gp-progress">
-                <div className="gp-progress-label">
-                  {t.goalPlan.tasksProgress(completedTasks, totalTasks, progressPercent)}
-                </div>
-                <div className="gp-progress-bar">
-                  <div
-                    className="gp-progress-fill"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </header>
+        <GoalPlanHeader
+          goal={goal}
+          showIconPicker={showIconPicker}
+          onToggleIconPicker={() => setShowIconPicker(!showIconPicker)}
+          onSelectIcon={(icon) => updateGoal(goal.id, { icon })}
+          onCloseIconPicker={() => setShowIconPicker(false)}
+          totalTasks={totalTasks}
+          completedTasks={completedTasks}
+          progressPercent={progressPercent}
+          lang={lang}
+          t={t}
+          onBack={() => setView("planning")}
+        />
 
         {/* AI thought process — rendered right after the header while the
             plan is being generated so the user actually sees the agents
@@ -808,163 +739,35 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           />
         )}
 
-        {/* ── Hierarchical Plan: Years → Months → Weeks → Days ── */}
-        {goal.plan && Array.isArray(goal.plan.years) && goal.plan.years.length > 0 && (
-          <section className="gp-hierarchy animate-slide-up">
-            {goal.plan.years.map((year) => (
-              <div key={year.id} className="gp-year">
-                <div className="gp-year-header-row">
-                  <button
-                    className="gp-year-header"
-                    onClick={() => toggleSet(expandedYears, year.id, setExpandedYears)}
-                  >
-                    <div className="gp-level-left">
-                      {expandedYears.has(year.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                      <Calendar size={16} className="gp-level-icon year-icon" />
-                      <span className="gp-level-label">{year.label}</span>
-                    </div>
-                    <span className="gp-level-objective">{year.objective}</span>
-                  </button>
-                </div>
-
-                {expandedYears.has(year.id) && (
-                  <div className="gp-year-body">
-                    {year.months.map((month) => (
-                      <div key={month.id} className="gp-month">
-                        <div className="gp-month-header-row">
-                          <button
-                            className="gp-month-header"
-                            onClick={() => toggleSet(expandedMonths, month.id, setExpandedMonths)}
-                          >
-                            <div className="gp-level-left">
-                              {expandedMonths.has(month.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                              <span className="gp-level-label">{month.label}</span>
-                            </div>
-                            <span className="gp-level-objective">{month.objective}</span>
-                          </button>
-                        </div>
-
-                        {expandedMonths.has(month.id) && (
-                          <div className="gp-month-body">
-                            {month.weeks.map((week) => (
-                              <GoalPlanWeekCard
-                                key={week.id}
-                                week={week}
-                                isExpanded={expandedWeeks.has(week.id)}
-                                onToggle={() => toggleSet(expandedWeeks, week.id, setExpandedWeeks)}
-                                onToggleTask={handleToggleTask}
-                                lang={lang}
-                                t={t}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Unlock next week button */}
-            {hasLockedWeeks && (
-              <button className="btn btn-ghost gp-unlock-btn" onClick={handleUnlockNext}>
-                <Unlock size={14} />
-                {t.goalPlan.unlockNextWeek}
-              </button>
-            )}
-          </section>
+        {goal.plan && (
+          <GoalPlanHierarchy
+            plan={goal.plan}
+            expandedYears={expandedYears}
+            expandedMonths={expandedMonths}
+            expandedWeeks={expandedWeeks}
+            onToggleYear={(id) => toggleSet(expandedYears, id, setExpandedYears)}
+            onToggleMonth={(id) => toggleSet(expandedMonths, id, setExpandedMonths)}
+            onToggleWeek={(id) => toggleSet(expandedWeeks, id, setExpandedWeeks)}
+            onToggleTask={handleToggleTask}
+            hasLockedWeeks={!!hasLockedWeeks}
+            onUnlockNext={handleUnlockNext}
+            lang={lang}
+            t={t}
+          />
         )}
 
-        {/* Chat — always visible, primary way to discuss/modify the plan.
-            Positioned after the generated tasks and before the confirm bar. */}
-        <div className="gp-chat gp-chat-prominent animate-slide-up">
-          <div className="gp-chat-header-static">
-            <MessageSquare size={16} />
-            <h3>{t.goalPlan.planningChat}</h3>
-            {planChat.length > 0 && (
-              <span className="gp-chat-count">{planChat.length}</span>
-            )}
-          </div>
-
-          {planChat.length > 0 && (
-            <div className="gp-chat-messages">
-              {planChat.map((msg) => (
-                <div key={msg.id} className={`gp-chat-msg ${msg.role}`}>
-                  <div className="gp-chat-msg-avatar">
-                    {msg.role === "assistant" ? (
-                      <Sparkles size={14} />
-                    ) : (
-                      <Edit3 size={14} />
-                    )}
-                  </div>
-                  <div className="gp-chat-msg-content">
-                    <p>{msg.content}</p>
-                    <span className="gp-chat-msg-time">
-                      {new Date(msg.timestamp).toLocaleTimeString(getDateLocale(lang), {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="gp-chat-msg assistant">
-                  <div className="gp-chat-msg-avatar">
-                    <Loader2 size={14} className="spin" />
-                  </div>
-                  <div className="gp-chat-msg-content">
-                    <p className="gp-typing">{t.goalPlan.thinking}</p>
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-          )}
-
-          {planChat.length === 0 && (
-            <div className="gp-chat-empty">
-              <p>Ask the AI to adjust your plan, change timelines, add tasks, or discuss strategy.</p>
-            </div>
-          )}
-
-          <div className="gp-chat-input-area">
-            <RichTextToolbar
-              onInsertText={handleInsertTextToGpChat}
-              compact
-            />
-            <div className="gp-chat-input-row">
-              <textarea
-                ref={gpChatInputRef}
-                className="input gp-chat-input"
-                placeholder={t.goalPlan.chatPlaceholder}
-                value={chatInput}
-                rows={1}
-                onChange={(e) => {
-                  setChatInput(e.target.value);
-                  const el = e.currentTarget;
-                  el.style.height = "auto";
-                  el.style.height = Math.min(el.scrollHeight, 150) + "px";
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                disabled={isLoading}
-              />
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleSendMessage}
-                disabled={isLoading || !chatInput.trim()}
-              >
-                {isLoading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-              </button>
-            </div>
-          </div>
-        </div>
+        <GoalPlanChat
+          planChat={planChat}
+          isLoading={isLoading}
+          chatInput={chatInput}
+          onChatInputChange={setChatInput}
+          onSend={handleSendMessage}
+          inputRef={gpChatInputRef}
+          endRef={chatEndRef}
+          onInsertText={handleInsertTextToGpChat}
+          lang={lang}
+          t={t}
+        />
 
         {/* Reschedule banner — too many incomplete tasks */}
         {showRescheduleBanner && (
