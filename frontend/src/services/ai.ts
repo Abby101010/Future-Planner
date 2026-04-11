@@ -557,6 +557,48 @@ export async function analyzeQuickTask(
 }
 
 /** Send a message in the home chat */
+/**
+ * Walk a GoalPlan and produce a small summary used to give home chat
+ * grounded visibility into plan readiness. Mirrors the `!week.locked`
+ * filter in frontend/src/pages/TasksPage.tsx:226 so `visibleSubtaskCount`
+ * matches exactly what the user sees on the tasks page. Returns null if
+ * the plan is missing or malformed.
+ */
+function summarizePlan(plan: GoalPlan | null): {
+  subtaskCount: number;
+  visibleSubtaskCount: number;
+  unlockedWeekCount: number;
+  totalWeekCount: number;
+  milestoneCount: number;
+} | null {
+  if (!plan || !Array.isArray(plan.years)) return null;
+  let subtaskCount = 0;
+  let visibleSubtaskCount = 0;
+  let unlockedWeekCount = 0;
+  let totalWeekCount = 0;
+  for (const year of plan.years) {
+    for (const month of year.months ?? []) {
+      for (const week of month.weeks ?? []) {
+        totalWeekCount += 1;
+        const isUnlocked = !week.locked;
+        if (isUnlocked) unlockedWeekCount += 1;
+        for (const day of week.days ?? []) {
+          const taskCount = day.tasks?.length ?? 0;
+          subtaskCount += taskCount;
+          if (isUnlocked) visibleSubtaskCount += taskCount;
+        }
+      }
+    }
+  }
+  return {
+    subtaskCount,
+    visibleSubtaskCount,
+    unlockedWeekCount,
+    totalWeekCount,
+    milestoneCount: plan.milestones?.length ?? 0,
+  };
+}
+
 export async function sendHomeChatMessage(
   userInput: string,
   chatHistory: Array<{ role: string; content: string }>,
@@ -584,7 +626,23 @@ export async function sendHomeChatMessage(
   const payload = {
     userInput,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
-    goals: goals.map((g) => ({ id: g.id, title: g.title, scope: g.scope, goalType: g.goalType, status: g.status, hasPlan: !!g.plan, planConfirmed: g.planConfirmed })),
+    goals: goals.map((g) => {
+      const s = summarizePlan(g.plan);
+      return {
+        id: g.id,
+        title: g.title,
+        scope: g.scope,
+        goalType: g.goalType,
+        status: g.status,
+        hasPlan: !!g.plan,
+        planConfirmed: g.planConfirmed,
+        subtaskCount: s?.subtaskCount ?? 0,
+        visibleSubtaskCount: s?.visibleSubtaskCount ?? 0,
+        unlockedWeekCount: s?.unlockedWeekCount ?? 0,
+        totalWeekCount: s?.totalWeekCount ?? 0,
+        milestoneCount: s?.milestoneCount ?? 0,
+      };
+    }),
     todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
     attachments,

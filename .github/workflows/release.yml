@@ -38,13 +38,17 @@ jobs:
           CI: true
 
       - name: Package with electron-builder (macOS .dmg)
-        run: npx electron-builder --mac --universal --publish never
+        run: npx electron-builder --mac --universal --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-macos
-          path: release/*.dmg
+          path: |
+            release/*.dmg
+            release/latest-mac.yml
 
   # ─── Windows (.exe via NSIS) ──────────────────────────────
   build-windows:
@@ -68,13 +72,17 @@ jobs:
           CI: true
 
       - name: Package with electron-builder (Windows NSIS)
-        run: npx electron-builder --win --publish never
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-windows
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/latest.yml
 
   # ─── Linux (.AppImage) ───────────────────────────────────
   build-linux:
@@ -98,37 +106,32 @@ jobs:
           CI: true
 
       - name: Package with electron-builder (Linux AppImage)
-        run: npx electron-builder --linux --publish never
+        run: npx electron-builder --linux --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-linux
-          path: release/*.AppImage
+          path: |
+            release/*.AppImage
+            release/latest-linux.yml
 
-  # ─── Publish GitHub Release ──────────────────────────────
-  publish-release:
+  # ─── Promote draft release to published ─────────────────
+  # electron-builder uploads each platform's artifacts (including the
+  # `latest-*.yml` metadata files that electron-updater needs) to a
+  # *draft* GitHub Release. We promote it to published here so the
+  # auto-updater can actually see it.
+  promote-release:
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: List downloaded files
-        run: ls -R artifacts
-
-      - name: Create GitHub Release & upload assets
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            artifacts/**/*.dmg
-            artifacts/**/*.exe
-            artifacts/**/*.AppImage
+      - name: Promote draft release for ${{ github.ref_name }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release edit "${{ github.ref_name }}" --draft=false --prerelease=false

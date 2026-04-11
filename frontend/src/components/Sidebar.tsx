@@ -2,6 +2,7 @@
    NorthStar — Sidebar component
    ────────────────────────────────────────────────────────── */
 
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Map,
@@ -11,6 +12,7 @@ import {
   CheckSquare,
   Compass,
   Newspaper,
+  Download,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useT, getDateLocale } from "../i18n";
@@ -28,6 +30,27 @@ export default function Sidebar() {
   const { currentView, setView, user, roadmap, goals } = useStore();
   const t = useT();
   const lang = user?.settings?.language || "en";
+
+  // ── Auto-update badge ──
+  // Listens for "updater:status" IPC events from electron/auto-updater.ts.
+  // When the updater detects a newer version on GitHub Releases, it pushes
+  // { status: "available", version }, and we surface a badge in the footer.
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!window.electronAPI?.on) return;
+    const off = window.electronAPI.on("updater:status", (...args: unknown[]) => {
+      const payload = args[0] as { status?: string; version?: string } | undefined;
+      if (payload?.status === "available" && payload.version) {
+        setUpdateVersion(payload.version);
+      }
+    });
+    return () => {
+      if (typeof off === "function") off();
+    };
+  }, []);
+  const handleOpenReleases = () => {
+    window.electronAPI?.invoke?.("updater:open-releases");
+  };
 
   const bigGoals = goals.filter(
     (g) => (g.goalType === "big" || (!g.goalType && g.scope === "big")) && g.status !== "archived"
@@ -140,6 +163,17 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
+        {updateVersion && (
+          <button
+            type="button"
+            className="sidebar-update-badge"
+            onClick={handleOpenReleases}
+            title={`Click to download NorthStar ${updateVersion}`}
+          >
+            <Download size={14} />
+            <span>Update available · {updateVersion}</span>
+          </button>
+        )}
         <div className="sidebar-user">
           <CalendarDays size={14} />
           <span className="sidebar-date">

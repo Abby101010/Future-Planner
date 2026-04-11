@@ -144,3 +144,29 @@
   color: var(--text-muted);
   flex-shrink: 0;
 }
+
+/* ── Update available badge ── */
+.sidebar-update-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--accent, #3b82f6);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+.sidebar-update-badge:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.sidebar-update-badge:active {
+  transform: translateY(0);
+}

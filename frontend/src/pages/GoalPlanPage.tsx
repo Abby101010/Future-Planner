@@ -171,6 +171,151 @@ function unlockNextWeek(plan: GoalPlan): GoalPlan {
 }
 
 // ── Helper: apply a plan patch (merge partial updates from AI chat) ──
+//
+// CRITICAL: This must preserve completed task state. The LLM doesn't know
+// (and shouldn't have to know) which tasks the user has already checked off.
+// Whenever a task in the patch has the same id as an existing task, we
+// carry forward `completed` and `completedAt` from the old plan.
+//
+// Merging is id-based at every level (week → day → task). If the patch
+// omits a task that exists in the old plan AND that task is completed,
+// we preserve it (the LLM clearly didn't intend to delete user progress).
+// If it's incomplete and omitted, we drop it (LLM intentionally removed).
+function mergeTaskList(
+  oldTasks: GoalPlan["years"][number]["months"][number]["weeks"][number]["days"][number]["tasks"],
+  patchTasks: Array<Record<string, unknown>>,
+): typeof oldTasks {
+  const oldById = new Map(oldTasks.map((t) => [t.id, t]));
+  const patchedIds = new Set<string>();
+
+  // Walk patch tasks first to preserve their order
+  const merged = patchTasks.map((pt) => {
+    const id = pt.id as string;
+    patchedIds.add(id);
+    const old = oldById.get(id);
+    if (old) {
+      // Existing task: take patch fields but preserve completion state
+      return {
+        ...old,
+        ...pt,
+        completed: old.completed,
+        completedAt: old.completedAt,
+      } as typeof oldTasks[number];
+    }
+    // Brand-new task introduced by patch
+    return {
+      completed: false,
+      ...pt,
+    } as unknown as typeof oldTasks[number];
+  });
+
+  // Append any old completed tasks the patch dropped (preserve user progress)
+  for (const old of oldTasks) {
+    if (!patchedIds.has(old.id) && old.completed) {
+      merged.push(old);
+    }
+  }
+  return merged;
+}
+
+function mergeDayList(
+  oldDays: GoalPlan["years"][number]["months"][number]["weeks"][number]["days"],
+  patchDays: Array<Record<string, unknown>>,
+): typeof oldDays {
+  const oldById = new Map(oldDays.map((d) => [d.id, d]));
+  const patchedIds = new Set<string>();
+
+  const merged = patchDays.map((pd) => {
+    const id = pd.id as string;
+    patchedIds.add(id);
+    const old = oldById.get(id);
+    const patchTasks = (pd.tasks as Array<Record<string, unknown>>) || null;
+    if (old) {
+      return {
+        ...old,
+        ...(pd.label ? { label: pd.label as string } : {}),
+        tasks: patchTasks ? mergeTaskList(old.tasks, patchTasks) : old.tasks,
+      } as typeof oldDays[number];
+    }
+    // Brand-new day from patch
+    return {
+      tasks: [],
+      ...pd,
+    } as unknown as typeof oldDays[number];
+  });
+
+  // Append any old days the patch didn't mention (don't lose them)
+  for (const old of oldDays) {
+    if (!patchedIds.has(old.id)) merged.push(old);
+  }
+  return merged;
+}
+
+// When the LLM returns a full replacement plan (planReady: true), the
+// naive thing is to overwrite goal.plan and lose all completion state.
+// Instead, walk the new plan and copy `completed` / `completedAt` from
+// the old plan when task ids match. This is the same intent as
+// applyPlanPatch but for the wholesale-replace path.
+function mergePlanPreservingProgress(
+  oldPlan: GoalPlan | null,
+  newPlan: GoalPlan,
+): GoalPlan {
+  if (!oldPlan) return newPlan;
+
+  // Build maps of old completed state, keyed both by id and by title (so a
+  // re-issued plan that regenerates ids still preserves user progress when
+  // titles are stable enough to match).
+  const oldTaskById = new Map<string, { completed: boolean; completedAt?: string }>();
+  const oldTaskByTitle = new Map<string, { completed: boolean; completedAt?: string }>();
+  const oldMilestoneById = new Map<string, boolean>();
+
+  for (const ms of oldPlan.milestones || []) {
+    if (ms.completed) oldMilestoneById.set(ms.id, true);
+  }
+  for (const yr of oldPlan.years || []) {
+    for (const mo of yr.months || []) {
+      for (const wk of mo.weeks || []) {
+        for (const dy of wk.days || []) {
+          for (const t of dy.tasks || []) {
+            if (t.completed) {
+              const entry = { completed: true, completedAt: t.completedAt };
+              oldTaskById.set(t.id, entry);
+              oldTaskByTitle.set(t.title.trim().toLowerCase(), entry);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    ...newPlan,
+    milestones: (newPlan.milestones || []).map((ms) =>
+      oldMilestoneById.has(ms.id) ? { ...ms, completed: true } : ms,
+    ),
+    years: (newPlan.years || []).map((yr) => ({
+      ...yr,
+      months: (yr.months || []).map((mo) => ({
+        ...mo,
+        weeks: (mo.weeks || []).map((wk) => ({
+          ...wk,
+          days: (wk.days || []).map((dy) => ({
+            ...dy,
+            tasks: (dy.tasks || []).map((t) => {
+              const prior =
+                oldTaskById.get(t.id) ||
+                oldTaskByTitle.get(t.title.trim().toLowerCase());
+              return prior
+                ? { ...t, completed: true, completedAt: prior.completedAt }
+                : t;
+            }),
+          })),
+        })),
+      })),
+    })),
+  };
+}
+
 function applyPlanPatch(
   plan: GoalPlan,
   patch: Record<string, unknown>
@@ -180,18 +325,19 @@ function applyPlanPatch(
 
   let updated = { ...plan };
 
-  // Patch milestones if provided
+  // Patch milestones if provided — preserve completed flag
   if (patchMilestones) {
     updated = {
       ...updated,
       milestones: updated.milestones.map((ms) => {
         const p = patchMilestones.find((pm) => pm.id === ms.id);
-        return p ? { ...ms, ...p } as typeof ms : ms;
+        if (!p) return ms;
+        return { ...ms, ...p, completed: ms.completed } as typeof ms;
       }),
     };
   }
 
-  // Patch years → months → weeks deep merge
+  // Patch years → months → weeks → days → tasks (id-based deep merge)
   if (patchYears) {
     updated = {
       ...updated,
@@ -216,9 +362,14 @@ function applyPlanPatch(
               weeks: mo.weeks.map((wk) => {
                 const pWk = patchWeeks.find((pw) => pw.id === wk.id) as Record<string, unknown> | undefined;
                 if (!pWk) return wk;
-                // Merge week-level fields; if days are provided, replace them
-                const merged = { ...wk, ...pWk } as typeof wk;
-                return merged;
+                const patchDays = pWk.days as Array<Record<string, unknown>> | undefined;
+                return {
+                  ...wk,
+                  ...(pWk.objective ? { objective: pWk.objective as string } : {}),
+                  ...(pWk.label ? { label: pWk.label as string } : {}),
+                  ...(typeof pWk.locked === "boolean" ? { locked: pWk.locked as boolean } : {}),
+                  days: patchDays ? mergeDayList(wk.days, patchDays) : wk.days,
+                } as typeof wk;
               }),
             };
           }),
@@ -306,31 +457,49 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalId]);
 
-  // Count overdue tasks (unlocked, past date, incomplete)
+  // Count *truly overdue* tasks: incomplete tasks in unlocked weeks that
+  // are strictly behind the user's current week relative to goal.createdAt.
+  // Day labels are free-text ("Monday" / "Jan 6"), so we use week-index math
+  // off createdAt instead of trying to parse them.
   const overdueTasks = (() => {
-    if (!goal?.plan) return 0;
-    const today = new Date().toISOString().split("T")[0];
+    if (!goal?.plan || !goal?.createdAt) return 0;
+    const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+    const elapsedWeeks = Math.floor(
+      (Date.now() - new Date(goal.createdAt).getTime()) / MS_PER_WEEK
+    );
+    // currentWeekIndex = how many full weeks have passed since plan creation;
+    // any unlocked week with index < currentWeekIndex is "in the past".
+    if (elapsedWeeks < 1) return 0;
+
+    let weekIndex = 0;
     let count = 0;
     for (const yr of goal.plan.years) {
       for (const mo of yr.months) {
         for (const wk of mo.weeks) {
-          if (wk.locked) continue;
-          for (const dy of wk.days) {
-            // Try to parse the day label as a date
-            const dayDate = dy.label; // e.g., "Jan 6" or "Monday"
-            // Count incomplete tasks in unlocked past weeks
-            for (const task of dy.tasks) {
-              if (!task.completed) count++;
+          if (wk.locked) {
+            weekIndex += 1;
+            continue;
+          }
+          if (weekIndex < elapsedWeeks) {
+            for (const dy of wk.days) {
+              for (const task of dy.tasks) {
+                if (!task.completed) count++;
+              }
             }
           }
+          weekIndex += 1;
         }
       }
     }
-    // Only show if there are significant incomplete tasks
     return count;
   })();
 
-  const showRescheduleBanner = overdueTasks > 5 && !rescheduleDismissed && !isRescheduling && goal?.planConfirmed;
+  const showRescheduleBanner =
+    overdueTasks > 5 &&
+    !rescheduleDismissed &&
+    !goal?.rescheduleBannerDismissed &&
+    !isRescheduling &&
+    goal?.planConfirmed;
 
   const handleReschedule = useCallback(async () => {
     if (!goal?.plan) return;
@@ -343,7 +512,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         calendarEvents
       );
       if (updatedPlan && updatedPlan.years) {
-        updateGoal(goal.id, { plan: updatedPlan });
+        const merged = mergePlanPreservingProgress(goal.plan, updatedPlan);
+        updateGoal(goal.id, { plan: merged });
         addGoalPlanMessage(goal.id, {
           id: crypto.randomUUID(),
           role: "assistant",
@@ -454,7 +624,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       addGoalPlanMessage(goal.id, aiMsg);
 
       if (result.planReady && result.plan) {
-        setGoalPlan(goal.id, result.plan);
+        const merged = mergePlanPreservingProgress(goal.plan, result.plan);
+        setGoalPlan(goal.id, merged);
       } else if (result.planPatch && goal.plan) {
         // Apply targeted patch to existing plan
         const patched = applyPlanPatch(goal.plan, result.planPatch);
@@ -470,7 +641,16 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const handleConfirmPlan = useCallback(() => {
     if (!goal) return;
     confirmGoalPlan(goal.id);
-  }, [goal, confirmGoalPlan]);
+    // User-facing confirmation: drop a message into the plan chat so they
+    // see exactly what just happened and what to expect next.
+    addGoalPlanMessage(goal.id, {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content:
+        "Plan locked in. Tasks from your unlocked weeks will start showing up on your Tasks page automatically — check there tomorrow morning. As you complete tasks, future weeks will unlock progressively. You can keep refining the plan in this chat anytime.",
+      timestamp: new Date().toISOString(),
+    });
+  }, [goal, confirmGoalPlan, addGoalPlanMessage]);
 
   const handleToggleTask = useCallback(
     (weekId: string, dayId: string, taskId: string) => {
@@ -842,7 +1022,13 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
                 <RefreshCw size={13} />
                 Adjust Timeline
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setRescheduleDismissed(true)}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setRescheduleDismissed(true);
+                  if (goal) updateGoal(goal.id, { rescheduleBannerDismissed: true });
+                }}
+              >
                 Dismiss
               </button>
             </div>

@@ -1,0 +1,61 @@
+# ──────────────────────────────────────────────────────────────
+# Auto-tag — bumps frontend/package.json patch version on every
+# push to main that touches frontend code, and pushes the new
+# vX.Y.Z tag. The tag push triggers release.yml, which builds
+# and publishes the cross-platform installers to GitHub Releases.
+#
+# Skipped runs:
+#   - commits authored by github-actions[bot] (avoids loops)
+#   - commits whose message contains [skip-release]
+#   - pushes that don't touch frontend/
+# ──────────────────────────────────────────────────────────────
+name: Auto-tag frontend release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/auto-tag.yml"
+
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: "github.event.head_commit.author.name != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip-release]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        id: bump
+        working-directory: frontend
+        run: |
+          NEW_VERSION=$(npm version patch --no-git-tag-version)
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to ${NEW_VERSION}"
+
+      - name: Commit and tag
+        run: |
+          git add frontend/package.json frontend/package-lock.json
+          git commit -m "chore(release): ${{ steps.bump.outputs.version }} [skip-release]"
+          git tag "${{ steps.bump.outputs.version }}"
+          git push origin main --follow-tags

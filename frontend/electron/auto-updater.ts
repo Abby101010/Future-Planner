@@ -1,22 +1,38 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Auto-Updater (electron-updater)
+   NorthStar — Auto-Updater (notify-only mode)
 
-   Checks GitHub Releases for new versions and downloads
-   updates automatically. Users get a notification when a
-   new version is ready to install.
+   Because the macOS .dmg is not code-signed (no Apple
+   Developer cert), Squirrel.Mac refuses to silently apply
+   updates. So instead of attempting auto-install, we use
+   electron-updater purely to *detect* new versions on
+   GitHub Releases, then prompt the user to download the
+   new .dmg in their browser. One click instead of zero
+   clicks, but no manual version-hunting.
 
    Flow:
-   1. App starts → checks for updates (after 10s delay)
-   2. If update available → downloads in background
-   3. Shows notification to user → "Restart to update"
-   4. On next restart → new version is applied
+   1. App starts → checks GitHub Releases (after 10s delay)
+   2. If a newer version is published → native dialog
+   3. User clicks "Download" → opens the Releases page in
+      their browser; they drag the new .dmg over the old one
+   4. User clicks "Later" → dialog dismisses, asks again
+      next launch
 
-   Publish: `npm run electron:build:mac` creates the release
-   artifacts, then push to GitHub Releases.
+   When/if you get an Apple Developer cert, swap this back
+   to autoDownload + quitAndInstall and the app will update
+   silently like a normal Mac app.
    ────────────────────────────────────────────────────────── */
 
 import { autoUpdater } from "electron-updater";
-import { BrowserWindow, dialog } from "electron";
+import { BrowserWindow, dialog, shell, ipcMain } from "electron";
+
+const RELEASES_URL =
+  "https://github.com/Abby101010/Future-Planner/releases/latest";
+
+// Renderer-callable: open the GitHub releases page in the default browser.
+// Used by the in-app "update available" badge in the sidebar.
+ipcMain.handle("updater:open-releases", () => {
+  return shell.openExternal(RELEASES_URL);
+});
 
 /** Initialize the auto-updater. Call once from app.whenReady(). */
 export function initAutoUpdater(mainWindow: BrowserWindow | null): void {
@@ -26,9 +42,9 @@ export function initAutoUpdater(mainWindow: BrowserWindow | null): void {
     return;
   }
 
-  // Configure
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Notify-only: do NOT auto-download (would fail on unsigned macOS build)
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
 
   // ── Events ──────────────────────────────────────────────
 
@@ -38,51 +54,36 @@ export function initAutoUpdater(mainWindow: BrowserWindow | null): void {
 
   autoUpdater.on("update-available", (info) => {
     console.log(`[Updater] Update available: v${info.version}`);
-    // Notify the renderer
+
+    // Tell the renderer (in case the UI wants to surface a badge)
     mainWindow?.webContents.send("updater:status", {
-      status: "downloading",
-      version: info.version,
-    });
-  });
-
-  autoUpdater.on("update-not-available", () => {
-    console.log("[Updater] App is up to date");
-  });
-
-  autoUpdater.on("download-progress", (progress) => {
-    console.log(`[Updater] Download: ${Math.round(progress.percent)}%`);
-    mainWindow?.webContents.send("updater:progress", {
-      percent: progress.percent,
-      transferred: progress.transferred,
-      total: progress.total,
-    });
-  });
-
-  autoUpdater.on("update-downloaded", (info) => {
-    console.log(`[Updater] Update downloaded: v${info.version}`);
-
-    // Notify renderer
-    mainWindow?.webContents.send("updater:status", {
-      status: "ready",
+      status: "available",
       version: info.version,
     });
 
-    // Show a native dialog asking to restart
+    // Native dialog asking the user to grab the new .dmg
     dialog
       .showMessageBox({
         type: "info",
-        title: "Update Ready",
-        message: `NorthStar v${info.version} has been downloaded.`,
-        detail: "Restart the app to apply the update.",
-        buttons: ["Restart Now", "Later"],
+        title: "Update Available",
+        message: `NorthStar v${info.version} is available.`,
+        detail:
+          "Click Download to open the releases page, then drag the new .dmg over your installed app.",
+        buttons: ["Download", "Later"],
         defaultId: 0,
         cancelId: 1,
       })
       .then(({ response }) => {
         if (response === 0) {
-          autoUpdater.quitAndInstall();
+          shell.openExternal(RELEASES_URL).catch((err) => {
+            console.warn("[Updater] Failed to open releases page:", err);
+          });
         }
       });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[Updater] App is up to date");
   });
 
   autoUpdater.on("error", (err) => {
@@ -92,7 +93,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow | null): void {
 
   // ── Check after a short delay (don't block startup) ────
   setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    autoUpdater.checkForUpdates().catch((err) => {
       console.warn("[Updater] Check failed (non-fatal):", err.message);
     });
   }, 10_000);

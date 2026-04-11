@@ -127,6 +127,13 @@ export async function handleHomeChat(
     title: string;
     scope: string;
     status: string;
+    hasPlan?: boolean;
+    planConfirmed?: boolean;
+    subtaskCount?: number;
+    visibleSubtaskCount?: number;
+    unlockedWeekCount?: number;
+    totalWeekCount?: number;
+    milestoneCount?: number;
   }>;
   const todayTasks = (payload.todayTasks || []) as Array<{
     title: string;
@@ -143,7 +150,19 @@ export async function handleHomeChat(
 
   const goalsSummary =
     goals.length > 0
-      ? goals.map((g) => `- ${g.title} (${g.scope}, ${g.status})`).join("\n")
+      ? goals
+          .map((g) => {
+            const base = `- ${g.title} (${g.scope}, ${g.status})`;
+            if (!g.hasPlan) return `${base} — no plan generated yet`;
+            const visible = g.visibleSubtaskCount ?? 0;
+            const total = g.subtaskCount ?? 0;
+            const unlockedWeeks = g.unlockedWeekCount ?? 0;
+            const totalWeeks = g.totalWeekCount ?? 0;
+            const milestones = g.milestoneCount ?? 0;
+            const confirmed = g.planConfirmed ? "confirmed" : "draft";
+            return `${base} — plan ${confirmed}, ${visible}/${total} subtasks visible on tasks page (${unlockedWeeks}/${totalWeeks} weeks unlocked, ${milestones} milestones)`;
+          })
+          .join("\n")
       : "No goals set.";
 
   const tasksSummary =

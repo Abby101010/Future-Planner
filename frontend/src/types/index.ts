@@ -480,6 +480,8 @@ export interface Goal {
   progressPercent?: number;
   /** Freeform notes for the goal */
   notes?: string;
+  /** User has dismissed the "you have N incomplete tasks" reschedule banner for this goal */
+  rescheduleBannerDismissed?: boolean;
 }
 
 /** A message in the goal planning chat */
