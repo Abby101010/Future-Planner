@@ -28,6 +28,7 @@ import ProgressRow from "../components/ProgressRow";
 import NudgesSection from "../components/NudgesSection";
 import TaskCard from "../components/TaskCard";
 import GoalTaskCard from "../components/GoalTaskCard";
+import AllTasksSection from "../components/AllTasksSection";
 import type { Reminder } from "../types";
 import "./TasksPage.css";
 
@@ -509,50 +510,12 @@ export default function TasksPage() {
           onAcknowledge={acknowledgeReminder}
         />
 
-        {/* ── All Tasks (collapsible) ── */}
-        {allTasksByDate.length > 0 && (
-          <section className="all-tasks-section animate-slide-up">
-            <button
-              className="all-tasks-toggle"
-              onClick={() => setShowAllTasks(!showAllTasks)}
-            >
-              {showAllTasks ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              <span>All Tasks</span>
-              {totalIncompleteTasks > 0 && (
-                <span className="all-tasks-badge">{totalIncompleteTasks} incomplete</span>
-              )}
-            </button>
-            {showAllTasks && (
-              <div className="all-tasks-list">
-                {allTasksByDate.map((group) => (
-                  <div key={group.date} className="all-tasks-date-group">
-                    <div className="all-tasks-date-label">
-                      {new Date(group.date + "T00:00:00").toLocaleDateString(undefined, {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </div>
-                    {group.tasks.map((task) => (
-                      <div
-                        key={task.id}
-                        className={`all-tasks-item ${task.completed ? "all-tasks-item-done" : ""} ${task.skipped ? "all-tasks-item-skipped" : ""}`}
-                      >
-                        <span className={`all-tasks-check ${task.completed ? "checked" : ""}`}>
-                          {task.completed ? <Check size={12} /> : null}
-                        </span>
-                        <span className="all-tasks-item-title">{task.title}</span>
-                        <span className="all-tasks-item-meta">
-                          {task.category} · {task.durationMinutes}m
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
+        <AllTasksSection
+          groups={allTasksByDate}
+          totalIncomplete={totalIncompleteTasks}
+          isExpanded={showAllTasks}
+          onToggle={() => setShowAllTasks(!showAllTasks)}
+        />
 
         {/* Contextual nudges */}
         <NudgesSection
