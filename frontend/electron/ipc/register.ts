@@ -1,31 +1,15 @@
 /* NorthStar — IPC registrar orchestrator
+ *
+ * Phase 13: most IPC channels were deleted because they now live on the
+ * cloud backend. The only handlers that remain are ones with no cloud
+ * equivalent (device calendar access, environment info, runtime model
+ * overrides).
+ */
 
-   setupIPC() is called from main.ts after the shared IPC context is
-   initialized. It calls each per-domain register*Ipc() in sequence so
-   that every channel from the renderer is wired up before the window
-   is created.
-*/
-
-import { registerStoreIpc } from "./store";
-import { registerAiIpc } from "./ai";
 import { registerCalendarIpc } from "./calendar";
-import { registerMonthlyContextIpc } from "./monthlyContext";
-import { registerModelConfigIpc } from "./modelConfig";
-import { registerChatIpc } from "./chat";
-import { registerReminderIpc } from "./reminder";
 import { registerEnvironmentIpc } from "./environment";
-import { registerMemoryIpc } from "./memory";
-import { registerEntitiesIpc } from "./entities";
 
 export function setupIPC(): void {
-  registerStoreIpc();
-  registerAiIpc();
   registerCalendarIpc();
-  registerMonthlyContextIpc();
-  registerModelConfigIpc();
-  registerChatIpc();
-  registerReminderIpc();
   registerEnvironmentIpc();
-  registerMemoryIpc();
-  registerEntitiesIpc();
 }
