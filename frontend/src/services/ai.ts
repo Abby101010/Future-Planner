@@ -36,7 +36,7 @@ import type {
   Reminder,
 } from "../types";
 import type { NewsBriefing } from "../types/agents";
-import { isCloudEnabled, cloudInvoke } from "./cloudTransport";
+import { cloudInvoke } from "./cloudTransport";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("ai:service");
@@ -59,26 +59,9 @@ async function submitAndWait<T = unknown>(
   log.debug(`submit ${type}`, { payloadKeys: Object.keys(payload) });
   const started = Date.now();
   try {
-    // Cloud path — HTTP POST to the deployed backend
-    if (isCloudEnabled()) {
-      const result = await cloudInvoke<T>(`ai:${type}`, payload);
-      log.debug(`${type} done (cloud, ${Date.now() - started}ms)`);
-      return result;
-    }
-
-    // Local path — IPC to Electron main process (desktop dev mode).
-    // The main process still runs the full AI router, so every handler
-    // works without VITE_CLOUD_API_URL being set.
-    if (typeof window !== "undefined" && window.electronAPI?.invoke) {
-      const result = (await window.electronAPI.invoke(`ai:${type}`, payload)) as T;
-      log.debug(`${type} done (ipc, ${Date.now() - started}ms)`);
-      return result;
-    }
-
-    throw new Error(
-      `AI call "${type}" has no transport: VITE_CLOUD_API_URL is not set and window.electronAPI is not available. ` +
-        `Run via "npm run electron:dev" or set VITE_CLOUD_API_URL.`,
-    );
+    const result = await cloudInvoke<T>(`ai:${type}`, payload);
+    log.debug(`${type} done (${Date.now() - started}ms)`);
+    return result;
   } catch (err) {
     log.error(`${type} failed (${Date.now() - started}ms)`, err);
     throw err;
@@ -307,14 +290,10 @@ export async function getCalendarSchedule(
     inAppEvents: calendarEvents || [],
     deviceIntegrations,
   };
-  // calendar:schedule lives in CLOUD_CHANNELS — fetch in cloud mode, IPC otherwise.
-  const result = isCloudEnabled()
-    ? await cloudInvoke<{ ok: boolean; data?: CalendarSchedule; summary?: string; error?: string }>(
-        "calendar:schedule",
-        payload,
-      )
-    : await window.electronAPI.invoke("calendar:schedule", payload);
-  return result as { ok: boolean; data?: CalendarSchedule; summary?: string; error?: string };
+  return cloudInvoke<{ ok: boolean; data?: CalendarSchedule; summary?: string; error?: string }>(
+    "calendar:schedule",
+    payload,
+  );
 }
 
 /** List available device calendars (macOS Calendar.app) */
@@ -671,10 +650,7 @@ export async function sendHomeChatMessage(
     todayCalendarEvents: todayEvents,
     attachments,
   };
-  const result = isCloudEnabled()
-    ? await cloudInvoke<HomeChatResult>("ai:home-chat", payload)
-    : ((await window.electronAPI.invoke("ai:home-chat", payload)) as HomeChatResult);
-  return result;
+  return cloudInvoke<HomeChatResult>("ai:home-chat", payload);
 }
 
 // Intent shape returned by the backend home-chat handler.

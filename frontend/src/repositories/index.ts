@@ -1,14 +1,12 @@
 /* ──────────────────────────────────────────────────────────
    NorthStar — Repository layer
 
-   Typed wrappers around `window.electronAPI.invoke(channel, …)`.
-   This is the ONLY layer in the renderer that should call the
-   raw IPC bridge — pages, components, and the Zustand store
-   import from here so the channel name + payload shape live in
-   exactly one place.
+   Typed wrappers around the cloud HTTP transport. Every call
+   routes through cloudInvoke → Fly.io backend → Supabase.
+   No local database. No IPC fallback.
 
-   Adding a new IPC channel?
-     1. Register it in electron/ipc/<domain>Ipc.ts (or main.ts)
+   Adding a new channel?
+     1. Add a route in backend/src/routes/<domain>.ts
      2. Add a thin wrapper here
      3. Import the wrapper from your page/store/component
    ────────────────────────────────────────────────────────── */
@@ -26,21 +24,10 @@ import type {
   GoalPlanMessage,
   HomeChatMessage,
 } from "../types";
-import { isCloudChannel, cloudInvoke } from "../services/cloudTransport";
-
-// ── Generic helper ──────────────────────────────────────
-//
-// Routes the call to the cloud API for migrated channels (when the build
-// has VITE_CLOUD_API_URL set), otherwise falls through to the local
-// Electron IPC bridge. The dispatch decision lives entirely in
-// cloudTransport.ts so this layer doesn't need to know which channels
-// are cloud-backed.
+import { cloudInvoke } from "../services/cloudTransport";
 
 async function invoke<T>(channel: string, payload?: unknown): Promise<T> {
-  if (isCloudChannel(channel)) {
-    return cloudInvoke<T>(channel, payload);
-  }
-  return (await window.electronAPI.invoke(channel, payload)) as T;
+  return cloudInvoke<T>(channel, payload);
 }
 
 // ── App data (full store snapshot) ──────────────────────

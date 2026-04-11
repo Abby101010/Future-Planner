@@ -1,11 +1,12 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Memory service (renderer → main IPC)
-   
+   NorthStar — Memory service (renderer → cloud HTTP)
+
    Frontend API for the Three-Tier Memory Architecture.
-   All calls go through Electron IPC to the main process.
+   All calls route through cloudInvoke (Phase 13: cloud-only).
    ────────────────────────────────────────────────────────── */
 
 import type { MemorySummary, ReflectionResult, ContextualNudge } from "../types";
+import { cloudInvoke } from "./cloudTransport";
 
 // ── Query ───────────────────────────────────────────────
 
@@ -15,8 +16,7 @@ export async function getMemorySummary(): Promise<{
   data?: MemorySummary;
   error?: string;
 }> {
-  const result = await window.electronAPI.invoke("memory:summary");
-  return result as { ok: boolean; data?: MemorySummary; error?: string };
+  return cloudInvoke("memory:summary");
 }
 
 /** Get full memory store (for debug/settings) */
@@ -25,8 +25,7 @@ export async function getFullMemory(): Promise<{
   data?: unknown;
   error?: string;
 }> {
-  const result = await window.electronAPI.invoke("memory:load");
-  return result as { ok: boolean; data?: unknown; error?: string };
+  return cloudInvoke("memory:load");
 }
 
 // ── Record Signals ──────────────────────────────────────
@@ -36,9 +35,9 @@ export async function recordTaskCompleted(
   taskTitle: string,
   taskCategory: string,
   estimatedMinutes?: number,
-  actualMinutes?: number
+  actualMinutes?: number,
 ): Promise<void> {
-  await window.electronAPI.invoke("memory:task-completed", {
+  await cloudInvoke("memory:task-completed", {
     taskTitle,
     taskCategory,
     estimatedMinutes,
@@ -50,52 +49,36 @@ export async function recordTaskCompleted(
 export async function recordTaskSnoozed(
   taskTitle: string,
   taskCategory: string,
-  date: string
+  date: string,
 ): Promise<void> {
-  await window.electronAPI.invoke("memory:task-snoozed", {
-    taskTitle,
-    taskCategory,
-    date,
-  });
+  await cloudInvoke("memory:task-snoozed", { taskTitle, taskCategory, date });
 }
 
 /** Record when a user skips a task entirely */
 export async function recordTaskSkipped(
   taskTitle: string,
   taskCategory: string,
-  date: string
+  date: string,
 ): Promise<void> {
-  await window.electronAPI.invoke("memory:task-skipped", {
-    taskTitle,
-    taskCategory,
-    date,
-  });
+  await cloudInvoke("memory:task-skipped", { taskTitle, taskCategory, date });
 }
 
 /** Record explicit feedback from the user */
 export async function recordFeedback(
   context: string,
   feedback: string,
-  isPositive: boolean
+  isPositive: boolean,
 ): Promise<void> {
-  await window.electronAPI.invoke("memory:feedback", {
-    context,
-    feedback,
-    isPositive,
-  });
+  await cloudInvoke("memory:feedback", { context, feedback, isPositive });
 }
 
 /** Record a generic behavioral signal */
 export async function recordSignal(
   type: string,
   context: string,
-  value: string
+  value: string,
 ): Promise<void> {
-  await window.electronAPI.invoke("memory:signal", {
-    type,
-    context,
-    value,
-  });
+  await cloudInvoke("memory:signal", { type, context, value });
 }
 
 /** Record actual task timing from the in-app timer */
@@ -103,9 +86,9 @@ export async function recordTaskTiming(
   taskTitle: string,
   taskCategory: string,
   estimatedMinutes: number,
-  actualMinutes: number
+  actualMinutes: number,
 ): Promise<void> {
-  await window.electronAPI.invoke("memory:task-timing", {
+  await cloudInvoke("memory:task-timing", {
     taskTitle,
     taskCategory,
     estimatedMinutes,
@@ -130,15 +113,14 @@ export async function getNudges(
     skipped?: boolean;
     priority: string;
   }>,
-  proactiveQuestion?: string | null
+  proactiveQuestion?: string | null,
 ): Promise<ContextualNudge[]> {
   try {
-    const result = await window.electronAPI.invoke("memory:nudges", {
-      tasks,
-      proactiveQuestion,
-    });
-    const r = result as { ok: boolean; data?: ContextualNudge[] };
-    return r.ok && r.data ? r.data : [];
+    const result = await cloudInvoke<{ ok: boolean; data?: ContextualNudge[] }>(
+      "memory:nudges",
+      { tasks, proactiveQuestion },
+    );
+    return result.ok && result.data ? result.data : [];
   } catch {
     return [];
   }
@@ -147,9 +129,10 @@ export async function getNudges(
 /** Check if auto-reflection should be triggered */
 export async function shouldAutoReflect(): Promise<boolean> {
   try {
-    const result = await window.electronAPI.invoke("memory:should-reflect");
-    const r = result as { ok: boolean; shouldReflect: boolean };
-    return r.ok && r.shouldReflect;
+    const result = await cloudInvoke<{ ok: boolean; shouldReflect: boolean }>(
+      "memory:should-reflect",
+    );
+    return result.ok && result.shouldReflect;
   } catch {
     return false;
   }
@@ -159,16 +142,14 @@ export async function shouldAutoReflect(): Promise<boolean> {
 
 /** Trigger a full AI-powered reflection cycle */
 export async function triggerReflection(
-  trigger = "manual"
+  trigger = "manual",
 ): Promise<{ ok: boolean; data?: ReflectionResult; error?: string }> {
-  const result = await window.electronAPI.invoke("memory:reflect", { trigger });
-  return result as { ok: boolean; data?: ReflectionResult; error?: string };
+  return cloudInvoke("memory:reflect", { trigger });
 }
 
 /** Clear all memory (full reset) */
 export async function clearMemory(): Promise<{ ok: boolean }> {
-  const result = await window.electronAPI.invoke("memory:clear");
-  return result as { ok: boolean };
+  return cloudInvoke("memory:clear");
 }
 
 // ── Behavior Profile ────────────────────────────────────
@@ -186,14 +167,12 @@ export async function getBehaviorProfile(): Promise<{
   data?: BehaviorProfileEntry[];
   error?: string;
 }> {
-  const result = await window.electronAPI.invoke("memory:behavior-profile");
-  return result as { ok: boolean; data?: BehaviorProfileEntry[]; error?: string };
+  return cloudInvoke("memory:behavior-profile");
 }
 
 /** Save user-edited behavior profile entries back to the AI memory */
 export async function saveBehaviorProfile(
-  entries: Array<{ category: string; text: string }>
+  entries: Array<{ category: string; text: string }>,
 ): Promise<{ ok: boolean; error?: string }> {
-  const result = await window.electronAPI.invoke("memory:save-behavior-profile", { entries });
-  return result as { ok: boolean; error?: string };
+  return cloudInvoke("memory:save-behavior-profile", { entries });
 }
