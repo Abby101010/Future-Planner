@@ -23,6 +23,7 @@ import type {
 } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
+import { parseJson } from "./_json";
 
 export type GoalPlanNodeType =
   | "milestone"
@@ -61,18 +62,6 @@ interface GoalPlanNodeRow {
   payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
-}
-
-function parseJson(v: unknown): Record<string, unknown> {
-  if (!v) return {};
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return v as Record<string, unknown>;
 }
 
 function rowToNode(r: GoalPlanNodeRow): GoalPlanNode {
@@ -160,6 +149,140 @@ export async function deleteForGoal(goalId: string): Promise<void> {
     `delete from goal_plan_nodes where user_id = $1 and goal_id = $2`,
     [userId, goalId],
   );
+}
+
+// ── Pure helper: hierarchical GoalPlan → flat rows ──────────────
+
+/** Walk a nested GoalPlan and produce the flat list of nodes the
+ *  `goal_plan_nodes` table expects. Parent/child links via parentId,
+ *  order preserved via orderIndex. Level-specific fields that don't
+ *  have typed columns (objective, locked, priority, category, …) land
+ *  in `payload` JSONB. Pure function — no DB access. */
+export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
+  const out: GoalPlanNode[] = [];
+  const milestones = Array.isArray(plan.milestones) ? plan.milestones : [];
+  const years = Array.isArray(plan.years) ? plan.years : [];
+
+  milestones.forEach((m, i) => {
+    out.push({
+      id: m.id,
+      goalId,
+      parentId: null,
+      nodeType: "milestone",
+      title: m.title ?? "",
+      description: m.description ?? "",
+      startDate: null,
+      endDate: m.targetDate ?? null,
+      orderIndex: i,
+      payload: {
+        targetDate: m.targetDate ?? "",
+        completed: Boolean(m.completed),
+        totalTasks: m.totalTasks,
+        completedTasks: m.completedTasks,
+      },
+    });
+  });
+
+  years.forEach((y, yi) => {
+    out.push({
+      id: y.id,
+      goalId,
+      parentId: null,
+      nodeType: "year",
+      title: y.label ?? "",
+      description: "",
+      startDate: null,
+      endDate: null,
+      orderIndex: yi,
+      payload: { label: y.label ?? "", objective: y.objective ?? "" },
+    });
+    const months = Array.isArray(y.months) ? y.months : [];
+    months.forEach((mo, moi) => {
+      out.push({
+        id: mo.id,
+        goalId,
+        parentId: y.id,
+        nodeType: "month",
+        title: mo.label ?? "",
+        description: "",
+        startDate: null,
+        endDate: null,
+        orderIndex: moi,
+        payload: { label: mo.label ?? "", objective: mo.objective ?? "" },
+      });
+      const weeks = Array.isArray(mo.weeks) ? mo.weeks : [];
+      weeks.forEach((w, wi) => {
+        out.push({
+          id: w.id,
+          goalId,
+          parentId: mo.id,
+          nodeType: "week",
+          title: w.label ?? "",
+          description: "",
+          startDate: null,
+          endDate: null,
+          orderIndex: wi,
+          payload: {
+            label: w.label ?? "",
+            objective: w.objective ?? "",
+            locked: Boolean(w.locked),
+          },
+        });
+        const days = Array.isArray(w.days) ? w.days : [];
+        days.forEach((d, di) => {
+          out.push({
+            id: d.id,
+            goalId,
+            parentId: w.id,
+            nodeType: "day",
+            title: d.label ?? "",
+            description: "",
+            startDate: null,
+            endDate: null,
+            orderIndex: di,
+            payload: { label: d.label ?? "" },
+          });
+          const tasks = Array.isArray(d.tasks) ? d.tasks : [];
+          tasks.forEach((t, ti) => {
+            out.push({
+              id: t.id,
+              goalId,
+              parentId: d.id,
+              nodeType: "task",
+              title: t.title ?? "",
+              description: t.description ?? "",
+              startDate: null,
+              endDate: null,
+              orderIndex: ti,
+              payload: {
+                durationMinutes: t.durationMinutes ?? 0,
+                priority: t.priority ?? "should-do",
+                category: t.category ?? "planning",
+                completed: Boolean(t.completed),
+                completedAt: t.completedAt,
+              },
+            });
+          });
+        });
+      });
+    });
+  });
+
+  return out;
+}
+
+/** Replace all nodes for a goal with the flattened representation of
+ *  `plan`. Used by regenerate-goal-plan: wipes the old tree and writes
+ *  the new one under the same goal. */
+export async function replacePlan(
+  goalId: string,
+  plan: GoalPlan,
+): Promise<void> {
+  await deleteForGoal(goalId);
+  const nodes = flattenPlan(goalId, plan);
+  if (nodes.length > 0) {
+    await upsertNodes(goalId, nodes);
+  }
 }
 
 // ── Pure helper: flat rows → hierarchical GoalPlan ──────────────

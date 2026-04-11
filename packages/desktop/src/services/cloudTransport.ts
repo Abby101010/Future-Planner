@@ -40,9 +40,6 @@ const CLOUD_API_URL = (
  * sync when you migrate a new domain.
  */
 export const CLOUD_CHANNELS: ReadonlySet<string> = new Set([
-  // store
-  "store:load",
-  "store:save",
   // entities
   "entities:new-goal",
   "entities:new-event",
@@ -54,7 +51,6 @@ export const CLOUD_CHANNELS: ReadonlySet<string> = new Set([
   "entities:new-confirmed-task",
   // ai
   "ai:onboarding",
-  "ai:goal-breakdown",
   "ai:reallocate",
   "ai:daily-tasks",
   "ai:recovery",

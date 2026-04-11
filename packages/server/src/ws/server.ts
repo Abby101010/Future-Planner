@@ -23,6 +23,7 @@ import type * as http from "node:http";
 import { WebSocketServer } from "ws";
 import { validateBearerToken, extractBearerToken } from "../middleware/auth";
 import { connectionRegistry } from "./connections";
+import { envelope } from "@northstar/core";
 
 const WS_PATH = "/ws";
 
@@ -78,6 +79,40 @@ export function attachWebSocketServer(httpServer: http.Server): void {
 
         wss.handleUpgrade(req, socket, head, (ws) => {
           connectionRegistry.add(auth.userId, ws);
+          // Application-level ping/pong. The browser's WebSocket API
+          // auto-answers WS-protocol ping frames but doesn't surface
+          // them to `onmessage`, so the renderer never sees liveness
+          // from `ws.ping()`. We listen for a JSON `{kind:"ping"}`
+          // envelope from the client and echo back a `pong` envelope
+          // so the renderer's 60s dead-frame watchdog stays happy.
+          ws.on("message", (raw) => {
+            let text: string;
+            try {
+              text = raw.toString();
+            } catch {
+              return;
+            }
+            if (!text) return;
+            let parsed: { kind?: unknown } | null = null;
+            try {
+              parsed = JSON.parse(text) as { kind?: unknown };
+            } catch {
+              return;
+            }
+            if (!parsed || parsed.kind !== "ping") return;
+            if (ws.readyState !== 1) return;
+            try {
+              ws.send(
+                JSON.stringify(
+                  envelope("pong" as never, {
+                    ts: new Date().toISOString(),
+                  }),
+                ),
+              );
+            } catch {
+              /* ignore — next tick will clean up */
+            }
+          });
           wss.emit("connection", ws, req);
         });
       })

@@ -29,8 +29,6 @@ import {
 } from "lucide-react";
 import { useT } from "../i18n";
 import { generateDailyTasks } from "../services/ai";
-// TODO(phase8): wire plan-job tracking via WS
-const getActiveJobId = async (_type: string): Promise<string | null> => null;
 import { shouldAutoReflect, triggerReflection, recordSignal } from "../services/memory";
 import Heatmap from "../components/Heatmap";
 import RecoveryModal from "../components/RecoveryModal";
@@ -62,29 +60,6 @@ interface TasksVacationMode {
   startDate: string | null;
   endDate: string | null;
 }
-interface TasksDailyTaskRecord {
-  id: string;
-  date: string;
-  goalId: string | null;
-  planNodeId: string | null;
-  title: string;
-  completed: boolean;
-  completedAt: string | null;
-  orderIndex: number;
-  payload: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
-interface TasksDailyLogRecord {
-  id: string;
-  date: string;
-  payload: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
-interface TasksDailyLogHydrated extends TasksDailyLogRecord {
-  tasks: TasksDailyTaskRecord[];
-}
 interface TasksBigGoalProgress {
   goalId: string;
   title: string;
@@ -92,101 +67,33 @@ interface TasksBigGoalProgress {
   completed: number;
   percent: number;
 }
-interface NudgeRecord {
-  id: string;
-  kind: string;
-  title: string;
-  body: string;
-  surfacedAt: string;
-  dismissedAt: string | null;
-  priority: number;
-  context: string;
-  actions: Array<{ label: string; feedbackValue: string; isPositive: boolean }>;
-  payload: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
+interface TodayProgressSummary {
+  completed: number;
+  total: number;
+  ratePercent: number;
+}
+interface PendingGoalTask extends DailyTask {
+  goalTitle: string;
+  goalId: string;
+  weekId?: string;
+  dayId?: string;
 }
 interface TasksView {
   todayDate: string;
-  todayLog: TasksDailyLogHydrated | null;
-  dailyLogs: TasksDailyLogHydrated[];
+  todayLog: DailyLog | null;
+  dailyLogs: DailyLog[];
   heatmapData: HeatmapEntry[];
   goals: Goal[];
   bigGoalProgress: TasksBigGoalProgress[];
   activeReminders: Reminder[];
   todayReminders: Reminder[];
   todayEvents: CalendarEvent[];
-  recentNudges: NudgeRecord[];
+  recentNudges: ContextualNudge[];
   vacationMode: TasksVacationMode;
   totalIncompleteTasks: number;
-}
-
-/** Flatten DB-shape DailyTaskRecord → core DailyTask. */
-function flattenTask(r: TasksDailyTaskRecord): DailyTask {
-  const p = r.payload || {};
-  return {
-    id: r.id,
-    title: r.title,
-    description: (p.description as string) ?? "",
-    durationMinutes: (p.durationMinutes as number) ?? 30,
-    cognitiveWeight: p.cognitiveWeight as DailyTask["cognitiveWeight"],
-    whyToday: (p.whyToday as string) ?? "",
-    priority: ((p.priority as DailyTask["priority"]) ?? "should-do"),
-    isMomentumTask: (p.isMomentumTask as boolean) ?? false,
-    progressContribution: (p.progressContribution as string) ?? "",
-    category: ((p.category as DailyTask["category"]) ?? "planning"),
-    completed: r.completed,
-    completedAt: r.completedAt ?? undefined,
-    startedAt: p.startedAt as string | undefined,
-    actualMinutes: p.actualMinutes as number | undefined,
-    snoozedCount: p.snoozedCount as number | undefined,
-    skipped: p.skipped as boolean | undefined,
-  };
-}
-
-/** Build a core-shaped DailyLog out of a hydrated DB log for
- *  components (ProgressRow, RecoveryModal) that want the flat type. */
-function hydrateLog(log: TasksDailyLogHydrated): DailyLog {
-  const p = log.payload || {};
-  return {
-    id: log.id,
-    userId: (p.userId as string) ?? "",
-    date: log.date,
-    tasks: log.tasks.map(flattenTask),
-    heatmapEntry: (p.heatmapEntry as DailyLog["heatmapEntry"]) ?? {
-      date: log.date,
-      completionLevel: 0,
-      currentStreak: 0,
-      totalActiveDays: 0,
-      longestStreak: 0,
-    },
-    notificationBriefing: (p.notificationBriefing as string) ?? "",
-    milestoneCelebration: (p.milestoneCelebration as DailyLog["milestoneCelebration"]) ?? null,
-    progress: (p.progress as DailyLog["progress"]) ?? {
-      overallPercent: 0,
-      milestonePercent: 0,
-      currentMilestone: "",
-      projectedCompletion: "",
-      daysAheadOrBehind: 0,
-    },
-    yesterdayRecap: (p.yesterdayRecap as DailyLog["yesterdayRecap"]) ?? null,
-    encouragement: (p.encouragement as string) ?? "",
-    mood: p.mood as DailyLog["mood"],
-    createdAt: log.createdAt,
-  };
-}
-
-/** Map NudgeRecord → ContextualNudge for NudgesSection. */
-function nudgeRecordToContextual(n: NudgeRecord): ContextualNudge {
-  return {
-    id: n.id,
-    type: n.kind as ContextualNudge["type"],
-    message: n.body,
-    actions: n.actions,
-    priority: n.priority,
-    context: n.context,
-    dismissed: n.dismissedAt !== null,
-  };
+  todayProgress: TodayProgressSummary;
+  todayMissedTasks: DailyTask[];
+  pendingGoalTasks: PendingGoalTask[];
 }
 
 function formatDate(): string {
@@ -227,8 +134,7 @@ export default function TasksPage() {
 
   // Derived view-data shortcuts.
   const goals: Goal[] = data?.goals ?? [];
-  const todayLogRaw = data?.todayLog ?? null;
-  const dailyLogsRaw = data?.dailyLogs ?? [];
+  const dailyLogs: DailyLog[] = data?.dailyLogs ?? [];
   const heatmapData = data?.heatmapData ?? [];
   const calendarEvents = data?.todayEvents ?? [];
   const vacationMode = data?.vacationMode ?? null;
@@ -239,16 +145,12 @@ export default function TasksPage() {
     completed: r.completed,
     percent: r.percent,
   }));
-  const nudges: ContextualNudge[] = (data?.recentNudges ?? []).map(nudgeRecordToContextual);
+  const nudges: ContextualNudge[] = data?.recentNudges ?? [];
 
-  // Hydrated copies for components expecting core types.
-  const todayLog: DailyLog | null = todayLogRaw ? hydrateLog(todayLogRaw) : null;
-  const allTasksByDate = dailyLogsRaw
+  const todayLog: DailyLog | null = data?.todayLog ?? null;
+  const allTasksByDate = dailyLogs
     .filter((log) => log.tasks.length > 0)
-    .map((log) => ({
-      date: log.date,
-      tasks: log.tasks.map(flattenTask),
-    }));
+    .map((log) => ({ date: log.date, tasks: log.tasks }));
   const totalIncompleteTasks = data?.totalIncompleteTasks ?? 0;
 
   const hasActivePlan = goals.length > 0;
@@ -266,15 +168,11 @@ export default function TasksPage() {
         todayLog?.tasks.filter(
           (task) => task.progressContribution === "Quick task added via chat",
         ) || [];
-      setTimeout(async () => {
-        const jid = await getActiveJobId("daily-tasks");
-        if (jid) setTaskJobId(jid);
-      }, 500);
       await generateDailyTasks(
         // Legacy AI service signature — no roadmap/breakdown in the view
         // contract anymore, so we pass goals via the tail args.
         null as unknown as never,
-        dailyLogsRaw.map(hydrateLog),
+        dailyLogs,
         heatmapData,
         today,
         calendarEvents,
@@ -312,7 +210,7 @@ export default function TasksPage() {
   }, [
     goals,
     calendarEvents,
-    dailyLogsRaw,
+    dailyLogs,
     heatmapData,
     todayLog,
     vacationMode,
@@ -379,49 +277,11 @@ export default function TasksPage() {
 
   if (!data) return null;
 
-  const completedCount = todayLog?.tasks.filter((t) => t.completed).length ?? 0;
-  const totalCount = todayLog?.tasks.length ?? 0;
-  const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  const missedTasks = todayLog?.tasks.filter((t) => !t.completed) ?? [];
-
-  // ── Today's tasks pulled from goal plans (the hierarchical case) ──
-  const today = formatDate();
-  const todayDayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
-  const todayDateLabel = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-  const todayGoalTasks = goals.flatMap((g) => {
-    const out: Array<DailyTask & { goalTitle: string; goalId: string; weekId?: string; dayId?: string }> = [];
-    if (g.plan && Array.isArray(g.plan.years)) {
-      for (const year of g.plan.years) {
-        for (const month of year.months) {
-          for (const week of month.weeks) {
-            if (!week.locked) {
-              for (const day of week.days) {
-                const dayLabel = day.label.toLowerCase();
-                if (
-                  dayLabel === todayDayName.toLowerCase() ||
-                  dayLabel.includes(todayDateLabel.toLowerCase()) ||
-                  dayLabel.includes(today)
-                ) {
-                  for (const tk of day.tasks) {
-                    out.push({
-                      ...(tk as unknown as DailyTask),
-                      goalTitle: g.title,
-                      goalId: g.id,
-                      weekId: week.id,
-                      dayId: day.id,
-                    });
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    return out;
-  });
-  const pendingGoalTasks = todayGoalTasks.filter((task) => !task.completed);
+  const today = data.todayDate;
+  const { completed: completedCount, total: totalCount, ratePercent: completionRate } =
+    data.todayProgress;
+  const missedTasks = data.todayMissedTasks;
+  const pendingGoalTasks = data.pendingGoalTasks;
 
   const handleToggleTask = async (taskId: string) => {
     await run("command:toggle-task", { taskId });
@@ -659,8 +519,10 @@ export default function TasksPage() {
             );
           })()}
 
-          {/* Goal plan tasks for today (only if not already covered by AI tasks) */}
-          {pendingGoalTasks.length > 0 && !todayLog && (
+          {/* Goal plan tasks for today that the daily-tasks LLM did not
+              already pick into today's log. Dedupe lives in pendingGoalTasks
+              above via consumedPlanNodeIds. */}
+          {pendingGoalTasks.length > 0 && (
             <div className="tasks-list">
               <div className="goal-tasks-divider">
                 <span>{t.dashboard.goalTasks || "From your goal plans"}</span>

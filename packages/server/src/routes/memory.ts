@@ -508,7 +508,7 @@ memoryRouter.post(
   "/reflect",
   asyncHandler(async (req, res) => {
     const trigger = (req.body?.trigger as string) || "manual";
-    const client = getClient(() => ({}));
+    const client = getClient();
     if (!client) {
       res.status(500).json({
         ok: false,

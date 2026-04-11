@@ -14,6 +14,7 @@
 import type { DailyLog, MoodEntry } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
+import { parseJson } from "./_json";
 
 interface DailyLogRow {
   user_id: string;
@@ -42,18 +43,6 @@ export interface DailyLogRecord {
   payload: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
-}
-
-function parseJson(v: unknown): Record<string, unknown> {
-  if (!v) return {};
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return v as Record<string, unknown>;
 }
 
 function parseMood(

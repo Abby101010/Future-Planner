@@ -2,15 +2,11 @@
  *
  * OnboardingPage (and WelcomePage before it) both read the same small
  * slice of state: the current user profile (to decide which step to
- * open on) and — during onboarding itself — the weekly availability
- * grid from the in-progress user object. We return both fields
- * shape-ready for the client to render without computing anything.
- *
- * TODO(phase6): once user is its own table, drop the app_store fallback.
+ * open on) and the weekly availability grid from the in-progress user
+ * object. Backed by the `users` table.
  */
 
-import { query } from "../db/pool";
-import { requireUserId } from "../repositories/_context";
+import * as repos from "../repositories";
 import type { TimeBlock, UserProfile } from "@northstar/core";
 
 export interface OnboardingView {
@@ -22,18 +18,8 @@ export interface OnboardingView {
   goalRaw: string;
 }
 
-async function readAppStoreKey<T>(key: string): Promise<T | null> {
-  const userId = requireUserId();
-  const rows = await query<{ value: T }>(
-    `select value from app_store where user_id = $1 and key = $2`,
-    [userId, key],
-  );
-  return rows.length > 0 ? (rows[0].value as T) : null;
-}
-
 export async function resolveOnboardingView(): Promise<OnboardingView> {
-  // TODO(phase6): user + settings come out of app_store in phase 6.
-  const user = await readAppStoreKey<UserProfile>("user");
+  const user = await repos.users.get();
   return {
     user,
     onboardingComplete: Boolean(user?.onboardingComplete),

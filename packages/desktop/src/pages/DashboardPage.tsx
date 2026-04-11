@@ -22,6 +22,7 @@ import { chatRepo } from "../repositories";
 import type {
   PendingTask,
   CalendarEvent,
+  ContextualNudge,
   Goal,
   ChatSession,
   HomeChatMessage,
@@ -53,18 +54,11 @@ interface DashboardVacationMode {
   endDate: string | null;
 }
 
-interface DashboardTaskRecord {
-  id: string;
-  date: string;
-  goalId: string | null;
-  planNodeId: string | null;
-  title: string;
-  completed: boolean;
-  completedAt: string | null;
-  orderIndex: number;
-  payload: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
+interface DashboardDailyLoad {
+  currentWeight: number;
+  currentMinutes: number;
+  activeTaskCount: number;
+  todayEventCount: number;
 }
 
 interface DashboardView {
@@ -72,39 +66,17 @@ interface DashboardView {
   greetingName: string;
   todaySummary: DashboardTodaySummary;
   activeGoals: Goal[];
-  todayTasks: DashboardTaskRecord[];
+  todayTasks: DailyTask[];
   todayEvents: CalendarEvent[];
   pendingTasks: PendingTask[];
+  activePendingTasks: PendingTask[];
+  dailyLoad: DashboardDailyLoad;
   homeChatMessages: HomeChatMessage[];
   activeReminders: Reminder[];
-  recentNudges: unknown[];
+  recentNudges: ContextualNudge[];
   vacationMode: DashboardVacationMode;
   currentMonthContext: MonthlyContext | null;
   needsMonthlyContext: boolean;
-}
-
-/** Flatten the DB-shape DailyTaskRecord into a core DailyTask so
- *  components that only accept core types still work. */
-function flattenDashboardTask(r: DashboardTaskRecord): DailyTask {
-  const p = r.payload || {};
-  return {
-    id: r.id,
-    title: r.title,
-    description: (p.description as string) ?? "",
-    durationMinutes: (p.durationMinutes as number) ?? 30,
-    cognitiveWeight: p.cognitiveWeight as DailyTask["cognitiveWeight"],
-    whyToday: (p.whyToday as string) ?? "",
-    priority: ((p.priority as DailyTask["priority"]) ?? "should-do"),
-    isMomentumTask: (p.isMomentumTask as boolean) ?? false,
-    progressContribution: (p.progressContribution as string) ?? "",
-    category: ((p.category as DailyTask["category"]) ?? "planning"),
-    completed: r.completed,
-    completedAt: r.completedAt ?? undefined,
-    startedAt: p.startedAt as string | undefined,
-    actualMinutes: p.actualMinutes as number | undefined,
-    snoozedCount: p.snoozedCount as number | undefined,
-    skipped: p.skipped as boolean | undefined,
-  };
 }
 
 export default function DashboardPage() {
@@ -151,10 +123,26 @@ export default function DashboardPage() {
     setOptimisticMessages((prev) => [...prev, msg]);
   }, []);
 
-  const startNewChat = useCallback(() => {
+  const startNewChat = useCallback(async () => {
+    // Archive-then-clear: command:clear-home-chat snapshots the current
+    // home_chat_messages into chat_sessions on the server, then wipes
+    // home_chat_messages. We optimistically clear first, then refetch
+    // the session list so the newly archived chat appears in the sidebar.
     setActiveChatId(null);
     setOptimisticMessages([]);
-  }, [setActiveChatId]);
+    try {
+      await run("command:clear-home-chat", {});
+      refetch();
+      try {
+        const sessions = await chatRepo.listSessions();
+        setChatSessions(sessions);
+      } catch {
+        /* sidebar refresh is best-effort */
+      }
+    } catch (err) {
+      console.warn("[dashboard] clear-home-chat failed", err);
+    }
+  }, [setActiveChatId, run, refetch]);
   const switchChat = useCallback(
     (sessionId: string) => {
       setActiveChatId(sessionId);
@@ -195,9 +183,8 @@ export default function DashboardPage() {
   const needsMonthlyContext = !!data?.needsMonthlyContext && !monthNudgeDismissed;
   const currentMonthLabel = new Date().toLocaleDateString(undefined, { month: "long" });
 
-  // Flattened DailyTask list — used for AI-context payload and for
-  // computing the daily-load summary shown on pending cards.
-  const todayFlatTasks: DailyTask[] = (data?.todayTasks ?? []).map(flattenDashboardTask);
+  // Used for AI-context payload and daily-load summary on pending cards.
+  const todayFlatTasks: DailyTask[] = data?.todayTasks ?? [];
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -309,6 +296,7 @@ export default function DashboardPage() {
         todayFlatTasks,
         todayEvents,
         attachmentData.length > 0 ? attachmentData : undefined,
+        msgId,
       );
 
       // The backend parses the LLM reply, builds fully-populated entities
@@ -444,7 +432,9 @@ export default function DashboardPage() {
       }
 
       addHomeChatMessage({
-        id: crypto.randomUUID(),
+        // Reuse the server-assigned id so the optimistic entry gets
+        // replaced by the canonical server row on the next refetch.
+        id: result.assistantMessageId ?? crypto.randomUUID(),
         role: "assistant",
         content: displayText,
         timestamp: new Date().toISOString(),
@@ -542,16 +532,8 @@ export default function DashboardPage() {
 
   if (!data) return null;
 
-  const activePending = pendingTasks.filter(
-    (pt) => pt.status === "analyzing" || pt.status === "ready",
-  );
-
-  // ── Daily load calculations for overload warnings ──
-  const currentWeight = todayFlatTasks.reduce((sum, t) => sum + (t.cognitiveWeight || 3), 0);
-  const currentMinutes = todayFlatTasks.reduce((sum, t) => sum + (t.durationMinutes || 30), 0);
-  const activeTaskCount = todayFlatTasks.filter((t) => !t.completed).length;
-  const todayEventCount = todayEvents.length;
-  const dailyLoad = { currentWeight, currentMinutes, activeTaskCount, todayEventCount };
+  const activePending = data.activePendingTasks;
+  const dailyLoad = data.dailyLoad;
 
   return (
     <div className="dashboard">

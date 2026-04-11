@@ -25,5 +25,7 @@ export * as reminders from "./remindersRepo";
 export * as nudges from "./nudgesRepo";
 export * as vacationMode from "./vacationModeRepo";
 export * as behaviorProfile from "./behaviorProfileRepo";
+export * as users from "./usersRepo";
+export * as roadmap from "./roadmapRepo";
 
 export { UnauthenticatedError } from "./_context";

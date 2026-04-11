@@ -1,15 +1,13 @@
-/* NorthStar — AI service (calls Claude via the cloud backend)
+/* NorthStar — AI service (thin wrappers over cloud AI endpoints)
  *
- * Phase 2a: dead client-side normalizers and job-status stubs were
- * deleted. Plan-shape normalization, sanitization, and progress
- * tracking will be rebuilt server-side in phase 4+ and SSE in phase 8.
- * generateGoalBreakdown / reallocateGoals now throw at runtime so
- * any remaining call sites are loud.
+ * Every function here is a one-shot POST to /ai/<channel> with a typed
+ * payload. No local state, no job queue, no progress stubs — if a page
+ * needs token-by-token streaming it uses the SSE routes directly via
+ * useAiStream, not this file.
  */
 
 import type {
   ConversationMessage,
-  ClarifiedGoal,
   GoalBreakdown,
   CalendarEvent,
   DeviceIntegrations,
@@ -30,26 +28,14 @@ import type {
   RepeatSchedule,
   Reminder,
 } from "@northstar/core";
-import type { NewsBriefing } from "@northstar/core";
 import { cloudInvoke } from "./cloudTransport";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("ai:service");
 
-/**
- * Submit an AI request and return the result. Now a one-shot HTTP POST
- * — the local SQLite job_queue + JobRunner that used to back this in
- * dev mode were deleted in slice 6. Throws if VITE_CLOUD_API_URL is not
- * set at build time, since there is no longer any local fallback.
- *
- * The optional `onProgress` callback is accepted for source compatibility
- * with the old job-queue API but never fires — phase 1c will add SSE
- * streaming and start emitting progress events again.
- */
-async function submitAndWait<T = unknown>(
+async function aiRequest<T = unknown>(
   type: string,
   payload: Record<string, unknown>,
-  _onProgress?: (progress: number, log: unknown[]) => void,
 ): Promise<T> {
   log.debug(`submit ${type}`, { payloadKeys: Object.keys(payload) });
   const started = Date.now();
@@ -63,59 +49,11 @@ async function submitAndWait<T = unknown>(
   }
 }
 
-// ── Progress-tracking stubs ─────────────────────────────
-// Slice 6 deleted the local job queue, so there is nothing for these to
-// query anymore. They remain as null-returning stubs so existing call
-// sites (TasksPage, GoalPlanPage, AgentProgress) keep compiling and
-// silently render no progress UI. Phase 1c will replace them with real
-// SSE-backed implementations.
-
-/** Get the jobId for a recently submitted job (no-op since slice 6). */
-export async function getActiveJobId(_type: string): Promise<string | null> {
-  return null;
-}
-
-/** Get job status for progress display (no-op since slice 6). */
-export async function getJobStatus(_jobId: string): Promise<{
-  status: string;
-  progress: number;
-  progress_log: unknown[];
-  result: unknown;
-  error: string | null;
-} | null> {
-  return null;
-}
-
-/** Cancel a running/pending job (no-op since slice 6). */
-export async function cancelJobById(_jobId: string): Promise<boolean> {
-  return false;
-}
-
 export async function sendOnboardingMessage(
   messages: ConversationMessage[],
   userInput: string
 ): Promise<string> {
-  return submitAndWait<string>("onboarding", { messages, userInput });
-}
-
-export async function generateGoalBreakdown(
-  _goal: ClarifiedGoal,
-  _targetDate?: string,
-  _dailyHours?: number,
-  _calendarEvents?: CalendarEvent[],
-  _deviceIntegrations?: DeviceIntegrations
-): Promise<GoalBreakdown> {
-  throw new Error("moved to server in phase 4+");
-}
-
-export async function reallocateGoals(
-  _breakdown: GoalBreakdown,
-  _reason: string,
-  _changes?: Record<string, unknown>,
-  _calendarEvents?: CalendarEvent[],
-  _deviceIntegrations?: DeviceIntegrations
-): Promise<GoalBreakdown> {
-  throw new Error("moved to server in phase 4+");
+  return aiRequest<string>("onboarding", { messages, userInput });
 }
 
 export async function generateDailyTasks(
@@ -134,35 +72,73 @@ export async function generateDailyTasks(
   const isVacationDay = vacationMode?.active &&
     date >= vacationMode.startDate && date <= vacationMode.endDate;
 
-  // Build a summary of all goal plans for the AI to select from
+  // Build a summary of all goal plans for the AI to select from.
+  // Plan generators produce day labels in multiple shapes: ISO date
+  // ("2026-04-11"), short "Jan 6", full weekday "Monday", abbreviated
+  // "Mon", or prefixed "Mon Jan 6". Match leniently against all of them
+  // so tasks scheduled for today actually surface.
+  const d = new Date(date);
+  const todayWeekdayLong = d.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+  const todayWeekdayShort = d.toLocaleDateString("en-US", { weekday: "short" }).toLowerCase();
+  const todayMonthDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase();
+  const todayMonthDayPadded = todayMonthDay.replace(/\s(\d)$/, " 0$1");
+  const dayMatchesToday = (rawLabel: string): boolean => {
+    const label = rawLabel.toLowerCase().trim();
+    if (!label) return false;
+    if (label === date || label.includes(date)) return true;
+    if (label === todayWeekdayLong || label === todayWeekdayShort) return true;
+    if (label.startsWith(`${todayWeekdayShort} `)) return true;
+    if (label === todayMonthDay || label === todayMonthDayPadded) return true;
+    if (label.includes(todayMonthDay) || label.includes(todayMonthDayPadded)) return true;
+    return false;
+  };
+
   const goalPlanSummaries = (goals || [])
     .filter((g) => g.goalType === "big" || (!g.goalType && g.scope === "big"))
     .map((g) => {
-      const todayTasks: Array<{ title: string; description: string; durationMinutes: number; priority: string; category: string }> = [];
+      const todayTasks: Array<{
+        goalId: string;
+        planNodeId: string;
+        title: string;
+        description: string;
+        durationMinutes: number;
+        priority: string;
+        category: string;
+      }> = [];
       if (g.plan && Array.isArray(g.plan.years)) {
-        const todayDayName = new Date(date).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-        const todayDateLabel = new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase();
         for (const year of g.plan.years) {
           for (const month of year.months) {
             for (const week of month.weeks) {
-              if (!week.locked) {
-                for (const day of week.days) {
-                  const dayLabel = day.label.toLowerCase();
-                  if (dayLabel === todayDayName || dayLabel.includes(todayDateLabel) || dayLabel.includes(date)) {
-                    for (const t of day.tasks) {
-                      if (!t.completed) {
-                        todayTasks.push({ title: t.title, description: t.description, durationMinutes: t.durationMinutes, priority: t.priority, category: t.category });
-                      }
-                    }
-                  }
+              if (week.locked) continue;
+              for (const day of week.days) {
+                if (!dayMatchesToday(day.label)) continue;
+                for (const t of day.tasks) {
+                  if (t.completed) continue;
+                  todayTasks.push({
+                    goalId: g.id,
+                    planNodeId: t.id,
+                    title: t.title,
+                    description: t.description,
+                    durationMinutes: t.durationMinutes,
+                    priority: t.priority,
+                    category: t.category,
+                  });
                 }
               }
             }
           }
         }
       }
-      return { goalTitle: g.title, scope: g.scope, goalType: g.goalType || "big", status: g.status, todayTasks };
-    }).filter((g) => g.todayTasks.length > 0);
+      return {
+        goalId: g.id,
+        goalTitle: g.title,
+        scope: g.scope,
+        goalType: g.goalType || "big",
+        status: g.status,
+        todayTasks,
+      };
+    })
+    .filter((g) => g.todayTasks.length > 0);
 
   // Everyday goals — pending tasks to slot into the day
   const everydayGoals = (goals || [])
@@ -205,7 +181,7 @@ export async function generateDailyTasks(
     recurring: e.recurring,
   }));
 
-  return submitAndWait<DailyLog>("daily-tasks", {
+  return aiRequest<DailyLog>("daily-tasks", {
     breakdown,
     pastLogs,
     heatmap,
@@ -242,7 +218,7 @@ export async function handleRecovery(
   breakdown: GoalBreakdown,
   todayLog: DailyLog
 ): Promise<RecoveryResponse> {
-  return submitAndWait<RecoveryResponse>("recovery", {
+  return aiRequest<RecoveryResponse>("recovery", {
     blockerId,
     breakdown,
     todayLog,
@@ -253,7 +229,7 @@ export async function paceCheck(
   breakdown: GoalBreakdown,
   logs: DailyLog[]
 ): Promise<PaceCheck> {
-  return submitAndWait<PaceCheck>("pace-check", {
+  return aiRequest<PaceCheck>("pace-check", {
     breakdown,
     logs,
   });
@@ -277,24 +253,26 @@ export async function getCalendarSchedule(
   );
 }
 
-/** List available device calendars (macOS Calendar.app) */
+/** List available device calendars (macOS Calendar.app).
+ *  Phase 13: the Electron IPC bridge is gone. Device-calendar access
+ *  will move to a Google/Apple calendar OAuth flow in a later phase —
+ *  for now return an empty list so the UI doesn't crash. */
 export async function listDeviceCalendars(): Promise<{ ok: boolean; calendars: string[] }> {
-  const result = await window.electronAPI.invoke("device:list-calendars");
-  return result as { ok: boolean; calendars: string[] };
+  return { ok: false, calendars: [] };
 }
 
-/** Import events from device calendar for a date range */
+/** Import events from device calendar for a date range.
+ *  See listDeviceCalendars — stubbed until cloud calendar OAuth lands. */
 export async function importDeviceCalendarEvents(
-  startDate: string,
-  endDate: string,
-  selectedCalendars: string[]
+  _startDate: string,
+  _endDate: string,
+  _selectedCalendars: string[],
 ): Promise<{ ok: boolean; events: Array<Record<string, unknown>>; error?: string }> {
-  const result = await window.electronAPI.invoke("device:import-calendar-events", {
-    startDate,
-    endDate,
-    selectedCalendars,
-  });
-  return result as { ok: boolean; events: Array<Record<string, unknown>>; error?: string };
+  return {
+    ok: false,
+    events: [],
+    error: "device calendar integration is temporarily unavailable",
+  };
 }
 
 // ── Goal System AI functions ─────────────────────────────
@@ -314,7 +292,7 @@ export async function classifyGoal(
   repeatSchedule?: RepeatSchedule | null;
   suggestedTimeSlot?: string | null;
 }> {
-  return submitAndWait<{
+  return aiRequest<{
     scope: GoalScope;
     goalType: GoalType;
     reasoning: string;
@@ -341,7 +319,7 @@ export async function sendGoalPlanMessage(
   userMessage: string,
   currentPlan?: GoalPlan | null
 ): Promise<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }> {
-  return submitAndWait<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }>("goal-plan-chat", {
+  return aiRequest<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }>("goal-plan-chat", {
     goalTitle,
     targetDate,
     importance,
@@ -359,7 +337,7 @@ export async function analyzeGoalPlanEdit(
   edit: PlanEdit,
   planSummary: string
 ): Promise<PlanEditSuggestion> {
-  return submitAndWait<PlanEditSuggestion>("goal-plan-edit", {
+  return aiRequest<PlanEditSuggestion>("goal-plan-edit", {
     goalTitle,
     edit,
     planSummary,
@@ -374,7 +352,7 @@ export async function generateGoalPlan(
   isHabit: boolean,
   description: string
 ): Promise<{ reply: string; plan: GoalPlan }> {
-  return submitAndWait<{ reply: string; plan: GoalPlan }>("generate-goal-plan", {
+  return aiRequest<{ reply: string; plan: GoalPlan }>("generate-goal-plan", {
     goalTitle,
     targetDate,
     importance,
@@ -389,7 +367,7 @@ export async function reallocateGoalPlan(
   reason: string,
   calendarEvents?: CalendarEvent[]
 ): Promise<GoalPlan> {
-  const result = await submitAndWait<Record<string, unknown>>("reallocate", {
+  const result = await aiRequest<Record<string, unknown>>("reallocate", {
     breakdown: plan,
     reason,
     inAppEvents: calendarEvents || [],
@@ -430,7 +408,7 @@ export async function analyzeQuickTask(
     category: e.category,
   }));
 
-  return submitAndWait<{
+  return aiRequest<{
     title: string;
     description: string;
     suggested_date: string;
@@ -460,7 +438,8 @@ export async function sendHomeChatMessage(
   goals: Goal[],
   todayTasks: DailyTask[],
   calendarEvents?: CalendarEvent[],
-  attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>
+  attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>,
+  userMessageId?: string,
 ): Promise<HomeChatResult> {
   const today = new Date().toISOString().split("T")[0];
   const todayEvents = (calendarEvents || []).filter((e) => {
@@ -479,6 +458,10 @@ export async function sendHomeChatMessage(
   // subtaskCount / visibleSubtaskCount here.
   const payload = {
     userInput,
+    // Server also reads `query` to persist the user message — keep both
+    // field names so the AI handler and the persistence layer agree.
+    query: userInput,
+    userMessageId,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
     goals: goals.map((g) => ({
       id: g.id,
@@ -525,22 +508,9 @@ export type HomeChatIntent =
 export interface HomeChatResult {
   reply: string;
   intent: HomeChatIntent | null;
+  /** Server-assigned message ids so the dashboard's optimistic merge
+   *  can reconcile its in-flight rows against what got persisted. */
+  userMessageId?: string;
+  assistantMessageId?: string;
 }
 
-// ── Multi-Agent Functions ────────────────────────────────
-
-/** Fetch daily news briefing related to user's goals */
-export async function fetchNewsBriefing(
-  goalTitles: string[],
-  userInterests: string[]
-): Promise<{ ok: boolean; data?: NewsBriefing; error?: string }> {
-  try {
-    const data = await submitAndWait<NewsBriefing>("news-digest", {
-      goalTitles,
-      userInterests,
-    });
-    return { ok: true, data };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}

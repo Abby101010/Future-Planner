@@ -126,11 +126,14 @@ CAPACITY PROFILE (computed from user's behavioral history):
 
   // ── Additional data sources ──
   const goalPlanSummaries = (payload.goalPlanSummaries ?? []) as Array<{
+    goalId?: string;
     goalTitle: string;
     scope: string;
     goalType?: string;
     status: string;
     todayTasks: Array<{
+      goalId?: string;
+      planNodeId?: string;
       title: string;
       description: string;
       durationMinutes: number;
@@ -175,17 +178,21 @@ CAPACITY PROFILE (computed from user's behavioral history):
   }>;
   const isVacationDay = !!payload.isVacationDay;
 
-  // Build goal plan tasks block (what's scheduled for today across all goals)
+  // Build goal plan tasks block (what's scheduled for today across all goals).
+  // Each task includes its source_goal_id + source_plan_node_id so the LLM
+  // can echo them back in the output and we can persist the link in the
+  // daily_tasks row (enables TasksPage to show the goal badge and lets
+  // toggle-task flow back up to the plan tree).
   let goalPlanTasksBlock = "";
   if (goalPlanSummaries.length > 0) {
     const lines = goalPlanSummaries.flatMap((g) => [
-      `  Goal: "${g.goalTitle}" (${g.scope})`,
+      `  Goal: "${g.goalTitle}" (${g.scope}) [goalId:${g.goalId ?? ""}]`,
       ...g.todayTasks.map(
         (t) =>
-          `    - "${t.title}" (${t.durationMinutes}min, ${t.priority}, ${t.category}): ${t.description}`,
+          `    - "${t.title}" (${t.durationMinutes}min, ${t.priority}, ${t.category}) [goalId:${t.goalId ?? ""}] [planNodeId:${t.planNodeId ?? ""}]: ${t.description}`,
       ),
     ]);
-    goalPlanTasksBlock = `\nTASKS FROM GOAL PLANS (scheduled for today — SELECT from these):\n${lines.join("\n")}`;
+    goalPlanTasksBlock = `\nTASKS FROM GOAL PLANS (scheduled for today — SELECT from these; copy source_goal_id and source_plan_node_id verbatim for any task you pick from here):\n${lines.join("\n")}`;
   }
 
   // Build confirmed quick tasks block (user added via chat)
@@ -384,6 +391,15 @@ Generate EXACTLY ${recommendedCount.split(" ")[0]} core tasks for today. Include
       isMomentumTask: t.is_momentum_task || false,
       progressContribution: t.progress_contribution || "",
       category: t.category,
+      // source_* fields link a selected task back to its origin in the
+      // goal plan tree so daily_tasks can persist goal_id / plan_node_id.
+      // Null when the task came from adaptive reasoning, not a plan node.
+      goalId:
+        (typeof t.source_goal_id === "string" && t.source_goal_id) ||
+        null,
+      planNodeId:
+        (typeof t.source_plan_node_id === "string" && t.source_plan_node_id) ||
+        null,
       completed: false,
     })),
     heatmapEntry: parsed.heatmap_entry

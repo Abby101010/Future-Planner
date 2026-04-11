@@ -14,18 +14,17 @@
  */
 
 import * as repos from "../repositories";
-import { query } from "../db/pool";
-import { requireUserId } from "../repositories/_context";
 import type {
   CalendarEvent,
+  ContextualNudge,
+  DailyTask,
   Goal,
   HomeChatMessage,
   MonthlyContext,
   PendingTask,
   Reminder,
 } from "@northstar/core";
-import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
-import type { NudgeRecord } from "../repositories/nudgesRepo";
+import { flattenDailyTask, nudgeToContextual } from "./_mappers";
 
 export interface DashboardTodaySummary {
   completedTasks: number;
@@ -39,17 +38,28 @@ export interface DashboardVacationMode {
   endDate: string | null;
 }
 
+export interface DashboardDailyLoad {
+  currentWeight: number;
+  currentMinutes: number;
+  activeTaskCount: number;
+  todayEventCount: number;
+}
+
 export interface DashboardView {
   todayDate: string;
   greetingName: string;
   todaySummary: DashboardTodaySummary;
   activeGoals: Goal[];
-  todayTasks: DailyTaskRecord[];
+  todayTasks: DailyTask[];
   todayEvents: CalendarEvent[];
   pendingTasks: PendingTask[];
+  /** Subset of pendingTasks still in an actionable state. */
+  activePendingTasks: PendingTask[];
+  /** Aggregate overload signals derived from todayTasks + todayEvents. */
+  dailyLoad: DashboardDailyLoad;
   homeChatMessages: HomeChatMessage[];
   activeReminders: Reminder[];
-  recentNudges: NudgeRecord[];
+  recentNudges: ContextualNudge[];
   vacationMode: DashboardVacationMode;
   currentMonthContext: MonthlyContext | null;
   /** True when the user has not yet set a context for the current
@@ -69,33 +79,21 @@ function currentMonthKey(): string {
   return `${y}-${m}`;
 }
 
-/** Read a single top-level key from the legacy app_store row. We need this
- *  until Phase 6 moves user/settings and vacationMode onto their own
- *  tables. Do not export — view resolvers are the only caller and should
- *  comment each call with a TODO. */
-async function readAppStoreKey<T>(key: string): Promise<T | null> {
-  const userId = requireUserId();
-  const rows = await query<{ value: T }>(
-    `select value from app_store where user_id = $1 and key = $2`,
-    [userId, key],
-  );
-  return rows.length > 0 ? (rows[0].value as T) : null;
-}
-
 export async function resolveDashboardView(): Promise<DashboardView> {
   const today = todayISO();
 
   // ── Fire the independent repo reads in parallel ─────────────
   const [
     goals,
-    todayTasks,
+    todayTaskRecords,
     todayEvents,
     pendingRecords,
     homeMessages,
     activeReminders,
-    nudges,
+    nudgeRecords,
     vacationState,
     monthlyContexts,
+    user,
   ] = await Promise.all([
     repos.goals.list(),
     repos.dailyTasks.listForDate(today),
@@ -106,12 +104,13 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     repos.nudges.list(true),
     repos.vacationMode.get(),
     repos.monthlyContext.list(),
+    repos.users.get(),
   ]);
 
-  // TODO(phase6): move user profile (name, settings) to a dedicated users
-  // table — for now the client's greetingName still lives in app_store.user.
-  const userRow = await readAppStoreKey<{ name?: string }>("user");
-  const greetingName = userRow?.name?.trim() || "";
+  const greetingName = user?.name?.trim() || "";
+
+  const todayTasks: DailyTask[] = todayTaskRecords.map(flattenDailyTask);
+  const recentNudges: ContextualNudge[] = nudgeRecords.map(nudgeToContextual);
 
   // Pending tasks in the DB are stored as PendingTaskRecord (source, title,
   // status, payload). We rehydrate a best-effort @northstar/core PendingTask
@@ -128,6 +127,17 @@ export async function resolveDashboardView(): Promise<DashboardView> {
   });
 
   const activeGoals = goals.filter((g) => g.status !== "archived");
+
+  const activePendingTasks = pendingTasks.filter(
+    (pt) => pt.status === "analyzing" || pt.status === "ready",
+  );
+
+  const dailyLoad: DashboardDailyLoad = {
+    currentWeight: todayTasks.reduce((sum, t) => sum + (t.cognitiveWeight ?? 3), 0),
+    currentMinutes: todayTasks.reduce((sum, t) => sum + (t.durationMinutes ?? 30), 0),
+    activeTaskCount: todayTasks.filter((t) => !t.completed).length,
+    todayEventCount: todayEvents.length,
+  };
 
   const completedTasks = todayTasks.filter((t) => t.completed).length;
   const totalTasks = todayTasks.length;
@@ -159,9 +169,11 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     todayTasks,
     todayEvents,
     pendingTasks,
+    activePendingTasks,
+    dailyLoad,
     homeChatMessages: homeMessages,
     activeReminders,
-    recentNudges: nudges,
+    recentNudges,
     vacationMode,
     currentMonthContext,
     needsMonthlyContext: currentMonthContext === null,

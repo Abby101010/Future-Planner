@@ -117,20 +117,12 @@ monthlyContextRouter.post(
 // POST /monthly-context/analyze — AI-powered intensity classification
 monthlyContextRouter.post(
   "/analyze",
-  asyncHandler(async (req, res) => {
-    const p = (req.body ?? {}) as { month?: string; description?: string };
-    // Build a loadData closure from app_store for the AI handler.
-    const rows = await query<{ key: string; value: unknown }>(
-      "select key, value from app_store where user_id = $1",
-      [req.userId],
-    );
-    const snapshot: Record<string, unknown> = {};
-    for (const row of rows) snapshot[row.key] = row.value;
-    const result = await handleAIRequest(
-      "analyze-monthly-context",
-      { month: p.month, description: p.description },
-      () => snapshot,
-    );
+  asyncHandler(async (_req, res) => {
+    const p = (_req.body ?? {}) as { month?: string; description?: string };
+    const result = await handleAIRequest("analyze-monthly-context", {
+      month: p.month,
+      description: p.description,
+    });
     res.json(result);
   }),
 );

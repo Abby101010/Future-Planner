@@ -4,8 +4,16 @@
  * (set via Fly secrets in production, .env in local dev).
  */
 
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 import type pg from "pg";
+
+// By default, node-postgres converts `date` columns (OID 1082) to JS Date
+// objects in UTC midnight. That object serializes to
+// "2026-04-11T00:00:00.000Z" in res.json, which breaks every
+// `log.date === "2026-04-11"` equality check in view resolvers and on
+// the client. We don't use `date` for anything except YYYY-MM-DD keys,
+// so override the parser to return the raw string the DB sends.
+types.setTypeParser(1082, (v: string) => v);
 
 let pool: pg.Pool | null = null;
 

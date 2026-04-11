@@ -205,6 +205,10 @@ export interface DailyTask {
   actualMinutes?: number;   // actual time spent (from timer)
   snoozedCount?: number;    // how many times this task was snoozed
   skipped?: boolean;        // user explicitly skipped this task
+  /** Source goal when this task was picked from a big-goal plan tree. */
+  goalId?: string | null;
+  /** Source GoalPlanTask.id when this task was picked from a plan. */
+  planNodeId?: string | null;
 }
 
 export interface HeatmapEntry {

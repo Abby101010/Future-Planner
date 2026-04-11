@@ -14,7 +14,6 @@ import express from "express";
 import cors from "cors";
 import { authMiddleware } from "./middleware/auth";
 import { errorHandler } from "./middleware/errorHandler";
-import { storeRouter } from "./routes/store";
 import { entitiesRouter } from "./routes/entities";
 import { aiRouter } from "./routes/ai";
 import { calendarRouter } from "./routes/calendar";
@@ -80,7 +79,6 @@ app.use(authMiddleware);
 app.use("/view", viewRouter);
 app.use("/commands", commandsRouter);
 
-app.use("/store", storeRouter);
 app.use("/entities", entitiesRouter);
 app.use("/ai", aiRouter);
 app.use("/calendar", calendarRouter);

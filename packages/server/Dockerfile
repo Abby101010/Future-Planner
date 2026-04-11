@@ -26,6 +26,10 @@ COPY --from=builder /repo/package.json ./
 COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /repo/packages/core/dist ./packages/core/dist
+# Shim files so server code can resolve `@northstar/core/handlers` under
+# classic Node module resolution. Forward to dist/handlers.js.
+COPY --from=builder /repo/packages/core/handlers.js ./packages/core/handlers.js
+COPY --from=builder /repo/packages/core/handlers.d.ts ./packages/core/handlers.d.ts
 COPY --from=builder /repo/packages/server/package.json ./packages/server/package.json
 COPY --from=builder /repo/packages/server/dist ./packages/server/dist
 # Versioned migrations are read at runtime by dist/src/db/migrate.js

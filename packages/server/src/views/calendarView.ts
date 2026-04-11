@@ -1,16 +1,12 @@
 /* NorthStar server — calendar view resolver
  *
  * Narrow per-page aggregate for CalendarPage. Takes a date range and
- * returns all calendar events in that range, plus the vacation mode
- * and goal list (used by the event form's "link to goal" dropdown).
- *
- * deviceIntegrations still lives on app_store for now since we don't
- * have a dedicated table — we fall back and mark it TODO(phase6).
+ * returns all calendar events in that range, plus the vacation mode,
+ * the goal list (used by the event form's "link to goal" dropdown),
+ * and the user's device integrations (for OS calendar sync state).
  */
 
 import * as repos from "../repositories";
-import { query } from "../db/pool";
-import { requireUserId } from "../repositories/_context";
 import type { CalendarEvent, DeviceIntegrations, Goal } from "@northstar/core";
 
 export interface CalendarVacationMode {
@@ -45,15 +41,6 @@ function defaultRange(): CalendarViewArgs {
   };
 }
 
-async function readAppStoreKey<T>(key: string): Promise<T | null> {
-  const userId = requireUserId();
-  const rows = await query<{ value: T }>(
-    `select value from app_store where user_id = $1 and key = $2`,
-    [userId, key],
-  );
-  return rows.length > 0 ? (rows[0].value as T) : null;
-}
-
 export async function resolveCalendarView(
   args?: Partial<CalendarViewArgs>,
 ): Promise<CalendarView> {
@@ -61,15 +48,12 @@ export async function resolveCalendarView(
   const startDate = args?.startDate || defaults.startDate;
   const endDate = args?.endDate || defaults.endDate;
 
-  const [events, goals, vacationState] = await Promise.all([
+  const [events, goals, vacationState, deviceIntegrations] = await Promise.all([
     repos.calendar.listForRange(startDate, endDate),
     repos.goals.list(),
     repos.vacationMode.get(),
+    repos.users.getDeviceIntegrations(),
   ]);
-
-  // TODO(phase6): move deviceIntegrations to a dedicated table.
-  const deviceIntegrations =
-    await readAppStoreKey<DeviceIntegrations>("deviceIntegrations");
 
   const vacationMode: CalendarVacationMode = vacationState
     ? {

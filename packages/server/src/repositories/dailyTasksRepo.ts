@@ -15,6 +15,7 @@
 import type { DailyTask } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
+import { parseJson } from "./_json";
 
 /** DB-shape task record. We intentionally don't return the full
  *  @northstar/core DailyTask because DailyTask doesn't include a date field
@@ -47,18 +48,6 @@ interface DailyTaskRow {
   payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
-}
-
-function parseJson(v: unknown): Record<string, unknown> {
-  if (!v) return {};
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return v as Record<string, unknown>;
 }
 
 function rowToTask(r: DailyTaskRow): DailyTaskRecord {
@@ -205,6 +194,14 @@ export async function remove(id: string): Promise<void> {
     userId,
     id,
   ]);
+}
+
+export async function removeForDate(date: string): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `delete from daily_tasks where user_id = $1 and log_date = $2`,
+    [userId, date],
+  );
 }
 
 /** Flip the `completed` flag and stamp `completed_at`. Returns the new

@@ -39,14 +39,18 @@ import { handleRecovery } from "./handlers/recovery";
 import { handlePaceCheck } from "./handlers/paceCheck";
 import { handleAnalyzeQuickTask } from "./handlers/analyzeQuickTask";
 
-// Agnostic handlers — single source of truth in shared/.
-import { handleOnboarding } from "@northstar/core";
-import { handleClassifyGoal } from "@northstar/core";
-import { handleGoalPlanChat } from "@northstar/core";
-import { handleGoalPlanEdit } from "@northstar/core";
-import { handleGenerateGoalPlan } from "@northstar/core";
-import { handleAnalyzeMonthlyContext } from "@northstar/core";
-import { handleHomeChat } from "@northstar/core";
+// Agnostic handlers — live in @northstar/core/handlers (server-only subpath).
+// They pull in @anthropic-ai/sdk + node:crypto, so they must NOT come from
+// the main @northstar/core barrel which the desktop renderer also consumes.
+import {
+  handleOnboarding,
+  handleClassifyGoal,
+  handleGoalPlanChat,
+  handleGoalPlanEdit,
+  handleGenerateGoalPlan,
+  handleAnalyzeMonthlyContext,
+  handleHomeChat,
+} from "@northstar/core/handlers";
 import type { AIPayloadMap } from "@northstar/core";
 
 export type RequestType =
@@ -67,10 +71,9 @@ export type RequestType =
 export async function handleAIRequest(
   type: RequestType,
   payload: Record<string, unknown>,
-  loadData: () => Record<string, unknown>,
   memoryContext = "",
 ): Promise<unknown> {
-  const client = getClient(loadData);
+  const client = getClient();
   if (!client) {
     throw new Error(
       "ANTHROPIC_API_KEY not configured on server. Set it in Fly secrets.",

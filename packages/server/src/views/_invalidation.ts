@@ -70,6 +70,7 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   // flows through regenerate/reallocate/confirm below, not send-chat-message.
   "command:start-chat-stream": ["view:dashboard"],
   "command:send-chat-message": ["view:dashboard"],
+  "command:clear-home-chat": ["view:dashboard"],
   "command:confirm-goal-plan": [
     "view:goal-plan",
     "view:dashboard",

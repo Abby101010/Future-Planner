@@ -30,17 +30,6 @@ async function invoke<T>(channel: string, payload?: unknown): Promise<T> {
   return cloudInvoke<T>(channel, payload);
 }
 
-// ── App data (full store snapshot) ──────────────────────
-
-export const appDataRepo = {
-  load(): Promise<unknown> {
-    return invoke("store:load");
-  },
-  save(data: unknown): Promise<unknown> {
-    return invoke("store:save", data);
-  },
-};
-
 // ── Memory ──────────────────────────────────────────────
 
 export const memoryRepo = {

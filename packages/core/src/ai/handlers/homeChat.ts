@@ -451,6 +451,32 @@ export function parseHomeChatIntent(
   return null;
 }
 
+/**
+ * The LLM emits raw JSON (like `{"is_task": true, "task_description": "Eat"}`)
+ * whenever it detects a structured intent. That JSON is useful for intent
+ * dispatch but is not a user-facing reply — persisting it as the assistant
+ * message content leaks raw JSON into the chat transcript on refetch.
+ * Substitute a short, generic confirmation so the persisted transcript is
+ * readable. The client still gets the full `intent` object and may render
+ * its own richer displayText on top (e.g., with formatted dates).
+ */
+export function defaultReplyForIntent(intent: HomeChatIntent): string {
+  switch (intent.kind) {
+    case "event":
+      return `Got it — I'll add "${intent.entity.title}" to your calendar.`;
+    case "goal":
+      return `Created "${intent.entity.title}". Head to Planning to see the plan.`;
+    case "reminder":
+      return `Reminder set: "${intent.entity.title}".`;
+    case "task":
+      return `Got it — analyzing "${intent.pendingTask.userInput}" and adding it to pending tasks.`;
+    case "manage-goal":
+      return `Working on "${intent.goalTitle}".`;
+    case "context-change":
+      return intent.suggestion || "Noted — update your monthly context in Planning.";
+  }
+}
+
 export async function handleHomeChat(
   client: Anthropic,
   payload: HomeChatPayload,
@@ -472,6 +498,9 @@ export async function handleHomeChat(
     response.content[0].type === "text" ? response.content[0].text.trim() : "";
 
   const intent = parseHomeChatIntent(chatText, userInput);
-  return { reply: chatText, intent };
+  // If the LLM returned a structured intent, don't echo the raw JSON back
+  // as the chat reply — replace it with a human-readable confirmation.
+  const reply = intent ? defaultReplyForIntent(intent) : chatText;
+  return { reply, intent };
 }
 

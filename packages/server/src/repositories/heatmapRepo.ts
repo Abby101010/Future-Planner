@@ -10,6 +10,7 @@
 import type { HeatmapEntry } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
+import { parseJson } from "./_json";
 
 interface HeatmapEntryRow {
   user_id: string;
@@ -18,18 +19,6 @@ interface HeatmapEntryRow {
   payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
-}
-
-function parseJson(v: unknown): Record<string, unknown> {
-  if (!v) return {};
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return v as Record<string, unknown>;
 }
 
 function rowToEntry(r: HeatmapEntryRow): HeatmapEntry {

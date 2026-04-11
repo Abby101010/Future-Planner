@@ -18,7 +18,10 @@ import { createLogger } from "../utils/logger";
 const log = createLogger("transport");
 
 const DEFAULT_QUERY_TIMEOUT_MS = 30_000;
-const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+// AI-backed commands (regenerate-goal-plan, reallocate, send-chat-message)
+// can take well over a minute against Claude. Keep this generous — the
+// server still streams progress over WS for anything interactive.
+const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
 
 const CLOUD_API_URL = (
   (import.meta.env.VITE_CLOUD_API_URL as string | undefined) || ""
@@ -137,4 +140,89 @@ export async function runCommand<T>(
     { v: PROTOCOL_VERSION, kind, args },
     DEFAULT_COMMAND_TIMEOUT_MS,
   );
+}
+
+export interface SseStreamHandlers<TDone = unknown> {
+  onDelta?: (text: string) => void;
+  onDone?: (result: TDone) => void;
+  onError?: (message: string) => void;
+}
+
+/**
+ * POST a JSON body to an SSE endpoint and dispatch `event: delta` /
+ * `event: done` / `event: error` frames to the provided handlers. Used by
+ * the goal-plan chat panel to consume /ai/goal-plan-chat/stream directly
+ * instead of routing through the WS-based stream path.
+ *
+ * Resolves once the server closes the stream; rejects on HTTP errors or
+ * mid-stream `event: error` frames.
+ */
+export async function postSseStream<TDone = unknown>(
+  path: string,
+  body: unknown,
+  handlers: SseStreamHandlers<TDone>,
+): Promise<void> {
+  const url = `${baseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      Authorization: `Bearer ${getAuthToken()}`,
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `SSE ${path} failed: HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ""}`,
+    );
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let streamError: string | null = null;
+
+  const dispatchFrame = (frame: string) => {
+    let eventName = "message";
+    const dataLines: string[] = [];
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event:")) eventName = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (dataLines.length === 0) return;
+    let data: unknown = null;
+    try {
+      data = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (eventName === "delta") {
+      const text = (data as { text?: string } | null)?.text ?? "";
+      if (text) handlers.onDelta?.(text);
+    } else if (eventName === "done") {
+      handlers.onDone?.(data as TDone);
+    } else if (eventName === "error") {
+      const message = (data as { error?: string } | null)?.error ?? "stream error";
+      streamError = message;
+      handlers.onError?.(message);
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep: number;
+    while ((sep = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      if (frame.trim()) dispatchFrame(frame);
+    }
+  }
+  if (buffer.trim()) dispatchFrame(buffer);
+
+  if (streamError) throw new Error(streamError);
 }

@@ -69,11 +69,29 @@ snake_case DB row into the canonical `@northstar/core` type (or a
 repo-local interface when core doesn't model it yet).
 
 Stable fields → typed columns. Variable / hierarchical / level-specific
-fields → the table's `metadata` or `payload` jsonb column, which
-round-trips through `JSON.stringify` / `parseJson`. See `goalsRepo.ts`
-(`goalToMetadata` helper) for the canonical pattern.
+fields → the table's `payload` jsonb column, which round-trips through
+`JSON.stringify` / `parseJson` (imported from `./_json`). See
+`goalsRepo.ts` (`goalToPayload` helper) for the canonical pattern.
 
-Repos return domain types where `@northstar/core` has one:
+**Convention: every entity table's jsonb column is named `payload`.** The
+`goals` table was originally `metadata`; migration 0003 renames it to
+match. Do not reintroduce `metadata` on new tables.
+
+**Convention: `parseJson` is shared.** Import it from `./_json` — do not
+re-inline the 10-line helper per repo.
+
+**Return-type policy.** A repo returns the `@northstar/core` type directly
+**only when the core type is 1:1 with the DB row shape** (no extra fields
+the DB doesn't have, no renamed fields, no computed joins). Otherwise the
+repo exports a local `*Record` interface from the same file and view
+resolvers map it to whatever the client expects.
+
+Concretely: return core if (a) every core field has a column or a
+payload key, (b) the field names match after snake→camel, and (c) no
+other table needs to be joined to build it. Return a local record if
+any of those are false — do not try to force the core shape.
+
+Repos and what they return:
 
 | Repository              | Returns                                           |
 | ----------------------- | ------------------------------------------------- |

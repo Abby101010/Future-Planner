@@ -2,12 +2,12 @@
    NorthStar — AgentProgress Component
    Shows live reasoning/research process from multi-agent system.
 
-   Supports two modes:
-   1. Legacy: listens to "agent:progress" IPC events (fragile)
-   2. Job-based: polls job:status for progress_log (resilient)
+   Post-phase-13 the legacy Electron IPC bridge is gone. Progress
+   streams will be wired over WS in phase 8 — until then this
+   component only renders via the job-based polling mode.
    ────────────────────────────────────────────────────────── */
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Search,
   Brain,
@@ -20,16 +20,6 @@ import {
   Zap,
 } from "lucide-react";
 import type { AgentProgressEvent, AgentId, AgentStatus } from "@northstar/core";
-// TODO(phase8): wire plan-job tracking via WS
-const getJobStatus = async (
-  _jobId: string,
-): Promise<{
-  status: string;
-  progress: number;
-  progress_log: unknown[];
-  result: unknown;
-  error: string | null;
-} | null> => null;
 import { useT } from "../i18n";
 import "./AgentProgress.css";
 
@@ -72,60 +62,13 @@ function getStatusIcon(status: AgentStatus) {
 }
 
 export default function AgentProgress({ visible, title, jobId }: AgentProgressProps) {
-  const [events, setEvents] = useState<AgentProgressEvent[]>([]);
+  // Progress streaming was deleted with the legacy job queue; WS-backed
+  // agent progress will repopulate this array when re-enabled in a
+  // future phase. Until then the component stays a visible no-op.
+  const [events] = useState<AgentProgressEvent[]>([]);
+  void jobId;
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = useT();
-
-  // Mode 1: Job-based polling (resilient — survives focus loss)
-  useEffect(() => {
-    if (!visible || !jobId) return;
-
-    setEvents([]);
-    let cancelled = false;
-
-    const poll = async () => {
-      if (cancelled) return;
-
-      const status = await getJobStatus(jobId);
-      if (cancelled) return;
-
-      if (status) {
-        const log = (status.progress_log || []) as AgentProgressEvent[];
-        setEvents(log);
-
-        // Keep polling if job is still active
-        if (status.status === "pending" || status.status === "running") {
-          setTimeout(poll, 1000);
-        }
-      } else {
-        // Job not found yet, retry
-        setTimeout(poll, 1000);
-      }
-    };
-
-    poll();
-
-    return () => { cancelled = true; };
-  }, [visible, jobId]);
-
-  // Mode 2: Legacy IPC event listener (fallback for non-job-based calls)
-  useEffect(() => {
-    if (!visible || jobId) return; // skip if using job-based mode
-
-    setEvents([]);
-
-    const handler = (...args: unknown[]) => {
-      const event = args[0] as AgentProgressEvent;
-      setEvents((prev) => [...prev, event]);
-    };
-
-    const unsubscribe = window.electronAPI.on("agent:progress", handler);
-
-    return () => {
-      // Properly remove the IPC listener so we don't leak events across mounts
-      if (typeof unsubscribe === "function") unsubscribe();
-    };
-  }, [visible, jobId]);
 
   // Auto-scroll to bottom
   useEffect(() => {

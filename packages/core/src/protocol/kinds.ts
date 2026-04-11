@@ -29,6 +29,7 @@ export type CommandKind =
   | "command:reset-data"
   | "command:start-chat-stream"
   | "command:send-chat-message"
+  | "command:clear-home-chat"
   | "command:confirm-goal-plan"
   | "command:regenerate-goal-plan"
   | "command:reallocate-goal-plan";

@@ -13,22 +13,20 @@
 import * as repos from "../repositories";
 import type {
   CalendarEvent,
+  ContextualNudge,
+  DailyLog,
+  DailyTask,
   Goal,
   HeatmapEntry,
   Reminder,
 } from "@northstar/core";
-import type { DailyLogRecord } from "../repositories/dailyLogsRepo";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
-import type { NudgeRecord } from "../repositories/nudgesRepo";
+import { hydrateDailyLog, nudgeToContextual } from "./_mappers";
 
 export interface TasksVacationMode {
   active: boolean;
   startDate: string | null;
   endDate: string | null;
-}
-
-export interface TasksDailyLogHydrated extends DailyLogRecord {
-  tasks: DailyTaskRecord[];
 }
 
 export interface BigGoalProgress {
@@ -39,20 +37,44 @@ export interface BigGoalProgress {
   percent: number;
 }
 
+export interface TodayProgressSummary {
+  completed: number;
+  total: number;
+  /** 0..100 percentage, already rounded to 1 decimal on the server. */
+  ratePercent: number;
+}
+
+/** Plan-tree task surfaced on today that hasn't been consumed by the
+ *  daily_tasks LLM yet. Carries the parent goal + week/day ids so the
+ *  page can dispatch a toggle command without re-walking the tree. */
+export interface PendingGoalTask extends DailyTask {
+  goalTitle: string;
+  goalId: string;
+  weekId?: string;
+  dayId?: string;
+}
+
 export interface TasksView {
   todayDate: string;
-  todayLog: TasksDailyLogHydrated | null;
+  todayLog: DailyLog | null;
   /** Up to 90 days of logs (hydrated with tasks). Sorted desc by date. */
-  dailyLogs: TasksDailyLogHydrated[];
+  dailyLogs: DailyLog[];
   heatmapData: HeatmapEntry[];
   goals: Goal[];
   bigGoalProgress: BigGoalProgress[];
   activeReminders: Reminder[];
   todayReminders: Reminder[];
   todayEvents: CalendarEvent[];
-  recentNudges: NudgeRecord[];
+  recentNudges: ContextualNudge[];
   vacationMode: TasksVacationMode;
   totalIncompleteTasks: number;
+  /** Derived: completed/total/ratePercent over today's log. */
+  todayProgress: TodayProgressSummary;
+  /** Derived: tasks in today's log that remain incomplete. */
+  todayMissedTasks: DailyTask[];
+  /** Derived: goal-plan tasks scheduled for today that the daily-tasks
+   *  LLM hasn't yet pulled into today's log. */
+  pendingGoalTasks: PendingGoalTask[];
 }
 
 function todayISO(): string {
@@ -63,6 +85,77 @@ function isoDaysAgo(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().split("T")[0];
+}
+
+/** Plan generators emit day labels in several shapes ("Monday", "Mon",
+ *  "Jan 6", "2026-04-11", etc.). Match against today leniently so the
+ *  page surfaces plan tasks regardless of generator style. */
+function dayMatchesToday(rawLabel: string, today: string): boolean {
+  const label = rawLabel.toLowerCase().trim();
+  if (!label) return false;
+  const d = new Date(`${today}T00:00:00`);
+  const weekdayLong = d
+    .toLocaleDateString("en-US", { weekday: "long" })
+    .toLowerCase();
+  const weekdayShort = d
+    .toLocaleDateString("en-US", { weekday: "short" })
+    .toLowerCase();
+  const monthDay = d
+    .toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    .toLowerCase();
+  const monthDayPadded = monthDay.replace(/\s(\d)$/, " 0$1");
+  if (label === today || label.includes(today)) return true;
+  if (label === weekdayLong || label === weekdayShort) return true;
+  if (label.startsWith(`${weekdayShort} `)) return true;
+  if (label === monthDay || label.includes(monthDay)) return true;
+  if (label === monthDayPadded || label.includes(monthDayPadded)) return true;
+  return false;
+}
+
+function computePendingGoalTasks(
+  goals: Goal[],
+  todayLog: DailyLog | null,
+  today: string,
+): PendingGoalTask[] {
+  const consumed = new Set<string>(
+    (todayLog?.tasks ?? [])
+      .map((t) => t.planNodeId ?? "")
+      .filter(Boolean),
+  );
+  const out: PendingGoalTask[] = [];
+  for (const g of goals) {
+    if (!g.plan || !Array.isArray(g.plan.years)) continue;
+    for (const year of g.plan.years) {
+      for (const month of year.months) {
+        for (const week of month.weeks) {
+          if (week.locked) continue;
+          for (const day of week.days) {
+            if (!dayMatchesToday(day.label, today)) continue;
+            for (const tk of day.tasks) {
+              if (tk.completed) continue;
+              if (consumed.has(tk.id)) continue;
+              out.push({
+                ...(tk as unknown as DailyTask),
+                goalTitle: g.title,
+                goalId: g.id,
+                weekId: week.id,
+                dayId: day.id,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function computeTodayProgress(todayLog: DailyLog | null): TodayProgressSummary {
+  const tasks = todayLog?.tasks ?? [];
+  const completed = tasks.filter((t) => t.completed).length;
+  const total = tasks.length;
+  const ratePercent = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0;
+  return { completed, total, ratePercent };
 }
 
 function computeBigGoalProgress(goals: Goal[]): BigGoalProgress[] {
@@ -131,11 +224,8 @@ export async function resolveTasksView(): Promise<TasksView> {
     tasksByDate.set(t.date, arr);
   }
 
-  const hydratedLogs: TasksDailyLogHydrated[] = logs
-    .map((log) => ({
-      ...log,
-      tasks: tasksByDate.get(log.date) ?? [],
-    }))
+  const hydratedLogs: DailyLog[] = logs
+    .map((log) => hydrateDailyLog(log, tasksByDate.get(log.date) ?? []))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
   const todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
@@ -145,11 +235,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     .sort((a, b) => a.reminderTime.localeCompare(b.reminderTime));
 
   const totalIncompleteTasks = hydratedLogs.reduce(
-    (sum, log) =>
-      sum +
-      log.tasks.filter(
-        (t) => !t.completed && !(t.payload.skipped as boolean | undefined),
-      ).length,
+    (sum, log) => sum + log.tasks.filter((t) => !t.completed && !t.skipped).length,
     0,
   );
 
@@ -161,6 +247,10 @@ export async function resolveTasksView(): Promise<TasksView> {
       }
     : { active: false, startDate: null, endDate: null };
 
+  const todayProgress = computeTodayProgress(todayLog);
+  const todayMissedTasks = (todayLog?.tasks ?? []).filter((t) => !t.completed);
+  const pendingGoalTasks = computePendingGoalTasks(goals, todayLog, today);
+
   return {
     todayDate: today,
     todayLog,
@@ -171,8 +261,11 @@ export async function resolveTasksView(): Promise<TasksView> {
     activeReminders,
     todayReminders,
     todayEvents,
-    recentNudges: nudges,
+    recentNudges: nudges.map(nudgeToContextual),
     vacationMode,
     totalIncompleteTasks,
+    todayProgress,
+    todayMissedTasks,
+    pendingGoalTasks,
   };
 }

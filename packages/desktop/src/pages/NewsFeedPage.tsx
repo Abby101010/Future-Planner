@@ -8,10 +8,9 @@
    through useQuery here.
    ────────────────────────────────────────────────────────── */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Globe, Loader2, RefreshCw } from "lucide-react";
 import { useT } from "../i18n";
-import { fetchNewsBriefing } from "../services/ai";
 import { useQuery } from "../hooks/useQuery";
 import type { NewsBriefing, Goal } from "@northstar/core";
 import "./NewsFeedPage.css";
@@ -29,36 +28,14 @@ export default function NewsFeedPage() {
 
   const goals = data?.goals ?? [];
 
-  const [briefing, setBriefing] = useState<NewsBriefing | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadNews = async () => {
-    if (goals.length === 0) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const goalTitles = goals.map((g) => g.title);
-      const result = await fetchNewsBriefing(goalTitles, []);
-      if (result.ok && result.data) {
-        setBriefing(result.data);
-      } else {
-        setError(result.error || "Failed to load news");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load news");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch the briefing once the view has loaded and we know we have goals.
-  useEffect(() => {
-    if (!data) return;
-    if (goals.length === 0) return;
-    loadNews();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.goals.length]);
+  // News briefing is not wired up in this deployment — the multi-agent
+  // research pipeline that produced it never moved to the cloud backend.
+  // The page still renders (goals list + empty state) so Settings can
+  // toggle the feature without breaking navigation.
+  const [briefing] = useState<NewsBriefing | null>(null);
+  const loading = false;
+  const error: string | null = null;
+  const loadNews = () => {};
 
   if (viewLoading && !data) {
     return (

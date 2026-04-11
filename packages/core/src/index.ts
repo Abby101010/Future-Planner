@@ -25,11 +25,8 @@ export {
 } from "./ai/payloads.js";
 export * from "./model-config.js";
 export * from "./domain/cognitiveBudget.js";
-export * from "./ai/handlers/onboarding.js";
-export * from "./ai/handlers/classifyGoal.js";
-export * from "./ai/handlers/goalPlanChat.js";
-export * from "./ai/handlers/goalPlanEdit.js";
-export * from "./ai/handlers/generateGoalPlan.js";
-export * from "./ai/handlers/analyzeMonthlyContext.js";
-export * from "./ai/handlers/homeChat.js";
+export * from "./domain/goalPlan.js";
+// AI handlers are server-only (pull in @anthropic-ai/sdk + node:crypto).
+// Server code imports them from "@northstar/core/handlers". Never re-export
+// them here — the desktop renderer consumes this barrel through a Vite alias.
 export * from "./protocol/index.js";

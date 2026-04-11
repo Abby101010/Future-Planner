@@ -41,11 +41,20 @@ import type {
 import "./PlanningPage.css";
 
 // MUST match packages/server/src/views/planningView.ts
+interface PlanProgress {
+  completed: number;
+  total: number;
+  percent: number;
+}
 interface PlanningView {
   goals: Goal[];
   monthlyContexts: MonthlyContextType[];
   currentMonthContext: MonthlyContextType | null;
   goalsNeedingPlanReview: Goal[];
+  bigGoals: Goal[];
+  everydayGoals: Goal[];
+  repeatingGoals: Goal[];
+  bigGoalProgressById: Record<string, PlanProgress>;
 }
 
 export default function PlanningPage() {
@@ -221,9 +230,10 @@ export default function PlanningPage() {
 
   if (!data) return null;
 
-  const bigGoals = goals.filter((g) => g.goalType === "big" && g.status !== "archived");
-  const everydayGoals = goals.filter((g) => (g.goalType === "everyday" || (!g.goalType && g.scope === "small")) && g.status !== "archived" && g.status !== "completed");
-  const repeatingGoals = goals.filter((g) => g.goalType === "repeating" && g.status !== "archived");
+  const bigGoals = data.bigGoals;
+  const everydayGoals = data.everydayGoals;
+  const repeatingGoals = data.repeatingGoals;
+  const bigGoalProgressById = data.bigGoalProgressById;
 
   return (
     <div className="planning-page">
@@ -381,21 +391,10 @@ export default function PlanningPage() {
             <h3>{t.goalTypes?.bigGoals || "Big Goals"}</h3>
             <div className="goals-grid">
               {bigGoals.map((goal) => {
-                const gTasks: Array<{ completed: boolean }> = [];
-                if (goal.plan && Array.isArray(goal.plan.years)) {
-                  for (const yr of goal.plan.years) {
-                    for (const mo of yr.months) {
-                      for (const wk of mo.weeks) {
-                        for (const dy of wk.days) {
-                          gTasks.push(...dy.tasks);
-                        }
-                      }
-                    }
-                  }
-                }
-                const gCompleted = gTasks.filter((gTask) => gTask.completed).length;
-                const gTotal = gTasks.length;
-                const gPercent = gTotal > 0 ? Math.round((gCompleted / gTotal) * 100) : 0;
+                const progress = bigGoalProgressById[goal.id] ?? { completed: 0, total: 0, percent: 0 };
+                const gCompleted = progress.completed;
+                const gTotal = progress.total;
+                const gPercent = progress.percent;
                 const isConfirmingDelete = confirmDeleteGoalId === goal.id;
                 return (
                   <div

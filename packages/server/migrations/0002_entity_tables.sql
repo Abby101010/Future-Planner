@@ -22,6 +22,10 @@
 -- variable and hierarchical, so we promote only the stable top-level
 -- fields to columns and stash the rest in `metadata` jsonb. Goal plan
 -- hierarchy lives in goal_plan_nodes (below).
+--
+-- NOTE: migration 0003 renames `metadata` → `payload` so the repo layer
+-- sees the same column name as every other entity table. Do not change
+-- this file; add a new numbered migration instead.
 create table if not exists goals (
   id            text not null,
   user_id       text not null,

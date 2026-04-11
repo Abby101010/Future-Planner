@@ -24,12 +24,13 @@ import { Router } from "express";
 import { envelope, envelopeError } from "@northstar/core";
 import type { CommandKind, QueryKind } from "@northstar/core";
 import * as repos from "../repositories";
-import { getPool, query } from "../db/pool";
+import { getPool } from "../db/pool";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { emitViewInvalidate } from "../ws/events";
 import { commandToInvalidations } from "../views/_invalidation";
 import { handleAIRequest, type RequestType } from "../ai/router";
 import { loadMemory, buildMemoryContext } from "../memory";
+import type { TimeBlock, UserProfile, UserSettings } from "@northstar/core";
 
 const commandsRouter = Router();
 
@@ -42,30 +43,15 @@ function invalidate(kind: CommandKind, extraViews: QueryKind[] = []): void {
   emitViewInvalidate(userId, { viewKinds: merged });
 }
 
-/** Build a fresh loadData() closure over the user's app_store snapshot.
- *  Mirrors the shape ai.ts already uses. */
-async function buildLoadData(
-  userId: string,
-): Promise<() => Record<string, unknown>> {
-  const rows = await query<{ key: string; value: unknown }>(
-    "select key, value from app_store where user_id = $1",
-    [userId],
-  );
-  const snapshot: Record<string, unknown> = {};
-  for (const row of rows) snapshot[row.key] = row.value;
-  return () => snapshot;
-}
-
 async function runAI(
   type: RequestType,
   payload: Record<string, unknown>,
   contextType: "planning" | "daily" | "recovery" | "general" = "general",
 ): Promise<unknown> {
   const userId = getCurrentUserId();
-  const loadData = await buildLoadData(userId);
   const memory = await loadMemory(userId);
   const memoryContext = buildMemoryContext(memory, contextType);
-  return handleAIRequest(type, payload, loadData, memoryContext);
+  return handleAIRequest(type, payload, memoryContext);
 }
 
 // ── Per-command handlers ─────────────────────────────────────
@@ -215,56 +201,42 @@ async function cmdDeleteMonthlyContext(
 async function cmdUpdateSettings(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  // TODO(phase6): this writes into app_store.user.settings because the
-  // dedicated settings table doesn't exist yet. Read-modify-write under
-  // a single key — this matches how the legacy client persisted it.
-  const userId = getCurrentUserId();
-  const patch = (body.settings as Record<string, unknown>) ?? {};
-  const rows = await query<{ value: Record<string, unknown> }>(
-    `select value from app_store where user_id = $1 and key = 'user'`,
-    [userId],
-  );
-  const current = rows.length > 0 ? rows[0].value : {};
-  const nextUser: Record<string, unknown> = {
-    ...(current ?? {}),
-    settings: {
-      ...((current?.settings as Record<string, unknown>) ?? {}),
-      ...patch,
-    },
-  };
-  await query(
-    `insert into app_store (user_id, key, value)
-        values ($1, 'user', $2::jsonb)
-     on conflict (user_id, key) do update set value = excluded.value`,
-    [userId, JSON.stringify(nextUser)],
-  );
+  const patch = (body.settings as Partial<UserSettings>) ?? {};
+  await repos.users.updateSettings(patch);
   return { ok: true };
 }
 
 async function cmdCompleteOnboarding(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  // TODO(phase6): user profile still lives in app_store. Merge the
-  // onboarding result (weeklyAvailability, intent text, etc.) into the
-  // user row and set onboardingComplete.
-  const userId = getCurrentUserId();
-  const patch = (body.user as Record<string, unknown>) ?? {};
-  const rows = await query<{ value: Record<string, unknown> }>(
-    `select value from app_store where user_id = $1 and key = 'user'`,
-    [userId],
-  );
-  const current = rows.length > 0 ? rows[0].value : {};
-  const nextUser: Record<string, unknown> = {
-    ...(current ?? {}),
-    ...patch,
-    onboardingComplete: true,
-  };
-  await query(
-    `insert into app_store (user_id, key, value)
-        values ($1, 'user', $2::jsonb)
-     on conflict (user_id, key) do update set value = excluded.value`,
-    [userId, JSON.stringify(nextUser)],
-  );
+  // Accepts either a full UserProfile in `body.user` (onboarding finalize)
+  // or a partial patch. Full profile → upsert; partial → fall back to
+  // completeOnboarding helper with defaults pulled from the current row.
+  const patch = (body.user as Partial<UserProfile> | undefined) ?? {};
+  const current = await repos.users.get();
+  const name = patch.name ?? current?.name ?? "";
+  const goalRaw = patch.goalRaw ?? current?.goalRaw ?? "";
+  const weeklyAvailability: TimeBlock[] =
+    patch.weeklyAvailability ?? current?.weeklyAvailability ?? [];
+
+  // If the caller passed a full profile shape, upsert it whole; otherwise
+  // use the narrow completeOnboarding helper.
+  if (patch.settings || patch.createdAt) {
+    const next: UserProfile = {
+      id: current?.id ?? "",
+      createdAt: current?.createdAt ?? new Date().toISOString(),
+      settings: patch.settings ?? current?.settings ?? ({} as UserSettings),
+      ...current,
+      ...patch,
+      name,
+      goalRaw,
+      weeklyAvailability,
+      onboardingComplete: true,
+    };
+    await repos.users.upsert(next);
+  } else {
+    await repos.users.completeOnboarding(name, goalRaw, weeklyAvailability);
+  }
   return { ok: true };
 }
 
@@ -287,6 +259,8 @@ async function cmdResetData(): Promise<unknown> {
       "behavior_profile_entries",
       "vacation_mode",
       "goals",
+      "roadmap",
+      "users",
       "app_store",
     ];
     for (const t of tables) {
@@ -304,34 +278,134 @@ async function cmdResetData(): Promise<unknown> {
 
 // ── Chat / AI-backed commands ────────────────────────────────
 
+/** Append a message onto a goal's persistent planChat array and upsert
+ *  the goal. Used by both start-chat-stream and send-chat-message on the
+ *  goal-plan target so chat history actually survives a refetch. */
+async function appendGoalPlanChatMessage(
+  goalId: string,
+  msg: import("@northstar/core").GoalPlanMessage,
+): Promise<void> {
+  const goal = await repos.goals.get(goalId);
+  if (!goal) return;
+  const nextChat = [...(goal.planChat ?? []), msg];
+  await repos.goals.upsert({ ...goal, planChat: nextChat });
+}
+
 async function cmdStartChatStream(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  // The AI-streaming pipeline is still the home-chat SSE route from
-  // phase 4b; this command just persists the first user message so
-  // dashboardView sees it and returns a streamId the client can
-  // correlate with inbound WS deltas. Full streaming wire-up is
-  // out of phase-5a scope — see TODO(phase8).
+  const target = body.target as string | undefined;
+  const goalId = body.goalId as string | undefined;
   const message = body.message as Record<string, unknown> | undefined;
+  const streamId = (body.streamId as string | undefined) ?? crypto.randomUUID();
+
+  if (target === "goal-plan" && goalId && message && (message as { id?: string }).id) {
+    // Goal-plan chat: persist the user message onto the goal, not the
+    // home chat table. The SSE wiring proper lives on /ai/goal-plan-chat/stream;
+    // this command just seeds the transcript so the view resolver sees
+    // the message if the client falls back to non-streaming.
+    try {
+      await appendGoalPlanChatMessage(
+        goalId,
+        message as unknown as import("@northstar/core").GoalPlanMessage,
+      );
+    } catch (err) {
+      console.warn("[cmd:start-chat-stream] failed to append goal chat:", err);
+    }
+    return { ok: true, streamId, _invalidateExtra: ["view:goal-plan"] };
+  }
+
+  // Home chat path (legacy / default).
   if (message && typeof message === "object" && (message as { id?: string }).id) {
     await repos.chat.insertHomeMessage(
       message as unknown as Parameters<typeof repos.chat.insertHomeMessage>[0],
     );
   }
-  const streamId = (body.streamId as string | undefined) ?? crypto.randomUUID();
   return { ok: true, streamId };
 }
 
 async function cmdSendChatMessage(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  // Synchronous home-chat: invoke the existing AI handler, return the
-  // reply plus any parsed intent. The client-side chat surface can
-  // choose between this blocking path and the SSE stream.
+  const target = body.target as string | undefined;
+  const goalId = body.goalId as string | undefined;
   const payload = (body.payload as Record<string, unknown> | undefined) ?? {};
-  const reply = await runAI("home-chat", payload, "general");
-  // Persist the inbound user message if the caller sent one.
   const message = body.message as Record<string, unknown> | undefined;
+
+  // Goal-plan chat: invoke the goal-plan-chat handler, persist the
+  // user + assistant messages onto goal.planChat, and merge any plan
+  // update the AI returned. Never touches home_chat_messages.
+  if (target === "goal-plan" && goalId) {
+    const result = (await runAI(
+      "goal-plan-chat",
+      payload,
+      "planning",
+    )) as {
+      reply?: string;
+      planReady?: boolean;
+      plan?: Record<string, unknown> | null;
+      planPatch?: Record<string, unknown> | null;
+    };
+
+    // Persist user message.
+    if (message && typeof message === "object" && (message as { id?: string }).id) {
+      try {
+        await appendGoalPlanChatMessage(
+          goalId,
+          message as unknown as import("@northstar/core").GoalPlanMessage,
+        );
+      } catch (err) {
+        console.warn("[cmd:send-chat-message] append user msg failed:", err);
+      }
+    }
+
+    // Persist assistant reply.
+    const replyText = typeof result?.reply === "string" ? result.reply : "";
+    if (replyText) {
+      try {
+        await appendGoalPlanChatMessage(goalId, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: replyText,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn("[cmd:send-chat-message] append assistant msg failed:", err);
+      }
+    }
+
+    // If the handler returned a full plan, replace the goal's plan tree.
+    let planReplaced = false;
+    if (result?.planReady && result.plan && typeof result.plan === "object") {
+      try {
+        const planObj = result.plan as unknown as import("@northstar/core").GoalPlan;
+        if (Array.isArray(planObj.years)) {
+          await repos.goalPlan.replacePlan(goalId, planObj);
+          const existing = await repos.goals.get(goalId);
+          if (existing) {
+            await repos.goals.upsert({ ...existing, plan: planObj });
+          }
+          planReplaced = true;
+        }
+      } catch (err) {
+        console.warn("[cmd:send-chat-message] replacePlan failed:", err);
+      }
+    }
+
+    return {
+      ok: true,
+      reply: replyText,
+      planReady: Boolean(result?.planReady),
+      plan: result?.plan ?? null,
+      planPatch: result?.planPatch ?? null,
+      _invalidateExtra: planReplaced
+        ? ["view:goal-plan", "view:tasks", "view:dashboard"]
+        : ["view:goal-plan"],
+    };
+  }
+
+  // Home chat path (legacy / default).
+  const reply = await runAI("home-chat", payload, "general");
   if (message && typeof message === "object" && (message as { id?: string }).id) {
     await repos.chat.insertHomeMessage(
       message as unknown as Parameters<typeof repos.chat.insertHomeMessage>[0],
@@ -340,13 +414,70 @@ async function cmdSendChatMessage(
   return { ok: true, reply };
 }
 
+async function cmdClearHomeChat(): Promise<unknown> {
+  // Snapshot the current home_chat_messages into chat_sessions so the
+  // sidebar shows previous chats instead of silently dropping them when
+  // the user starts a new conversation. Empty transcripts are a no-op.
+  const existing = await repos.chat.listHomeMessages(1000);
+  let archivedSessionId: string | null = null;
+  if (existing.length > 0) {
+    const firstUserMsg = existing.find((m) => m.role === "user");
+    const rawTitle = firstUserMsg?.content ?? "Home chat";
+    const title =
+      rawTitle.length > 60 ? `${rawTitle.slice(0, 57)}...` : rawTitle;
+    archivedSessionId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await repos.chat.saveChatSession({
+      id: archivedSessionId,
+      title,
+      messages: existing,
+      createdAt: existing[0]?.timestamp || now,
+      updatedAt: now,
+    });
+  }
+  await repos.chat.clearHome();
+  return { ok: true, archivedSessionId };
+}
+
 async function cmdRegenerateGoalPlan(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const payload =
     (body.payload as Record<string, unknown> | undefined) ?? body ?? {};
+  const goalId = payload.goalId as string | undefined;
+  if (!goalId) {
+    throw new Error(
+      "command:regenerate-goal-plan requires args.payload.goalId",
+    );
+  }
   const result = await runAI("generate-goal-plan", payload, "planning");
-  return { ok: true, result };
+  // handleGenerateGoalPlan returns the raw parsed JSON. The prompt asks
+  // for { reply, plan: {...} } but be tolerant of a bare plan.
+  const resultObj = (result ?? {}) as Record<string, unknown>;
+  const planCandidate =
+    (resultObj.plan as Record<string, unknown> | undefined) ?? resultObj;
+  if (
+    !planCandidate ||
+    typeof planCandidate !== "object" ||
+    !Array.isArray((planCandidate as { years?: unknown }).years)
+  ) {
+    throw new Error("AI returned invalid plan shape");
+  }
+  const plan = planCandidate as unknown as import("@northstar/core").GoalPlan;
+  await repos.goalPlan.replacePlan(goalId, plan);
+  // Flip planConfirmed on the goal so dashboards/goal-plan view stop
+  // showing the "not planned" state.
+  const existing = await repos.goals.get(goalId);
+  if (existing) {
+    await repos.goals.upsert({
+      ...existing,
+      plan,
+      planConfirmed: true,
+      status: existing.status === "planning" ? "active" : existing.status,
+    });
+  }
+  const reply = resultObj.reply as string | undefined;
+  return { ok: true, goalId, reply };
 }
 
 async function cmdReallocateGoalPlan(
@@ -374,7 +505,12 @@ async function cmdConfirmGoalPlan(
 commandsRouter.post("/:kind", async (req, res) => {
   const slug = req.params.kind;
   const kind = `command:${slug}` as CommandKind;
-  const body = (req.body ?? {}) as Record<string, unknown>;
+  // Transport wraps command args in `{ v, kind, args: {...} }`. Unwrap so
+  // individual cmd* handlers can read fields flat off `body`. Fall back to
+  // the raw body for any caller that still posts args at the top level.
+  const rawBody = (req.body ?? {}) as Record<string, unknown>;
+  const body =
+    (rawBody.args as Record<string, unknown> | undefined) ?? rawBody;
   try {
     let result: unknown;
     switch (kind) {
@@ -432,6 +568,9 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:send-chat-message":
         result = await cmdSendChatMessage(body);
         break;
+      case "command:clear-home-chat":
+        result = await cmdClearHomeChat();
+        break;
       case "command:regenerate-goal-plan":
         result = await cmdRegenerateGoalPlan(body);
         break;
@@ -461,8 +600,15 @@ commandsRouter.post("/:kind", async (req, res) => {
     // If invalidation throws we still want the caller to see the write
     // succeeded, so we swallow the error (logging it) — losing an
     // invalidation is a soft failure.
+    // Handlers may return `_invalidateExtra` to dynamically add views
+    // that depend on runtime target (e.g. goal-plan vs. home chat).
     try {
-      invalidate(kind);
+      const extra =
+        (result && typeof result === "object"
+          ? ((result as { _invalidateExtra?: QueryKind[] })._invalidateExtra ??
+            [])
+          : []) as QueryKind[];
+      invalidate(kind, extra);
     } catch (err) {
       console.warn("[commands] view invalidation failed:", err);
     }

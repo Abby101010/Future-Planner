@@ -3,7 +3,7 @@
  * Typed data access for the `goals` table (migration 0002). Promotes the
  * stable top-level fields of the @northstar/core Goal type to columns and
  * round-trips the rest (planChat, plan, flatPlan, repeatSchedule, etc.) via
- * the `metadata` jsonb column.
+ * the `payload` jsonb column.
  *
  * All queries are parameterized and user_id-scoped via getCurrentUserId().
  * No business logic lives here — pure CRUD.
@@ -12,6 +12,7 @@
 import type { Goal, GoalImportance, GoalScope, GoalType } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
+import { parseJson } from "./_json";
 
 interface GoalRow {
   id: string;
@@ -28,25 +29,13 @@ interface GoalRow {
   icon: string | null;
   plan_confirmed: boolean;
   progress_percent: number | null;
-  metadata: Record<string, unknown> | string | null;
+  payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
 }
 
-function parseJson(v: unknown): Record<string, unknown> {
-  if (!v) return {};
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return v as Record<string, unknown>;
-}
-
 function rowToGoal(r: GoalRow): Goal {
-  const meta = parseJson(r.metadata);
+  const meta = parseJson(r.payload);
   return {
     id: r.id,
     title: r.title,
@@ -75,9 +64,9 @@ function rowToGoal(r: GoalRow): Goal {
   };
 }
 
-/** Extract the jsonb "metadata" blob from a Goal — i.e. everything that does
+/** Extract the jsonb "payload" blob from a Goal — i.e. everything that does
  *  NOT round-trip through a typed column. */
-function goalToMetadata(g: Goal): Record<string, unknown> {
+function goalToPayload(g: Goal): Record<string, unknown> {
   return {
     planChat: g.planChat ?? [],
     plan: g.plan ?? null,
@@ -114,7 +103,7 @@ export async function upsert(goal: Goal): Promise<void> {
     `insert into goals (
        id, user_id, title, description, target_date, status, priority,
        goal_type, scope, is_habit, icon, plan_confirmed, progress_percent,
-       metadata, updated_at
+       payload, updated_at
      ) values (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, now()
      )
@@ -130,7 +119,7 @@ export async function upsert(goal: Goal): Promise<void> {
        icon = excluded.icon,
        plan_confirmed = excluded.plan_confirmed,
        progress_percent = excluded.progress_percent,
-       metadata = excluded.metadata,
+       payload = excluded.payload,
        updated_at = now()`,
     [
       goal.id,
@@ -146,7 +135,7 @@ export async function upsert(goal: Goal): Promise<void> {
       goal.icon ?? null,
       goal.planConfirmed,
       goal.progressPercent ?? null,
-      JSON.stringify(goalToMetadata(goal)),
+      JSON.stringify(goalToPayload(goal)),
     ],
   );
 }

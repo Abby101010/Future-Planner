@@ -21,14 +21,30 @@ import { viewResolvers } from "../views";
 
 const viewRouter = Router();
 
-/** Coerce req.query (Express gives us strings-or-arrays-of-strings) into
- *  a plain Record<string, unknown>. We don't validate shape here — each
- *  resolver documents its own arg contract and throws if something is
- *  missing. */
+/** Coerce req.query into a plain Record<string, unknown>.
+ *
+ *  The desktop transport sends `?args=<JSON>` as a single encoded string
+ *  so resolvers can take arbitrary shapes without per-field coercion. If
+ *  that's what we got, parse it. Otherwise fall back to raw query params
+ *  (useful for curl / manual testing).
+ *
+ *  Each resolver documents its own arg contract and throws if something
+ *  is missing — we don't validate shape here. */
 function coerceQueryArgs(q: unknown): Record<string, unknown> {
   if (!q || typeof q !== "object") return {};
+  const raw = q as Record<string, unknown>;
+  if (typeof raw.args === "string") {
+    try {
+      const parsed = JSON.parse(raw.args);
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* fall through to raw params */
+    }
+  }
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(q as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(raw)) {
     out[k] = v;
   }
   return out;

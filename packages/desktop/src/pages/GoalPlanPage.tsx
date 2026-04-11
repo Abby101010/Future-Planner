@@ -20,7 +20,7 @@ import useStore from "../store/useStore";
 import { useT } from "../i18n";
 import { useQuery } from "../hooks/useQuery";
 import { useCommand } from "../hooks/useCommand";
-import { useAiStream } from "../hooks/useAiStream";
+import { postSseStream } from "../services/transport";
 import GoalPlanMilestoneTimeline from "../components/GoalPlanMilestoneTimeline";
 import GoalPlanHeader from "../components/GoalPlanHeader";
 import GoalPlanHierarchy from "../components/GoalPlanHierarchy";
@@ -85,11 +85,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
 
   // ── Ephemeral UI state ──
   const [chatInput, setChatInput] = useState("");
-  const [streamId, setStreamId] = useState<string | null>(null);
-  // Stream id is set when command:start-chat-stream returns one; the
-  // useAiStream hook then consumes the SSE endpoint for live deltas.
-  const { text: streamedText, running: streamRunning, finished: streamFinished } =
-    useAiStream(streamId);
+  const [streamedText, setStreamedText] = useState("");
+  const [streamRunning, setStreamRunning] = useState(false);
 
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [rescheduleDismissed, setRescheduleDismissed] = useState(false);
@@ -147,14 +144,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goalId]);
 
-  // When a stream finishes, refetch so the newly-persisted assistant
-  // message shows up in the chat history.
-  useEffect(() => {
-    if (streamFinished) {
-      setStreamId(null);
-      refetch();
-    }
-  }, [streamFinished, refetch]);
 
   // Kick off initial plan generation the first time a pending goal
   // renders with no plan or chat history.
@@ -229,50 +218,35 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     setChatInput("");
     if (gpChatInputRef.current) gpChatInputRef.current.style.height = "auto";
     setLocalError(null);
+    setStreamedText("");
+    setStreamRunning(true);
 
-    // Optimistic: kick off a stream placeholder so the UI immediately
-    // flips into the streaming state. The useAiStream hook will pick up
-    // deltas once the server assigns a streamId. If the server returns
-    // a plain reply (no streamId), we fall back to the non-streaming
-    // path below.
     try {
-      const result = await runCommand<{ streamId?: string; reply?: unknown }>(
-        "command:start-chat-stream",
-        {
-          target: "goal-plan",
-          goalId: goal.id,
-          content: userMsg.content,
-          message: userMsg,
-        },
-      );
-      if (result?.streamId) {
-        setStreamId(result.streamId);
-      } else {
-        // Fallback path: start-chat-stream wasn't fully wired, so fall
-        // back to the blocking send-chat-message command which returns
-        // the full reply in one shot. The server still persists the
-        // message and emits view:invalidate, so refetch brings it in.
-        await runCommand("command:send-chat-message", {
-          message: userMsg,
-          payload: {
-            goalTitle: goal.title,
-            targetDate: goal.targetDate,
-            importance: goal.importance,
-            isHabit: goal.isHabit,
-            description: goal.description,
-            chatHistory: [...planChat, userMsg],
-            userMessage: userMsg.content,
-            currentPlan: plan,
-          },
-        });
-        refetch();
-      }
+      await postSseStream("/ai/goal-plan-chat/stream", {
+        goalId: goal.id,
+        userMessageId: userMsg.id,
+        goalTitle: goal.title,
+        targetDate: goal.targetDate,
+        importance: goal.importance,
+        isHabit: goal.isHabit,
+        description: goal.description,
+        chatHistory: [...planChat, userMsg],
+        userMessage: userMsg.content,
+        currentPlan: plan,
+      }, {
+        onDelta: (text) => setStreamedText((prev) => prev + text),
+        onError: (msg) => setLocalError(msg),
+      });
+      refetch();
     } catch (err) {
       setLocalError(
         err instanceof Error ? err.message : "Failed to send message",
       );
+    } finally {
+      setStreamRunning(false);
+      setStreamedText("");
     }
-  }, [goal, chatInput, planChat, plan, runCommand, refetch]);
+  }, [goal, chatInput, planChat, plan, refetch]);
 
   const handleConfirmPlan = useCallback(async () => {
     if (!goal) return;
