@@ -28,7 +28,6 @@ COPY --from=builder /repo/packages/core/package.json ./packages/core/package.jso
 COPY --from=builder /repo/packages/core/dist ./packages/core/dist
 COPY --from=builder /repo/packages/server/package.json ./packages/server/package.json
 COPY --from=builder /repo/packages/server/dist ./packages/server/dist
-COPY --from=builder /repo/packages/server/node_modules ./packages/server/node_modules
 # Versioned migrations are read at runtime by dist/src/db/migrate.js
 # (resolves ../../../migrations relative to __dirname = dist/src/db)
 COPY --from=builder /repo/packages/server/migrations ./packages/server/migrations
