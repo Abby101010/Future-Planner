@@ -5,18 +5,18 @@ import { randomUUID } from "node:crypto";
 import { runReflection } from "../../reflection";
 import { query } from "../../db/pool";
 import { getCurrentUserId } from "../../middleware/requestContext";
-import { getModelForTask } from "../../model-config";
-import { RECOVERY_SYSTEM } from "../prompts";
-import { personalizeSystem } from "../personalize";
+import { getModelForTask } from "../../../../shared/model-config";
+import { RECOVERY_SYSTEM } from "../../../../shared/ai/prompts";
+import { personalizeSystem } from "../../../../shared/ai/personalize";
+import type { RecoveryPayload } from "../../../../shared/ai/payloads";
 
 export async function handleRecovery(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: RecoveryPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const blockerId = payload.blockerId as string;
-  const breakdown = payload.breakdown || payload.roadmap;
-  const todayLog = payload.todayLog;
+  const { blockerId, todayLog } = payload;
+  const breakdown = payload.breakdown ?? payload.roadmap;
   const userId = getCurrentUserId();
 
   // Record blocker signal for memory (mirrors quickReflect("blocker_reported"))

@@ -4,20 +4,19 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { ONBOARDING_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
+import type { OnboardingPayload } from "../payloads";
 
 export async function handleOnboarding(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: OnboardingPayload,
   memoryContext: string,
 ): Promise<string> {
-  const messages = (
-    payload.messages as Array<{ role: string; content: string }>
-  ).map((m) => ({
+  const messages = (payload.messages ?? []).map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
   }));
 
-  messages.push({ role: "user", content: payload.userInput as string });
+  messages.push({ role: "user", content: payload.userInput });
 
   const response = await client.messages.create({
     model: getModelForTask("onboarding"),

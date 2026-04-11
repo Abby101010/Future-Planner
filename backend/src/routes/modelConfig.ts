@@ -13,7 +13,7 @@ import {
   setModelOverrides,
   type ClaudeModel,
   type ModelTier,
-} from "../model-config";
+} from "../../../shared/model-config";
 
 export const modelConfigRouter = Router();
 

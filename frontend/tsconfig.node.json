@@ -9,10 +9,17 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["node"],
+    "rootDir": "..",
+    "baseUrl": ".",
+    "paths": {
+      "@anthropic-ai/sdk": ["./node_modules/@anthropic-ai/sdk"],
+      "@anthropic-ai/sdk/*": ["./node_modules/@anthropic-ai/sdk/*"]
+    },
     "outDir": "./dist-tsnode",
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": true
   },
-  "include": ["vite.config.ts", "electron"]
+  "include": ["vite.config.ts", "electron", "../shared"],
+  "exclude": ["../shared/**/*.test.ts"]
 }

@@ -1,8 +1,8 @@
 /* NorthStar — model-config IPC handlers */
 
 import { ipcMain } from "electron";
-import { setModelOverrides, getModelConfig } from "../model-config";
-import type { ModelTier, ClaudeModel } from "../model-config";
+import { setModelOverrides, getModelConfig } from "../../../shared/model-config";
+import type { ModelTier, ClaudeModel } from "../../../shared/model-config";
 
 export function registerModelConfigIpc(): void {
   ipcMain.handle("model-config:get", () => {

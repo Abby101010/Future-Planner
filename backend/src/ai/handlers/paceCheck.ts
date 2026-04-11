@@ -3,17 +3,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { runReflection } from "../../reflection";
 import { getCurrentUserId } from "../../middleware/requestContext";
-import { getModelForTask } from "../../model-config";
-import { PACE_CHECK_SYSTEM } from "../prompts";
-import { personalizeSystem } from "../personalize";
+import { getModelForTask } from "../../../../shared/model-config";
+import { PACE_CHECK_SYSTEM } from "../../../../shared/ai/prompts";
+import { personalizeSystem } from "../../../../shared/ai/personalize";
+import type { PaceCheckPayload } from "../../../../shared/ai/payloads";
 
 export async function handlePaceCheck(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: PaceCheckPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const breakdown = payload.breakdown || payload.roadmap;
-  const logs = payload.logs;
+  const breakdown = payload.breakdown ?? payload.roadmap;
+  const { logs } = payload;
 
   const response = await client.messages.create({
     model: getModelForTask("pace-check"),

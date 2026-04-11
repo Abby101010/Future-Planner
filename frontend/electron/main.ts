@@ -23,11 +23,10 @@ import {
   ensureVectorColumn,
   backfillPreferenceEmbeddings,
 } from "./database";
-import { startAPIServer, stopAPIServer, setAPIDBAvailable } from "./api-server";
 import { terminateReflectionWorker } from "./reflection-worker-client";
 import { initAutoUpdater } from "./auto-updater";
-import { setModelOverrides } from "./model-config";
-import type { ModelTier, ClaudeModel } from "./model-config";
+import { setModelOverrides } from "../../shared/model-config";
+import type { ModelTier, ClaudeModel } from "../../shared/model-config";
 import { initIpcContext } from "./ipc/context";
 import { setupIPC } from "./ipc/register";
 
@@ -166,7 +165,6 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  stopAPIServer().catch(() => {});
   terminateReflectionWorker().catch(() => {});
   closePool().catch(() => {});
 });
@@ -177,7 +175,6 @@ app.whenReady().then(async () => {
     await testConnection();
     await runMigrations();
     _dbAvailable = true;
-    setAPIDBAvailable(true);
     console.log("[DB] SQLite connected and migrations complete");
 
     // Set up semantic search (non-blocking)
@@ -193,7 +190,6 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn("[DB] SQLite unavailable, using JSON fallback:", err);
     _dbAvailable = false;
-    setAPIDBAvailable(false);
   }
 
   // Load memory manager (async DB load)
@@ -203,14 +199,6 @@ app.whenReady().then(async () => {
     console.log("[Memory] Manager ready");
   } catch (err) {
     console.warn("[Memory] Manager init failed:", err);
-  }
-
-  // Start local API server (cloud-ready REST endpoints)
-  try {
-    const port = await startAPIServer();
-    console.log(`[API] Local API server on port ${port}`);
-  } catch (err) {
-    console.warn("[API] API server failed to start (non-fatal):", err);
   }
 
   // Initialize model overrides from saved settings

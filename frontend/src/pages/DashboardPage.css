@@ -43,6 +43,11 @@
   color: var(--text-primary);
   font-family: var(--font-family);
   transition: border-color var(--transition-fast);
+  resize: none;
+  min-height: 28px;
+  max-height: 150px;
+  overflow-y: auto;
+  line-height: 1.4;
 }
 
 .home-input::placeholder {

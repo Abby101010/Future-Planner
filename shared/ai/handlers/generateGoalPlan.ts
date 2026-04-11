@@ -4,21 +4,19 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { GENERATE_GOAL_PLAN_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
+import type { GenerateGoalPlanPayload } from "../payloads";
 
 export async function handleGenerateGoalPlan(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: GenerateGoalPlanPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const goalTitle = payload.goalTitle as string;
-  const targetDate = payload.targetDate as string;
-  const importance = payload.importance as string;
-  const isHabit = payload.isHabit as boolean;
-  const description = (payload.description as string) || "";
+  const { goalTitle, targetDate, importance, isHabit } = payload;
+  const description = payload.description ?? "";
 
   // Research context injected by the coordinator
-  const researchSummary = (payload._researchSummary as string) || "";
-  const researchFindings = (payload._researchFindings as string[]) || [];
+  const researchSummary = payload._researchSummary ?? "";
+  const researchFindings = payload._researchFindings ?? [];
 
   const goalContext = [
     `- Goal: "${goalTitle}"`,

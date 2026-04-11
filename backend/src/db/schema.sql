@@ -199,6 +199,27 @@ create index if not exists idx_chat_attachments_user_session
 create index if not exists idx_chat_attachments_user_message
   on chat_attachments(user_id, message_id);
 
+-- ── Task notifications ───────────────────────────────────
+-- Written by the server-side task watcher (src/watcher.ts). Each row is a
+-- client-pullable "heads up" the renderer can show as a banner or push
+-- notification. Rows are small and deduped on (user_id, kind, context) so
+-- the watcher can re-evaluate the same state without spamming.
+create table if not exists task_notifications (
+  id          text not null,
+  user_id     text not null,
+  kind        text not null,
+  context     text not null,
+  title       text not null,
+  body        text not null default '',
+  priority    integer not null default 0,
+  acknowledged boolean not null default false,
+  created_at  timestamptz not null default now(),
+  primary key (user_id, id),
+  unique (user_id, kind, context)
+);
+create index if not exists idx_task_notif_user_ack
+  on task_notifications(user_id, acknowledged);
+
 -- ── Reminders ────────────────────────────────────────────
 create table if not exists reminders (
   id              text not null,

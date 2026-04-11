@@ -10,7 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { ResearchResult, PeerContext, NewsBriefing, ProgressCallback } from "./types";
-import { getModelForTask } from "../model-config";
+import { getModelForTask } from "../../../shared/model-config";
 
 /** Web search tool config for Claude API */
 const WEB_SEARCH_TOOL = { type: "web_search_20250305" as const, name: "web_search" as const };

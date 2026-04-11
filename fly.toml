@@ -1,12 +1,16 @@
 # NorthStar API — Fly.io config
-# Deploy with: fly deploy
+# Deploy from repo root with: fly deploy
 # Set secrets with: fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=... DEV_USER_ID=sophie
+#
+# fly.toml lives at the repo root so the Docker build context includes both
+# backend/ and shared/. The Dockerfile lives under backend/ and is referenced
+# below. (Before phase-1 shared-code extraction this lived in backend/.)
 
 app = "northstar-api"
 primary_region = "yyz"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "backend/Dockerfile"
 
 [env]
   PORT = "8080"

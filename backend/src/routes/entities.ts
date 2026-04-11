@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import {
   downgradeIfOverBudget,
   type TaskPriority,
-} from "../domain/cognitiveBudget";
+} from "../../../shared/domain/cognitiveBudget";
 import { asyncHandler } from "../middleware/errorHandler";
 
 export const entitiesRouter = Router();

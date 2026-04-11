@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { GOAL_PLAN_CHAT_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
+import type { GoalPlanChatPayload } from "../payloads";
 
 /** Build a compact summary of the current plan for the AI to reference */
 function summarizePlanForChat(plan: Record<string, unknown>): string {
@@ -70,20 +71,13 @@ function summarizePlanForChat(plan: Record<string, unknown>): string {
 
 export async function handleGoalPlanChat(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: GoalPlanChatPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const goalTitle = payload.goalTitle as string;
-  const targetDate = payload.targetDate as string;
-  const importance = payload.importance as string;
-  const isHabit = payload.isHabit as boolean;
-  const description = (payload.description as string) || "";
-  const chatHistory = (payload.chatHistory || []) as Array<{
-    role: string;
-    content: string;
-  }>;
-  const userMessage = payload.userMessage as string;
-  const currentPlan = payload.currentPlan as Record<string, unknown> | null;
+  const { goalTitle, targetDate, importance, isHabit, userMessage } = payload;
+  const description = payload.description ?? "";
+  const chatHistory = payload.chatHistory ?? [];
+  const currentPlan = payload.currentPlan ?? null;
 
   const messages = chatHistory.map((m) => ({
     role: m.role as "user" | "assistant",

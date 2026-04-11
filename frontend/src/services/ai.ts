@@ -37,6 +37,9 @@ import type {
 } from "../types";
 import type { NewsBriefing } from "../types/agents";
 import { isCloudEnabled, cloudInvoke } from "./cloudTransport";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("ai:service");
 
 /**
  * Submit an AI request and return the result. Now a one-shot HTTP POST
@@ -53,12 +56,33 @@ async function submitAndWait<T = unknown>(
   payload: Record<string, unknown>,
   _onProgress?: (progress: number, log: unknown[]) => void,
 ): Promise<T> {
-  if (!isCloudEnabled()) {
+  log.debug(`submit ${type}`, { payloadKeys: Object.keys(payload) });
+  const started = Date.now();
+  try {
+    // Cloud path — HTTP POST to the deployed backend
+    if (isCloudEnabled()) {
+      const result = await cloudInvoke<T>(`ai:${type}`, payload);
+      log.debug(`${type} done (cloud, ${Date.now() - started}ms)`);
+      return result;
+    }
+
+    // Local path — IPC to Electron main process (desktop dev mode).
+    // The main process still runs the full AI router, so every handler
+    // works without VITE_CLOUD_API_URL being set.
+    if (typeof window !== "undefined" && window.electronAPI?.invoke) {
+      const result = (await window.electronAPI.invoke(`ai:${type}`, payload)) as T;
+      log.debug(`${type} done (ipc, ${Date.now() - started}ms)`);
+      return result;
+    }
+
     throw new Error(
-      `AI call "${type}" requires VITE_CLOUD_API_URL to be set at build time. The local job queue was removed in slice 6.`,
+      `AI call "${type}" has no transport: VITE_CLOUD_API_URL is not set and window.electronAPI is not available. ` +
+        `Run via "npm run electron:dev" or set VITE_CLOUD_API_URL.`,
     );
+  } catch (err) {
+    log.error(`${type} failed (${Date.now() - started}ms)`, err);
+    throw err;
   }
-  return cloudInvoke<T>(`ai:${type}`, payload);
 }
 
 // ── Progress-tracking stubs ─────────────────────────────

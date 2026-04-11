@@ -11,22 +11,27 @@ import Anthropic from "@anthropic-ai/sdk";
 import { loadMemory, buildMemoryContext } from "../memory";
 import { coordinateRequest } from "../agents/coordinator";
 import type { CoordinatorTaskType, ProgressCallback } from "../agents/types";
-import { stripLoneSurrogates, sanitizeForJSON } from "./sanitize";
+import { stripLoneSurrogates, sanitizeForJSON } from "../../../shared/ai/sanitize";
 import { getClient } from "./client";
 
-import { handleOnboarding } from "./handlers/onboarding";
+// Platform-dependent handlers stay local — they import from ../../calendar,
+// ../../memory, ../../database, ../../reflection (Electron-only).
 import { handleGoalBreakdown } from "./handlers/goalBreakdown";
 import { handleReallocate } from "./handlers/reallocate";
 import { handleDailyTasks } from "./handlers/dailyTasks";
 import { handleRecovery } from "./handlers/recovery";
 import { handlePaceCheck } from "./handlers/paceCheck";
-import { handleClassifyGoal } from "./handlers/classifyGoal";
-import { handleGoalPlanChat } from "./handlers/goalPlanChat";
-import { handleGoalPlanEdit } from "./handlers/goalPlanEdit";
-import { handleGenerateGoalPlan } from "./handlers/generateGoalPlan";
 import { handleAnalyzeQuickTask } from "./handlers/analyzeQuickTask";
-import { handleAnalyzeMonthlyContext } from "./handlers/analyzeMonthlyContext";
-import { handleHomeChat } from "./handlers/homeChat";
+
+// Agnostic handlers — single source of truth in shared/.
+import { handleOnboarding } from "../../../shared/ai/handlers/onboarding";
+import { handleClassifyGoal } from "../../../shared/ai/handlers/classifyGoal";
+import { handleGoalPlanChat } from "../../../shared/ai/handlers/goalPlanChat";
+import { handleGoalPlanEdit } from "../../../shared/ai/handlers/goalPlanEdit";
+import { handleGenerateGoalPlan } from "../../../shared/ai/handlers/generateGoalPlan";
+import { handleAnalyzeMonthlyContext } from "../../../shared/ai/handlers/analyzeMonthlyContext";
+import { handleHomeChat } from "../../../shared/ai/handlers/homeChat";
+import type { AIPayloadMap } from "../../../shared/ai/payloads";
 
 export type RequestType =
   | "onboarding"
@@ -129,32 +134,37 @@ export async function handleAIRequestDirect(
   payload = sanitizeForJSON(payload);
   memoryContext = stripLoneSurrogates(memoryContext);
 
+  // Trust-but-cast at the boundary: payloads cross IPC as JSON so we
+  // cannot validate them at the type level here. Each case narrows the
+  // payload to its handler's specific shape; handlers rely on those
+  // types rather than re-casting every field.
+  const p = payload as unknown;
   switch (type) {
     case "onboarding":
-      return handleOnboarding(client, payload, memoryContext);
+      return handleOnboarding(client, p as AIPayloadMap["onboarding"], memoryContext);
     case "goal-breakdown":
-      return handleGoalBreakdown(client, payload, memoryContext);
+      return handleGoalBreakdown(client, p as AIPayloadMap["goal-breakdown"], memoryContext);
     case "reallocate":
-      return handleReallocate(client, payload, memoryContext);
+      return handleReallocate(client, p as AIPayloadMap["reallocate"], memoryContext);
     case "daily-tasks":
-      return handleDailyTasks(client, payload, memoryContext);
+      return handleDailyTasks(client, p as AIPayloadMap["daily-tasks"], memoryContext);
     case "recovery":
-      return handleRecovery(client, payload, memoryContext);
+      return handleRecovery(client, p as AIPayloadMap["recovery"], memoryContext);
     case "pace-check":
-      return handlePaceCheck(client, payload, memoryContext);
+      return handlePaceCheck(client, p as AIPayloadMap["pace-check"], memoryContext);
     case "classify-goal":
-      return handleClassifyGoal(client, payload, memoryContext);
+      return handleClassifyGoal(client, p as AIPayloadMap["classify-goal"], memoryContext);
     case "goal-plan-chat":
-      return handleGoalPlanChat(client, payload, memoryContext);
+      return handleGoalPlanChat(client, p as AIPayloadMap["goal-plan-chat"], memoryContext);
     case "goal-plan-edit":
-      return handleGoalPlanEdit(client, payload, memoryContext);
+      return handleGoalPlanEdit(client, p as AIPayloadMap["goal-plan-edit"], memoryContext);
     case "generate-goal-plan":
-      return handleGenerateGoalPlan(client, payload, memoryContext);
+      return handleGenerateGoalPlan(client, p as AIPayloadMap["generate-goal-plan"], memoryContext);
     case "analyze-quick-task":
-      return handleAnalyzeQuickTask(client, payload, memoryContext);
+      return handleAnalyzeQuickTask(client, p as AIPayloadMap["analyze-quick-task"], memoryContext);
     case "analyze-monthly-context":
-      return handleAnalyzeMonthlyContext(client, payload, memoryContext);
+      return handleAnalyzeMonthlyContext(client, p as AIPayloadMap["analyze-monthly-context"], memoryContext);
     case "home-chat":
-      return handleHomeChat(client, payload, memoryContext);
+      return handleHomeChat(client, p as AIPayloadMap["home-chat"], memoryContext);
   }
 }

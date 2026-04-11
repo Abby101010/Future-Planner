@@ -4,21 +4,19 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { CLASSIFY_GOAL_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
+import type { ClassifyGoalPayload } from "../payloads";
 
 export async function handleClassifyGoal(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: ClassifyGoalPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const title = payload.title as string;
-  const targetDate = payload.targetDate as string;
-  const importance = payload.importance as string;
-  const isHabit = payload.isHabit as boolean;
-  const description = (payload.description as string) || "";
+  const { title, targetDate, importance, isHabit } = payload;
+  const description = payload.description ?? "";
 
   const response = await client.messages.create({
     model: getModelForTask("classify-goal"),
-    max_tokens: 2048,
+    max_tokens: 1024,
     system: personalizeSystem(CLASSIFY_GOAL_SYSTEM, memoryContext),
     messages: [
       {

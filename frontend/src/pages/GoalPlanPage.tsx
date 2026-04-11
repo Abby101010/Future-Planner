@@ -418,7 +418,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const [notesSaved, setNotesSaved] = useState(false);
 
   // Chat input ref for emoji/text insertion
-  const gpChatInputRef = useRef<HTMLInputElement>(null);
+  const gpChatInputRef = useRef<HTMLTextAreaElement>(null);
 
   const handleInsertTextToGpChat = useCallback((text: string) => {
     setChatInput((prev) => prev + text);
@@ -601,6 +601,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     };
     addGoalPlanMessage(goal.id, userMsg);
     setChatInput("");
+    if (gpChatInputRef.current) gpChatInputRef.current.style.height = "auto";
     setLoading(true);
 
     try {
@@ -982,12 +983,18 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
               compact
             />
             <div className="gp-chat-input-row">
-              <input
+              <textarea
                 ref={gpChatInputRef}
                 className="input gp-chat-input"
                 placeholder={t.goalPlan.chatPlaceholder}
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+                rows={1}
+                onChange={(e) => {
+                  setChatInput(e.target.value);
+                  const el = e.currentTarget;
+                  el.style.height = "auto";
+                  el.style.height = Math.min(el.scrollHeight, 150) + "px";
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();

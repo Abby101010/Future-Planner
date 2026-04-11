@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import {
   downgradeIfOverBudget,
   type TaskPriority,
-} from "../domain/cognitiveBudget";
+} from "../../../shared/domain/cognitiveBudget";
 
 // Shapes mirror src/types/index.ts. Duplicated rather than imported
 // because electron/ is a separate tsconfig project.

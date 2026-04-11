@@ -4,15 +4,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { GOAL_PLAN_EDIT_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
+import type { GoalPlanEditPayload } from "../payloads";
 
 export async function handleGoalPlanEdit(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: GoalPlanEditPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const goalTitle = payload.goalTitle as string;
-  const edit = payload.edit as Record<string, unknown>;
-  const planSummary = payload.planSummary as string;
+  const { goalTitle, edit, planSummary } = payload;
 
   const editDescription = [
     `EDIT DETAILS:`,

@@ -37,8 +37,11 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "research": "medium",          // research-agent
   "news-digest": "medium",
 
+  // Medium — home chat must emit structured JSON for intent detection;
+  // Haiku was too unreliable at following the contract (phase 9 bug fix).
+  "home-chat": "medium",
+
   // Light — fast responses, simple tasks
-  "home-chat": "light",
   "recovery": "light",
   "pace-check": "light",
   "classify-goal": "light",

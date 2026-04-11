@@ -30,7 +30,7 @@ import {
   type SignalType,
   type FactCategory,
 } from "./memory";
-import { getModelForTask } from "./model-config";
+import { getModelForTask } from "../../shared/model-config";
 
 // ── Reflection System Prompt ────────────────────────────
 

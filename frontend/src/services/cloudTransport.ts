@@ -22,6 +22,9 @@
  */
 
 import { getAuthToken } from "./auth";
+import { createLogger } from "../utils/logger";
+
+const log = createLogger("ai:transport");
 
 const CLOUD_API_URL = (
   (import.meta.env.VITE_CLOUD_API_URL as string | undefined) || ""
@@ -154,24 +157,37 @@ export async function cloudInvoke<T>(
     );
   }
   const url = `${CLOUD_API_URL}${channelToPath(channel)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getAuthToken()}`,
-    },
-    body: JSON.stringify(payload ?? {}),
-  });
-  if (!res.ok) {
-    let bodyText = "";
-    try {
-      bodyText = await res.text();
-    } catch {
-      /* ignore */
+  const started = Date.now();
+  log.debug(`POST ${channel} → ${url}`);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: JSON.stringify(payload ?? {}),
+    });
+    const elapsed = Date.now() - started;
+    if (!res.ok) {
+      let bodyText = "";
+      try {
+        bodyText = await res.text();
+      } catch {
+        /* ignore */
+      }
+      log.error(`${channel} HTTP ${res.status} (${elapsed}ms)`, bodyText.slice(0, 200));
+      throw new Error(
+        `${channel} failed: HTTP ${res.status}${bodyText ? ` — ${bodyText.slice(0, 200)}` : ""}`,
+      );
     }
-    throw new Error(
-      `${channel} failed: HTTP ${res.status}${bodyText ? ` — ${bodyText.slice(0, 200)}` : ""}`,
-    );
+    log.debug(`${channel} ← ${res.status} (${elapsed}ms)`);
+    return (await res.json()) as T;
+  } catch (err) {
+    const elapsed = Date.now() - started;
+    if (err instanceof TypeError) {
+      log.error(`${channel} network error (${elapsed}ms)`, err.message);
+    }
+    throw err;
   }
-  return (await res.json()) as T;
 }

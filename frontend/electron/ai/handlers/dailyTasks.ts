@@ -9,28 +9,25 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext } from "../../calendar";
 import { loadMemory, computeCapacityProfile } from "../../memory";
 import { getMonthlyContext } from "../../database";
-import { getModelForTask } from "../../model-config";
+import { getModelForTask } from "../../../../shared/model-config";
 import {
   enforceBudgetSnake,
   bonusTaskFits,
   COGNITIVE_BUDGET,
-} from "../../domain/cognitiveBudget";
-import { DAILY_TASKS_SYSTEM } from "../prompts";
-import { personalizeSystem } from "../personalize";
+} from "../../../../shared/domain/cognitiveBudget";
+import { DAILY_TASKS_SYSTEM } from "../../../../shared/ai/prompts";
+import { personalizeSystem } from "../../../../shared/ai/personalize";
+import type { DailyTasksPayload } from "../../../../shared/ai/payloads";
 
 export async function handleDailyTasks(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: DailyTasksPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const breakdown = payload.breakdown || payload.roadmap;
-  const pastLogs = payload.pastLogs as Array<Record<string, unknown>>;
-  const date = payload.date as string;
-  const heatmap = payload.heatmap;
-  const inAppEvents = (payload.inAppEvents || []) as unknown[];
-  const deviceIntegrations = payload.deviceIntegrations as
-    | { calendar?: { enabled: boolean; selectedCalendars: string[] } }
-    | undefined;
+  const { date, heatmap, deviceIntegrations } = payload;
+  const breakdown = payload.breakdown ?? payload.roadmap;
+  const pastLogs = payload.pastLogs ?? [];
+  const inAppEvents = payload.inAppEvents ?? [];
 
   let todayFreeMinutes = 120;
   try {
@@ -125,7 +122,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
   }
 
   // ── Additional data sources ──
-  const goalPlanSummaries = (payload.goalPlanSummaries || []) as Array<{
+  const goalPlanSummaries = (payload.goalPlanSummaries ?? []) as Array<{
     goalTitle: string;
     scope: string;
     goalType?: string;
@@ -138,7 +135,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
       category: string;
     }>;
   }>;
-  const confirmedQuickTasks = (payload.confirmedQuickTasks || []) as Array<{
+  const confirmedQuickTasks = (payload.confirmedQuickTasks ?? []) as Array<{
     title: string;
     description: string;
     durationMinutes: number;
@@ -146,7 +143,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
     priority: string;
     category: string;
   }>;
-  const todayCalendarEvents = (payload.todayCalendarEvents || []) as Array<{
+  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
     title: string;
     startDate: string;
     endDate: string;
@@ -155,7 +152,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
     isAllDay: boolean;
     recurring?: { frequency: string };
   }>;
-  const everydayGoals = (payload.everydayGoals || []) as Array<{
+  const everydayGoals = (payload.everydayGoals ?? []) as Array<{
     title: string;
     description: string;
     suggestedTimeSlot: string | null;
@@ -167,7 +164,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
       category: string;
     }>;
   }>;
-  const repeatingGoals = (payload.repeatingGoals || []) as Array<{
+  const repeatingGoals = (payload.repeatingGoals ?? []) as Array<{
     title: string;
     timeOfDay: string | null;
     durationMinutes: number;
@@ -257,7 +254,7 @@ MONTHLY CONTEXT (${currentMonth}):
 
   // Inject scheduling context from the coordinator (if available)
   const schedulingContextFormatted =
-    (payload._schedulingContextFormatted as string) || "";
+    payload._schedulingContextFormatted ?? "";
   let schedulingBlock = "";
   if (schedulingContextFormatted) {
     schedulingBlock = `\n${schedulingContextFormatted}\n`;
@@ -265,7 +262,7 @@ MONTHLY CONTEXT (${currentMonth}):
 
   // Inject environment context (time, location, GPS)
   const environmentFormatted =
-    (payload._environmentContextFormatted as string) || "";
+    payload._environmentContextFormatted ?? "";
   let environmentBlock = "";
   if (environmentFormatted) {
     environmentBlock = `\n${environmentFormatted}\n`;

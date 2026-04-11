@@ -179,7 +179,7 @@ export async function coordinateRequest(
   });
 
   try {
-    let enrichedPayload = researchResult
+    const enrichedPayload: Record<string, unknown> = researchResult
       ? { ...payload, _researchContext: researchResult }
       : { ...payload };
 

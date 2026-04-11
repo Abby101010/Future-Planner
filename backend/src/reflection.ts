@@ -20,7 +20,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
 import { query } from "./db/pool";
-import { getModelForTask } from "./model-config";
+import { getModelForTask } from "../../shared/model-config";
 import {
   loadMemory,
   type FactCategory,

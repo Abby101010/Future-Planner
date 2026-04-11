@@ -19,8 +19,6 @@ import {
   MessageCircle,
   X,
   Palmtree,
-  TrendingUp,
-  Bell,
   AlertTriangle,
 } from "lucide-react";
 import useStore from "../store/useStore";
@@ -31,6 +29,8 @@ import Heatmap from "../components/Heatmap";
 import RecoveryModal from "../components/RecoveryModal";
 import MilestoneCelebration from "../components/MilestoneCelebration";
 import AgentProgress from "../components/AgentProgress";
+import BigGoalProgress from "../components/BigGoalProgress";
+import ReminderList from "../components/ReminderList";
 import type { DailyTask, ContextualNudge, Reminder } from "../types";
 import "./TasksPage.css";
 
@@ -355,25 +355,7 @@ export default function TasksPage() {
         ) : null}
 
         {/* ── Big Goal Progress Summary ── */}
-        {bigGoalProgress.length > 0 && (
-          <section className="big-goal-progress-section animate-slide-up">
-            {bigGoalProgress.map((g) => (
-              <div key={g.title} className="big-goal-progress-row">
-                <div className="big-goal-progress-label">
-                  <TrendingUp size={14} />
-                  <span>{g.title}</span>
-                  <span className="big-goal-progress-pct">{g.percent}%</span>
-                </div>
-                <div className="progress-bar big-goal-bar">
-                  <div
-                    className={`progress-bar-fill ${g.percent >= 100 ? "complete" : g.percent >= 50 ? "green" : ""}`}
-                    style={{ width: `${g.percent}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </section>
-        )}
+        <BigGoalProgress rows={bigGoalProgress} />
 
         {/* ── Tasks Section ── */}
         <section className="tasks-section animate-slide-up">
@@ -525,48 +507,10 @@ export default function TasksPage() {
         </section>
 
         {/* ── Reminders ── */}
-        {todayReminders.length > 0 && (
-          <section className="reminders-section animate-slide-up">
-            <div className="reminders-header">
-              <Bell size={14} />
-              <span>Reminders</span>
-            </div>
-            {todayReminders.map((reminder) => {
-              const isPast = new Date(reminder.reminderTime) <= new Date();
-              const timeStr = new Date(reminder.reminderTime).toLocaleTimeString(undefined, {
-                hour: "numeric", minute: "2-digit",
-              });
-              return (
-                <div
-                  key={reminder.id}
-                  className={`reminder-card ${isPast ? "reminder-card-active" : ""}`}
-                >
-                  <div className="reminder-card-glow" />
-                  <div className="reminder-card-content">
-                    <div className="reminder-card-time">
-                      <Bell size={12} />
-                      <span>{timeStr}</span>
-                      {reminder.repeat && (
-                        <span className="reminder-repeat">{reminder.repeat}</span>
-                      )}
-                    </div>
-                    <div className="reminder-card-title">{reminder.title}</div>
-                    {reminder.description && (
-                      <div className="reminder-card-desc">{reminder.description}</div>
-                    )}
-                  </div>
-                  <button
-                    className="reminder-acknowledge-btn"
-                    onClick={() => acknowledgeReminder(reminder.id)}
-                    title="Dismiss"
-                  >
-                    <Check size={14} />
-                  </button>
-                </div>
-              );
-            })}
-          </section>
-        )}
+        <ReminderList
+          reminders={todayReminders}
+          onAcknowledge={acknowledgeReminder}
+        />
 
         {/* ── All Tasks (collapsible) ── */}
         {allTasksByDate.length > 0 && (

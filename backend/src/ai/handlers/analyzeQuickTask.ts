@@ -2,27 +2,28 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext } from "../../calendar";
-import { getModelForTask } from "../../model-config";
-import { ANALYZE_QUICK_TASK_SYSTEM } from "../prompts";
-import { personalizeSystem } from "../personalize";
+import { getModelForTask } from "../../../../shared/model-config";
+import { ANALYZE_QUICK_TASK_SYSTEM } from "../../../../shared/ai/prompts";
+import { personalizeSystem } from "../../../../shared/ai/personalize";
+import type { AnalyzeQuickTaskPayload } from "../../../../shared/ai/payloads";
 
 export async function handleAnalyzeQuickTask(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: AnalyzeQuickTaskPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const userInput = payload.userInput as string;
-  const existingTasks = (payload.existingTasks || []) as Array<{
+  const { userInput } = payload;
+  const existingTasks = (payload.existingTasks ?? []) as Array<{
     title: string;
     cognitiveWeight?: number;
     durationMinutes?: number;
     priority?: string;
   }>;
-  const goals = (payload.goals || []) as Array<{
+  const goals = (payload.goals ?? []) as Array<{
     title: string;
     scope: string;
   }>;
-  const todayCalendarEvents = (payload.todayCalendarEvents || []) as Array<{
+  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
     title: string;
     startDate: string;
     endDate: string;
@@ -80,13 +81,13 @@ export async function handleAnalyzeQuickTask(
   const remainingFreeMinutes = Math.max(0, todayFreeMinutes - totalMinutes);
 
   const schedulingContextFormatted =
-    (payload._schedulingContextFormatted as string) || "";
+    payload._schedulingContextFormatted ?? "";
   const schedulingBlock = schedulingContextFormatted
     ? `\n${schedulingContextFormatted}\n`
     : "";
 
   const environmentFormatted =
-    (payload._environmentContextFormatted as string) || "";
+    payload._environmentContextFormatted ?? "";
   const environmentBlock = environmentFormatted
     ? `\n${environmentFormatted}\n`
     : "";

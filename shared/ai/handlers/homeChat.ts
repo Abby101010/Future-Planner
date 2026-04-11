@@ -12,7 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { HOME_CHAT_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
-import { insertJob } from "../../job-db";
+import type { HomeChatPayload } from "../payloads";
 
 // ── Result shapes ────────────────────────────────────────
 
@@ -87,44 +87,81 @@ interface PendingTaskShape {
 
 // ── JSON extraction ──────────────────────────────────────
 
-/** Pull a JSON object out of an LLM reply, tolerating code fences and
-    surrounding prose. Returns null if no JSON is found or parsing fails.
-    Ported verbatim from the old DashboardPage.tsx parser so behavior is
-    byte-identical. */
+/** Pull a JSON object out of an LLM reply. Tries three strategies in
+    order: clean parse, markdown code fence, greedy brace extraction.
+    Returns null and logs the raw text if all strategies fail so we can
+    debug what the LLM actually returned. */
 function tryExtractJson(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+
+  // 1. Clean JSON?
   try {
-    let jsonStr = text;
-    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) jsonStr = fenceMatch[1].trim();
-    if (!jsonStr.startsWith("{")) {
-      const objMatch = jsonStr.match(/\{[\s\S]*\}/);
-      if (objMatch) jsonStr = objMatch[0];
-    }
-    const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(trimmed);
     if (typeof parsed === "object" && parsed !== null) {
       return parsed as Record<string, unknown>;
     }
-    return null;
   } catch {
-    return null;
+    /* fall through */
   }
+
+  // 2. Markdown code fence — ```json ... ``` or ``` ... ```
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1].trim());
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // 3. Greedy brace extraction — first { to last }.
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // Nothing worked. Log a truncated snippet so devs can see what the
+  // LLM actually returned instead of a silent null.
+  console.warn(
+    "[ai:homeChat:json] failed to extract JSON from LLM response:",
+    trimmed.slice(0, 500),
+  );
+  return null;
 }
 
 function asString(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }
 
-export async function handleHomeChat(
-  client: Anthropic,
-  payload: Record<string, unknown>,
+/**
+ * Build the (system, messages, max_tokens, model) tuple for a home-chat
+ * request without actually sending it. Split out from handleHomeChat so
+ * the SSE streaming route can reuse the exact same context/prompt/message
+ * construction and then pipe tokens back to the client as they arrive.
+ */
+export function buildHomeChatRequest(
+  payload: HomeChatPayload,
   memoryContext: string,
-): Promise<HomeChatResult> {
-  const userInput = payload.userInput as string;
-  const chatHistory = (payload.chatHistory || []) as Array<{
-    role: string;
-    content: string;
-  }>;
-  const goals = (payload.goals || []) as Array<{
+): {
+  model: string;
+  maxTokens: number;
+  system: string;
+  messages: Array<{ role: "user" | "assistant"; content: unknown }>;
+} {
+  const { userInput } = payload;
+  const chatHistory = payload.chatHistory ?? [];
+  const goals = (payload.goals ?? []) as Array<{
     title: string;
     scope: string;
     status: string;
@@ -136,13 +173,13 @@ export async function handleHomeChat(
     totalWeekCount?: number;
     milestoneCount?: number;
   }>;
-  const todayTasks = (payload.todayTasks || []) as Array<{
+  const todayTasks = (payload.todayTasks ?? []) as Array<{
     title: string;
     completed: boolean;
     cognitiveWeight?: number;
     durationMinutes?: number;
   }>;
-  const todayCalendarEvents = (payload.todayCalendarEvents || []) as Array<{
+  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
     title: string;
     startDate: string;
     endDate: string;
@@ -194,14 +231,12 @@ export async function handleHomeChat(
           .join("\n")
       : "No calendar events.";
 
-  const environmentFormatted =
-    (payload._environmentContextFormatted as string) || "";
+  const environmentFormatted = payload._environmentContextFormatted ?? "";
   const environmentBlock = environmentFormatted
     ? `\n${environmentFormatted}\n`
     : "";
 
-  const schedulingContextFormatted =
-    (payload._schedulingContextFormatted as string) || "";
+  const schedulingContextFormatted = payload._schedulingContextFormatted ?? "";
   const schedulingBlock = schedulingContextFormatted
     ? `\n${schedulingContextFormatted}\n`
     : "";
@@ -219,17 +254,18 @@ ${tasksSummary}
 Today's calendar:
 ${calendarSummary}`;
 
-  const attachments = (payload.attachments || []) as Array<{
+  const attachments = (payload.attachments ?? []) as Array<{
     type: string;
     name: string;
     base64: string;
     mediaType: string;
   }>;
 
-  const messages = chatHistory.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }));
+  const messages: Array<{ role: "user" | "assistant"; content: unknown }> =
+    chatHistory.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
 
   if (attachments.length > 0) {
     const contentBlocks: Array<
@@ -271,49 +307,44 @@ ${calendarSummary}`;
     }
 
     contentBlocks.push({ type: "text", text: userInput });
-    messages.push({
-      role: "user",
-      content: contentBlocks as unknown as string,
-    });
+    messages.push({ role: "user", content: contentBlocks });
   } else {
     messages.push({ role: "user", content: userInput });
   }
 
-  const response = await client.messages.create({
+  return {
     model: getModelForTask("home-chat"),
-    max_tokens: 512,
+    maxTokens: 512,
     system: personalizeSystem(
       `${HOME_CHAT_SYSTEM}\n\n${contextBlock}`,
       memoryContext,
     ),
     messages,
-  });
+  };
+}
 
-  const chatText =
-    response.content[0].type === "text" ? response.content[0].text.trim() : "";
-
-  // ── Intent detection ──────────────────────────────────
-  // Try to extract a JSON object from the LLM reply. If present, build
-  // the corresponding entity (with a server-assigned UUID) and return
-  // both the raw reply text and a structured intent. The renderer uses
-  // the intent to dispatch to existing store setters — it does no
-  // parsing or ID generation of its own.
-
+/**
+ * Parse a completed home-chat LLM reply into a structured intent, or
+ * return null for plain-text replies. Shared between the blocking handler
+ * and the SSE streaming route so both produce identical entity shapes.
+ */
+export function parseHomeChatIntent(
+  chatText: string,
+  userInput: string,
+): HomeChatIntent | null {
   const parsed = tryExtractJson(chatText);
-  if (!parsed) {
-    return { reply: chatText, intent: null };
-  }
+  if (!parsed) return null;
 
   const nowIso = () => new Date().toISOString();
 
-  // ── Event ─────────────────────────────────────────────
   if (parsed.is_event) {
     const startDate = asString(parsed.startDate, nowIso());
     const endDate = asString(
       parsed.endDate,
       new Date(new Date(startDate).getTime() + 60 * 60 * 1000).toISOString(),
     );
-    const durationMs = new Date(endDate).getTime() - new Date(startDate).getTime();
+    const durationMs =
+      new Date(endDate).getTime() - new Date(startDate).getTime();
     const rawCategory = asString(parsed.category, "other");
     const allowedCategories = new Set([
       "work", "personal", "health", "social", "travel", "focus", "other",
@@ -333,20 +364,23 @@ ${calendarSummary}`;
       source: "manual",
       notes: typeof parsed.notes === "string" ? parsed.notes : undefined,
     };
-    return { reply: chatText, intent: { kind: "event", entity: event } };
+    return { kind: "event", entity: event };
   }
 
-  // ── Goal ──────────────────────────────────────────────
   if (parsed.is_goal) {
     const rawGoalType = asString(parsed.goalType, "big");
     const goalType: GoalShape["goalType"] =
-      rawGoalType === "everyday" || rawGoalType === "repeating" || rawGoalType === "big"
+      rawGoalType === "everyday" ||
+      rawGoalType === "repeating" ||
+      rawGoalType === "big"
         ? rawGoalType
         : "big";
     const rawImportance = asString(parsed.importance, "high");
     const importance: GoalShape["importance"] =
-      rawImportance === "low" || rawImportance === "medium" ||
-      rawImportance === "high" || rawImportance === "critical"
+      rawImportance === "low" ||
+      rawImportance === "medium" ||
+      rawImportance === "high" ||
+      rawImportance === "critical"
         ? rawImportance
         : "high";
     const goal: GoalShape = {
@@ -368,34 +402,9 @@ ${calendarSummary}`;
       scopeReasoning: "Created via home chat",
       repeatSchedule: null,
     };
-
-    // Eagerly kick off plan generation for big goals so the multi-agent
-    // pipeline starts immediately. This mirrors the previous renderer-
-    // side behavior exactly — the renderer used to call submitGoalPlanJob
-    // which went through window.electronAPI.invoke("job:submit"), which
-    // ultimately calls insertJob() here. We skip the IPC round-trip.
-    let planJobId: string | undefined;
-    if (goalType === "big") {
-      try {
-        planJobId = insertJob("generate-goal-plan", {
-          goalTitle: goal.title,
-          targetDate: goal.targetDate,
-          importance: goal.importance,
-          isHabit: goal.isHabit,
-          description: goal.description,
-        });
-      } catch (err) {
-        console.error("[home-chat] eager plan job submit failed:", err);
-      }
-    }
-
-    return {
-      reply: chatText,
-      intent: { kind: "goal", entity: goal, planJobId },
-    };
+    return { kind: "goal", entity: goal };
   }
 
-  // ── Reminder ──────────────────────────────────────────
   if (parsed.is_reminder) {
     const today = nowIso().split("T")[0];
     const reminder: ReminderShape = {
@@ -409,10 +418,9 @@ ${calendarSummary}`;
       source: "chat",
       createdAt: nowIso(),
     };
-    return { reply: chatText, intent: { kind: "reminder", entity: reminder } };
+    return { kind: "reminder", entity: reminder };
   }
 
-  // ── Quick Task ────────────────────────────────────────
   if (parsed.is_task) {
     const pendingTask: PendingTaskShape = {
       id: randomUUID(),
@@ -421,33 +429,49 @@ ${calendarSummary}`;
       status: "analyzing",
       createdAt: nowIso(),
     };
-    return { reply: chatText, intent: { kind: "task", pendingTask } };
+    return { kind: "task", pendingTask };
   }
 
-  // ── Manage Existing Goal ──────────────────────────────
   if (parsed.manage_goal) {
     return {
-      reply: chatText,
-      intent: {
-        kind: "manage-goal",
-        goalId: asString(parsed.goalId),
-        action: asString(parsed.action),
-        goalTitle: asString(parsed.goalTitle),
-      },
+      kind: "manage-goal",
+      goalId: asString(parsed.goalId),
+      action: asString(parsed.action),
+      goalTitle: asString(parsed.goalTitle),
     };
   }
 
-  // ── Context Change ────────────────────────────────────
   if (parsed.context_change) {
     return {
-      reply: chatText,
-      intent: {
-        kind: "context-change",
-        suggestion: asString(parsed.suggestion),
-      },
+      kind: "context-change",
+      suggestion: asString(parsed.suggestion),
     };
   }
 
-  // Parsed JSON but no recognized intent — treat as plain reply.
-  return { reply: chatText, intent: null };
+  return null;
 }
+
+export async function handleHomeChat(
+  client: Anthropic,
+  payload: HomeChatPayload,
+  memoryContext: string,
+): Promise<HomeChatResult> {
+  const { userInput } = payload;
+  const request = buildHomeChatRequest(payload, memoryContext);
+
+  const response = await client.messages.create({
+    model: request.model,
+    max_tokens: request.maxTokens,
+    system: request.system,
+    messages: request.messages as Parameters<
+      typeof client.messages.create
+    >[0]["messages"],
+  });
+
+  const chatText =
+    response.content[0].type === "text" ? response.content[0].text.trim() : "";
+
+  const intent = parseHomeChatIntent(chatText, userInput);
+  return { reply: chatText, intent };
+}
+

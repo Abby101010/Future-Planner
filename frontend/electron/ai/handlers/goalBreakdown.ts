@@ -2,22 +2,20 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext, summarizeScheduleForAI } from "../../calendar";
-import { getModelForTask } from "../../model-config";
-import { GOAL_BREAKDOWN_SYSTEM } from "../prompts";
-import { personalizeSystem } from "../personalize";
+import { getModelForTask } from "../../../../shared/model-config";
+import { GOAL_BREAKDOWN_SYSTEM } from "../../../../shared/ai/prompts";
+import { personalizeSystem } from "../../../../shared/ai/personalize";
+import type { GoalBreakdownPayload } from "../../../../shared/ai/payloads";
 
 export async function handleGoalBreakdown(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: GoalBreakdownPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const goal = payload.goal;
-  const targetDate = (payload.targetDate as string) || "";
-  const dailyHours = (payload.dailyHours as number) || 2;
-  const inAppEvents = (payload.inAppEvents || []) as unknown[];
-  const deviceIntegrations = payload.deviceIntegrations as
-    | { calendar?: { enabled: boolean; selectedCalendars: string[] } }
-    | undefined;
+  const { goal, deviceIntegrations } = payload;
+  const targetDate = payload.targetDate ?? "";
+  const dailyHours = payload.dailyHours ?? 2;
+  const inAppEvents = payload.inAppEvents ?? [];
 
   const today = new Date();
   const endDate = new Date(today);

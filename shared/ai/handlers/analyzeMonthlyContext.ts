@@ -4,14 +4,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config";
 import { ANALYZE_MONTHLY_CONTEXT_SYSTEM } from "../prompts";
 import { personalizeSystem } from "../personalize";
+import type { AnalyzeMonthlyContextPayload } from "../payloads";
 
 export async function handleAnalyzeMonthlyContext(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: AnalyzeMonthlyContextPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const month = payload.month as string;
-  const description = payload.description as string;
+  const { month, description } = payload;
 
   const response = await client.messages.create({
     model: getModelForTask("analyze-monthly-context"),

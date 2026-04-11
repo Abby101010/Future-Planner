@@ -2,22 +2,21 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext, summarizeScheduleForAI } from "../../calendar";
-import { getModelForTask } from "../../model-config";
-import { REALLOCATE_SYSTEM } from "../prompts";
-import { personalizeSystem } from "../personalize";
+import { getModelForTask } from "../../../../shared/model-config";
+import { REALLOCATE_SYSTEM } from "../../../../shared/ai/prompts";
+import { personalizeSystem } from "../../../../shared/ai/personalize";
+import type { ReallocatePayload } from "../../../../shared/ai/payloads";
 
 export async function handleReallocate(
   client: Anthropic,
-  payload: Record<string, unknown>,
+  payload: ReallocatePayload,
   memoryContext: string,
 ): Promise<unknown> {
+  const { deviceIntegrations } = payload;
   const currentBreakdown = payload.breakdown;
-  const reason = (payload.reason as string) || "Schedule changed";
-  const changes = payload.changes || {};
-  const inAppEvents = (payload.inAppEvents || []) as unknown[];
-  const deviceIntegrations = payload.deviceIntegrations as
-    | { calendar?: { enabled: boolean; selectedCalendars: string[] } }
-    | undefined;
+  const reason = payload.reason ?? "Schedule changed";
+  const changes = payload.changes ?? {};
+  const inAppEvents = payload.inAppEvents ?? [];
 
   const today = new Date();
   const endDate = new Date(today);

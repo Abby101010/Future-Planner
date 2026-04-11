@@ -14,6 +14,12 @@ import { handleAIRequest, type RequestType } from "../ai/router";
 import { query } from "../db/pool";
 import { asyncHandler } from "../middleware/errorHandler";
 import { loadMemory, buildMemoryContext } from "../memory";
+import { getClient } from "../ai/client";
+import {
+  buildHomeChatRequest,
+  parseHomeChatIntent,
+} from "../../../shared/ai/handlers/homeChat";
+import type { AIPayloadMap } from "../../../shared/ai/payloads";
 
 export const aiRouter = Router();
 
@@ -105,3 +111,76 @@ aiRouter.post("/news-briefing", (_req, res) => {
     error: "news-briefing is not available in the phase 1 cloud deployment",
   });
 });
+
+// ── SSE streaming: home-chat ─────────────────────────────
+//
+// Server-Sent Events endpoint that streams home-chat reply text as it
+// arrives from Claude and then emits a single terminal event with the
+// parsed intent. Wire format:
+//
+//   event: delta
+//   data: {"text": "partial chunk"}
+//
+//   event: done
+//   data: {"reply": "full text", "intent": {...}|null}
+//
+//   event: error
+//   data: {"error": "..."}
+//
+// The blocking POST /ai/home-chat endpoint is preserved so clients can
+// migrate at their own pace.
+aiRouter.post(
+  "/home-chat/stream",
+  asyncHandler(async (req, res) => {
+    const loadData = await buildLoadData(req.userId);
+    const client = getClient(loadData);
+    if (!client) {
+      res.status(500).json({ ok: false, error: "AI client unavailable" });
+      return;
+    }
+
+    const payload = (req.body ?? {}) as AIPayloadMap["home-chat"];
+    const memory = await loadMemory(req.userId);
+    const memoryContext = buildMemoryContext(memory, "general");
+    const request = buildHomeChatRequest(payload, memoryContext);
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const stream = client.messages.stream({
+        model: request.model,
+        max_tokens: request.maxTokens,
+        system: request.system,
+        messages: request.messages as Parameters<
+          typeof client.messages.create
+        >[0]["messages"],
+      });
+
+      let fullText = "";
+      stream.on("text", (chunk: string) => {
+        fullText += chunk;
+        send("delta", { text: chunk });
+      });
+
+      await stream.finalMessage();
+      const trimmed = fullText.trim();
+      const intent = parseHomeChatIntent(trimmed, payload.userInput);
+      send("done", { reply: trimmed, intent });
+    } catch (err) {
+      send("error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      res.end();
+    }
+  }),
+);

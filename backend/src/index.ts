@@ -22,7 +22,9 @@ import { monthlyContextRouter } from "./routes/monthlyContext";
 import { modelConfigRouter } from "./routes/modelConfig";
 import { chatRouter } from "./routes/chat";
 import { memoryRouter } from "./routes/memory";
+import { notificationsRouter } from "./routes/notifications";
 import { getPool, closePool } from "./db/pool";
+import { startWatcher } from "./watcher";
 
 const PORT = Number(process.env.PORT) || 3741;
 
@@ -59,6 +61,7 @@ app.use("/monthly-context", monthlyContextRouter);
 app.use("/model-config", modelConfigRouter);
 app.use("/chat", chatRouter);
 app.use("/memory", memoryRouter);
+app.use("/notifications", notificationsRouter);
 
 // ── Error handler (must be last) ─────────────────────────
 app.use(errorHandler);
@@ -69,9 +72,18 @@ const server = app.listen(PORT, () => {
   console.log(`[server] DEV_USER_ID=${process.env.DEV_USER_ID ?? "(unset)"}`);
 });
 
+// Opt-in background task watcher. Off by default so local dev doesn't burn
+// Postgres connections unless you're actually working on watcher features.
+let stopWatcher: (() => void) | null = null;
+if (process.env.ENABLE_TASK_WATCHER === "true") {
+  const intervalMs = Number(process.env.TASK_WATCHER_INTERVAL_MS) || undefined;
+  stopWatcher = startWatcher(intervalMs);
+}
+
 // ── Graceful shutdown ────────────────────────────────────
 async function shutdown(signal: string) {
   console.log(`[server] Received ${signal}, shutting down...`);
+  if (stopWatcher) stopWatcher();
   server.close(async () => {
     await closePool();
     process.exit(0);
