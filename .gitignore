@@ -6,6 +6,7 @@ dist/
 dist-electron/
 dist-tsnode/
 release/
+*.tsbuildinfo
 
 # editor & OS
 .DS_Store

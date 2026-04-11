@@ -26,7 +26,10 @@ import { memoryRouter } from "./routes/memory";
 import viewRouter from "./routes/view";
 import commandsRouter from "./routes/commands";
 import { getPool, closePool } from "./db/pool";
+import { runMigrations } from "./db/migrate";
 import { attachWebSocketServer, connectionRegistry } from "./ws";
+
+const DEBUG = process.env.DEBUG === "1" || process.env.LOG_LEVEL === "debug";
 
 // Re-exported so later phases can `import { connectionRegistry } from
 // "@northstar/server"` without reaching into the ws/ barrel directly.
@@ -40,6 +43,18 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "25mb" })); // chat payloads can carry base64 images
 app.use(express.urlencoded({ extended: true }));
+
+if (DEBUG) {
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on("finish", () => {
+      console.log(
+        `[http] ${req.method} ${req.originalUrl} → ${res.statusCode} (${Date.now() - start}ms)`,
+      );
+    });
+    next();
+  });
+}
 
 // ── Unauthenticated routes ───────────────────────────────
 app.get("/health", async (_req, res) => {
@@ -84,11 +99,22 @@ app.use(errorHandler);
 const server = http.createServer(app);
 attachWebSocketServer(server);
 
-server.listen(PORT, () => {
-  console.log(`[server] NorthStar API listening on :${PORT}`);
-  console.log(`[server] WebSocket endpoint: ws://…:${PORT}/ws`);
-  console.log(`[server] DEV_USER_ID=${process.env.DEV_USER_ID ?? "(unset)"}`);
-});
+async function start() {
+  try {
+    await runMigrations();
+  } catch (err) {
+    console.error("[server] Migration failed, aborting startup:", err);
+    process.exit(1);
+  }
+  server.listen(PORT, () => {
+    console.log(`[server] NorthStar API listening on :${PORT}`);
+    console.log(`[server] WebSocket endpoint: ws://…:${PORT}/ws`);
+    console.log(`[server] DEV_USER_ID=${process.env.DEV_USER_ID ?? "(unset)"}`);
+    console.log(`[server] DEBUG=${DEBUG ? "on" : "off"}`);
+  });
+}
+
+void start();
 
 // ── Graceful shutdown ────────────────────────────────────
 async function shutdown(signal: string) {

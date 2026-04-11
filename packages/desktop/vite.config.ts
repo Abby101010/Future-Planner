@@ -33,6 +33,11 @@ export default defineConfig({
     ]),
     renderer(),
   ],
+  resolve: {
+    alias: {
+      "@northstar/core": path.resolve(__dirname, "../core/src/index.ts"),
+    },
+  },
   build: {
     outDir: path.join(__dirname, "dist"),
     emptyOutDir: true,

@@ -97,12 +97,14 @@ export async function runMigrations(): Promise<void> {
   }
 
   console.log("[migrate] Done");
-  await closePool();
 }
 
 if (require.main === module) {
-  runMigrations().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  runMigrations()
+    .then(() => closePool())
+    .catch(async (err) => {
+      console.error(err);
+      await closePool().catch(() => {});
+      process.exit(1);
+    });
 }

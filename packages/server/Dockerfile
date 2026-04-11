@@ -26,7 +26,6 @@ COPY --from=builder /repo/package.json ./
 COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /repo/packages/core/dist ./packages/core/dist
-COPY --from=builder /repo/packages/core/src ./packages/core/src
 COPY --from=builder /repo/packages/server/package.json ./packages/server/package.json
 COPY --from=builder /repo/packages/server/dist ./packages/server/dist
 COPY --from=builder /repo/packages/server/node_modules ./packages/server/node_modules
@@ -38,4 +37,4 @@ ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["node", "packages/server/dist/src/index.js"]
+CMD ["node", "packages/server/dist/index.js"]
