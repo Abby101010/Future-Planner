@@ -86,7 +86,9 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   // ── Ephemeral UI state ──
   const [chatInput, setChatInput] = useState("");
   const [streamedText, setStreamedText] = useState("");
+  const [streamedReply, setStreamedReply] = useState("");
   const [streamRunning, setStreamRunning] = useState(false);
+  const [optimisticUserMsg, setOptimisticUserMsg] = useState<GoalPlanMessage | null>(null);
 
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [rescheduleDismissed, setRescheduleDismissed] = useState(false);
@@ -118,7 +120,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   // history or streaming tokens).
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [planChat, streamedText]);
+  }, [planChat, streamedReply, optimisticUserMsg]);
 
   // Auto-expand unlocked weeks on first render of a given goal.
   useEffect(() => {
@@ -219,10 +221,17 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     if (gpChatInputRef.current) gpChatInputRef.current.style.height = "auto";
     setLocalError(null);
     setStreamedText("");
+    setStreamedReply("");
+    setOptimisticUserMsg(userMsg);
     setStreamRunning(true);
 
     try {
-      await postSseStream("/ai/goal-plan-chat/stream", {
+      await postSseStream<{
+        reply?: string;
+        planReady?: boolean;
+        plan?: unknown;
+        planPatch?: unknown;
+      }>("/ai/goal-plan-chat/stream", {
         goalId: goal.id,
         userMessageId: userMsg.id,
         goalTitle: goal.title,
@@ -234,7 +243,52 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         userMessage: userMsg.content,
         currentPlan: plan,
       }, {
-        onDelta: (text) => setStreamedText((prev) => prev + text),
+        onDelta: (text) => {
+          setStreamedText((prev) => {
+            const full = prev + text;
+            // Try to progressively extract just the "reply" value from
+            // the JSON being streamed.  The LLM writes the full JSON
+            // envelope `{"reply":"…", …}` token by token.  We look for
+            // the opening `"reply":"` (or `"reply": "`) and pull out
+            // everything that follows until the JSON string closes.
+            const replyMatch = full.match(/"reply"\s*:\s*"/);
+            if (replyMatch) {
+              const start = replyMatch.index! + replyMatch[0].length;
+              // Walk forward, collecting characters, handling escapes.
+              let extracted = "";
+              let i = start;
+              while (i < full.length) {
+                if (full[i] === "\\") {
+                  // Escaped char — pass through the two-char sequence.
+                  if (i + 1 < full.length) {
+                    const esc = full[i + 1];
+                    if (esc === "n") extracted += "\n";
+                    else if (esc === "t") extracted += "\t";
+                    else extracted += esc;
+                    i += 2;
+                  } else {
+                    break; // incomplete escape at the very end
+                  }
+                } else if (full[i] === '"') {
+                  break; // end of JSON string value
+                } else {
+                  extracted += full[i];
+                  i += 1;
+                }
+              }
+              setStreamedReply(extracted);
+            }
+            return full;
+          });
+        },
+        onDone: (result) => {
+          // The server already persisted the messages and applied any
+          // plan/planPatch. We just need the clean reply text for the
+          // final render frame before refetch replaces it.
+          if (result?.reply) {
+            setStreamedReply(result.reply);
+          }
+        },
         onError: (msg) => setLocalError(msg),
       });
       refetch();
@@ -245,6 +299,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     } finally {
       setStreamRunning(false);
       setStreamedText("");
+      setStreamedReply("");
+      setOptimisticUserMsg(null);
     }
   }, [goal, chatInput, planChat, plan, refetch]);
 
@@ -420,20 +476,30 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       yr.months.some((mo) => mo.weeks.some((wk) => wk.locked)),
     );
 
-  // Chat shown in UI = persisted history plus any in-flight streaming
-  // assistant message. While a stream is running we append a transient
-  // GoalPlanMessage built from the accumulated tokens.
-  const chatForRender: GoalPlanMessage[] = streamRunning && streamedText
-    ? [
-        ...planChat,
-        {
-          id: "stream-pending",
-          role: "assistant",
-          content: streamedText,
-          timestamp: new Date().toISOString(),
-        },
-      ]
-    : planChat;
+  // Chat shown in UI = persisted history plus any in-flight optimistic
+  // user message and streaming assistant reply. While a stream is running
+  // we show the user's message immediately and build a transient assistant
+  // bubble from the progressively-extracted "reply" field of the JSON the
+  // LLM is producing (not the raw JSON envelope).
+  const chatForRender: GoalPlanMessage[] = (() => {
+    const base = [...planChat];
+    if (optimisticUserMsg) {
+      // Show optimistic user message if not already in the persisted list
+      // (it will appear from refetch once the server has persisted it).
+      if (!base.some((m) => m.id === optimisticUserMsg.id)) {
+        base.push(optimisticUserMsg);
+      }
+    }
+    if (streamRunning && streamedReply) {
+      base.push({
+        id: "stream-pending",
+        role: "assistant",
+        content: streamedReply,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return base;
+  })();
 
   const isGenerating = commandRunning || streamRunning;
   const errorMessage = localError ?? commandError?.message ?? null;
@@ -500,6 +566,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         <GoalPlanChat
           planChat={chatForRender}
           isLoading={isGenerating}
+          isStreaming={streamRunning && !!streamedReply}
           chatInput={chatInput}
           onChatInputChange={setChatInput}
           onSend={handleSendMessage}

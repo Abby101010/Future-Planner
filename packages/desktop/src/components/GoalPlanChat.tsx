@@ -13,6 +13,7 @@ import { getDateLocale, type Language } from "../i18n";
 interface Props {
   planChat: GoalPlanMessage[];
   isLoading: boolean;
+  isStreaming?: boolean;
   chatInput: string;
   onChatInputChange: (value: string) => void;
   onSend: () => void;
@@ -26,6 +27,7 @@ interface Props {
 export default function GoalPlanChat({
   planChat,
   isLoading,
+  isStreaming,
   chatInput,
   onChatInputChange,
   onSend,
@@ -67,7 +69,7 @@ export default function GoalPlanChat({
               </div>
             </div>
           ))}
-          {isLoading && (
+          {isLoading && !isStreaming && (
             <div className="gp-chat-msg assistant">
               <div className="gp-chat-msg-avatar">
                 <Loader2 size={14} className="spin" />

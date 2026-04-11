@@ -54,8 +54,8 @@ desktop and server packages.
 | Layer | Technology |
 |-------|-----------|
 | Renderer | React 18 + TypeScript + Vite + Zustand |
-| Desktop shell | Electron 33 (`frontend/electron/`) |
-| Cloud API | Node + Express + TypeScript on Fly.io (`backend/`) |
+| Desktop shell | Electron 33 (`packages/desktop/electron/`) |
+| Cloud API | Node + Express + TypeScript on Fly.io (`packages/server/`) |
 | Database | Supabase Postgres, every table `user_id`-scoped |
 | AI | Claude (Sonnet 4.6 / Haiku 4.5) via `@anthropic-ai/sdk`, server-side only |
 | Auth (phase 1) | Hardcoded bearer token (`Bearer sophie`) — single user |
@@ -98,7 +98,7 @@ architectural rule.
 ### Frontend (Electron desktop)
 
 ```bash
-cd frontend
+cd packages/desktop
 npm install
 
 # Cloud mode is the default — electron:dev bakes in VITE_CLOUD_API_URL.
@@ -108,7 +108,7 @@ npm run electron:dev
 ### Backend (cloud API)
 
 ```bash
-cd backend
+cd packages/server
 npm install
 
 # Local dev — point at your Supabase pooler URL
@@ -124,10 +124,10 @@ npx tsx src/db/migrate.ts
 ### Build the desktop installer
 
 ```bash
-cd frontend
+cd packages/desktop
 # Builds the universal macOS .dmg with the cloud URL baked in
 VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run electron:build:mac
-# → frontend/release/NorthStar-<version>-universal.dmg
+# → packages/desktop/release/NorthStar-<version>-universal.dmg
 ```
 
 ## Deployment
@@ -138,8 +138,8 @@ VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run electron:build:mac
 # One-time
 fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=... DEV_USER_ID=sophie -a northstar-api
 
-# Every deploy — backend/ is its own self-contained build context now.
-cd backend && fly deploy -a northstar-api
+# Every deploy — packages/server/ is its own self-contained build context now.
+cd packages/server && fly deploy -a northstar-api
 ```
 
 ### Frontend → GitHub Releases
@@ -159,9 +159,9 @@ transport are already shaped for multi-user. The full checklist:
 
 - ✅ Every Postgres table has `user_id text not null` with composite PKs
 - ✅ Routes never hardcode a user — always `req.userId` from middleware
-- ✅ `backend/src/middleware/auth.ts` is the only place a user id is decided
+- ✅ `packages/server/src/middleware/auth.ts` is the only place a user id is decided
 - ✅ `ANTHROPIC_API_KEY` is server-side only (Fly secret)
-- ✅ `frontend/src/services/auth.ts` is the only client-side token source
+- ✅ `packages/desktop/src/services/auth.ts` is the only client-side token source
 - ✅ Every cloud request goes through one `cloudInvoke()` that adds `Authorization: Bearer …`
 
 Phase 2 = swap `auth.ts` middleware for JWT verification and add a login page.
