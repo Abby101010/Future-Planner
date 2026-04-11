@@ -31,14 +31,14 @@ NorthStar runs as two cooperating pieces:
 ```
 ┌──────────────────────┐         HTTPS         ┌────────────────────────┐
 │  Electron desktop    │  ◄──────────────────► │  Fly.io Node service   │
-│  (frontend/)         │   Bearer auth token   │  (backend/)            │
-│                      │                       │                        │
-│  - React UI          │                       │  - Express routes      │
-│  - Local IPC for     │                       │  - Anthropic AI agents │
-│    macOS calendar,   │                       │  - Cognitive budget    │
-│    notifications,    │                       │                        │
-│    etc.              │                       └───────────┬────────────┘
-└──────────────────────┘                                   │
+│  packages/desktop    │   Bearer auth token   │  packages/server       │
+│                      │    + WebSocket        │                        │
+│  - React UI          │   (view invalidates)  │  - Express routes      │
+│  - useQuery /        │                       │  - Envelope protocol   │
+│    useCommand        │                       │  - Anthropic AI agents │
+│  - Zustand (UI only) │                       │                        │
+└──────────────────────┘                       └───────────┬────────────┘
+                                                           │
                                                            ▼
                                               ┌────────────────────────┐
                                               │  Supabase Postgres     │
@@ -47,6 +47,9 @@ NorthStar runs as two cooperating pieces:
                                               │  ready from day 1)     │
                                               └────────────────────────┘
 ```
+
+Shared wire types live in `packages/core` and are imported by both the
+desktop and server packages.
 
 | Layer | Technology |
 |-------|-----------|
@@ -59,75 +62,32 @@ NorthStar runs as two cooperating pieces:
 | Auth (phase 2) | Supabase Auth / JWT — drop-in replacement, schema already ready |
 | Packaging | electron-builder (macOS, Windows, Linux) |
 
-The renderer never holds the Anthropic API key — it lives as a Fly secret on
-the backend. Every cloud-bound request goes through one transport seam
-(`frontend/src/services/cloudTransport.ts`) that adds the auth header and
-routes the small handful of channels listed in `CLOUD_CHANNELS`. Anything not
-in that set still uses the local Electron IPC bridge (memory, jobs, chat
-attachments, macOS calendar/reminders).
+The renderer never holds the Anthropic API key — it lives as a Fly secret
+on the server. All reads go through `useQuery("view:*")` and all writes
+through `useCommand().run("command:*")`; the `transport.ts` module is the
+single place `fetch()` lives. Each folder has a short README explaining
+the one architectural rule in force there — start at
+`packages/desktop/src/README.md` or `packages/server/src/README.md`.
 
 ## Project Structure
 
+npm workspaces monorepo, three packages:
+
 ```
-NorthStar/
-├── frontend/                    # Everything that ships in the .dmg
-│   ├── src/                     # React renderer
-│   │   ├── pages/               # Welcome / Onboarding / Dashboard / Roadmap / Settings
-│   │   ├── components/          # Sidebar, Heatmap, MoodLogger, RecoveryModal, ...
-│   │   ├── services/
-│   │   │   ├── auth.ts          # Single source of the bearer token
-│   │   │   ├── cloudTransport.ts# Cloud HTTP transport (the one place fetch lives)
-│   │   │   ├── ai.ts            # AI service wrappers
-│   │   │   └── memory.ts        # Local memory bridge
-│   │   ├── repositories/        # Typed wrappers around IPC + cloud invoke
-│   │   ├── store/useStore.ts    # Zustand store
-│   │   └── types/               # TypeScript domain types
-│   ├── electron/                # Electron main process
-│   │   ├── main.ts              # Window, lifecycle, IPC registration
-│   │   ├── preload.ts           # Context bridge
-│   │   ├── ipc/                 # Local IPC handlers (device calendar, environment)
-│   │   ├── ai/                  # Local AI handlers (offline/dev mode only)
-│   │   ├── domain/              # cognitiveBudget.ts (duplicated from backend)
-│   │   ├── db/                  # better-sqlite3 schema + queries (local cache)
-│   │   └── api-server.ts        # Local Express mirror for dev
-│   ├── public/                  # Static assets (icon, etc.)
-│   ├── index.html               # Vite HTML shell (loads /src/main.tsx)
-│   ├── package.json             # Frontend deps + electron-builder config
-│   ├── vite.config.ts           # Orchestrates renderer + electron main build
-│   ├── tsconfig.json            # Renderer (src/) tsconfig
-│   ├── tsconfig.node.json       # Electron + vite.config tsconfig
-│   └── release/                 # electron-builder output (.dmg, .zip)
-│
-├── backend/                     # Cloud API — deploys to Fly.io
-│   ├── src/
-│   │   ├── index.ts             # Express entry, route registration, healthcheck
-│   │   ├── middleware/
-│   │   │   ├── auth.ts          # The ONLY place req.userId is set
-│   │   │   └── errorHandler.ts  # Async wrapper + JSON error envelope
-│   │   ├── routes/              # store, entities, ai, calendar, reminders, ...
-│   │   ├── ai/                  # Anthropic client + agent handlers (classify-goal,
-│   │   │                        # daily-tasks, recovery, pace-check, home-chat, ...)
-│   │   ├── db/
-│   │   │   ├── pool.ts          # pg connection pool (Supabase pooler aware)
-│   │   │   ├── schema.sql       # Postgres schema, every table user_id-scoped
-│   │   │   └── migrate.ts       # One-shot migration runner
-│   │   ├── domain/              # cognitiveBudget.ts (duplicated in frontend)
-│   │   └── memory.ts, reflection.ts, model-config.ts
-│   ├── prompts/                 # AI prompt design docs
-│   ├── Dockerfile               # Multi-stage node:22-alpine build (context: backend/)
-│   ├── fly.toml                 # Fly.io app config (region: yyz)
-│   ├── package.json             # Backend deps (pg, express, @anthropic-ai/sdk)
-│   └── tsconfig.json
-│
+Future-Planner/
+├── packages/
+│   ├── core/        # Shared wire types: Envelope<T>, view/command kinds,
+│   │                #   domain types (Goal, DailyTask, Reminder, ...)
+│   ├── server/      # Express + Postgres. Views, commands, AI handlers,
+│   │                #   WebSocket invalidation bus.
+│   └── desktop/     # Electron + React renderer. Reads views, runs
+│                    #   commands, subscribes to invalidations.
+├── package.json     # workspaces + typecheck scripts
 └── README.md
 ```
 
-> **Note on `cognitiveBudget.ts`:** intentionally duplicated into both
-> `frontend/electron/domain/` and `backend/src/domain/`. The two halves of
-> the system communicate via the cloud HTTP API only — they share the wire
-> format, not TypeScript source. The file is small and rarely changes, so
-> the duplication cost is near-zero and it cleanly enforces the API
-> boundary.
+Every subfolder has its own README with 1-paragraph scope and one
+architectural rule.
 
 ## Quick Start
 

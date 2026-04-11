@@ -10,7 +10,7 @@ app = "northstar-api"
 primary_region = "yyz"
 
 [build]
-  dockerfile = "backend/Dockerfile"
+  dockerfile = "packages/server/Dockerfile"
 
 [env]
   PORT = "8080"

@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "typecheck": "tsc -b packages/core packages/server packages/desktop",
+    "build:server": "npm --workspace @northstar/server run build",
+    "build:desktop": "npm --workspace @northstar/desktop run build",
+    "dev:server": "npm --workspace @northstar/server run dev",
+    "dev:desktop": "npm --workspace @northstar/desktop run electron:dev"
+  }
+}
