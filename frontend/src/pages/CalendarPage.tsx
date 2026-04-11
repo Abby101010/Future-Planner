@@ -12,11 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  X,
   Calendar,
-  Clock,
   Palmtree,
-  Trash2,
   CheckCircle2,
   AlertTriangle,
   Monitor,
@@ -26,6 +23,8 @@ import { listDeviceCalendars, importDeviceCalendarEvents } from "../services/ai"
 import { entitiesRepo } from "../repositories";
 import type { CalendarEvent, DeviceIntegrations } from "../types";
 import DeviceCalendarPanel from "../components/DeviceCalendarPanel";
+import CalendarDayDetail from "../components/CalendarDayDetail";
+import CalendarEventFormModal from "../components/CalendarEventFormModal";
 import "./CalendarPage.css";
 
 // ── Helpers ─────────────────────────────────────────────
@@ -61,16 +60,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   focus: "#3b82f6",
   other: "#6b7280",
 };
-
-const CATEGORY_OPTIONS: Array<{ value: CalendarEvent["category"]; label: string }> = [
-  { value: "work", label: "Work" },
-  { value: "personal", label: "Personal" },
-  { value: "health", label: "Health & Fitness" },
-  { value: "social", label: "Social" },
-  { value: "travel", label: "Travel" },
-  { value: "focus", label: "Focus Time" },
-  { value: "other", label: "Other" },
-];
 
 // ── Main Component ──────────────────────────────────────
 
@@ -459,233 +448,38 @@ export default function CalendarPage() {
 
         {/* Day detail panel */}
         {selectedDate && (
-          <div className="cal-day-detail card animate-slide-up">
-            <div className="cal-day-detail-header">
-              <h3>
-                {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </h3>
-              <div className="cal-day-detail-actions">
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => openNewEvent(selectedDate)}
-                >
-                  <Plus size={14} />
-                  Add Event
-                </button>
-              </div>
-            </div>
-
-            {selectedDateEvents.length === 0 ? (
-              <p className="cal-day-empty">
-                No events. Double-click a date or press Add to create one.
-              </p>
-            ) : (
-              <div className="cal-day-events">
-                {selectedDateEvents
-                  .sort((a, b) => a.startDate.localeCompare(b.startDate))
-                  .map((event) => (
-                    <div
-                      key={event.id}
-                      className={`cal-event ${event.isVacation ? "cal-event-vacation" : ""}`}
-                      style={{ borderLeftColor: CATEGORY_COLORS[event.category] }}
-                    >
-                      <div className="cal-event-main">
-                        <div className="cal-event-title">{event.title}</div>
-                        <div className="cal-event-time">
-                          {event.isAllDay ? (
-                            "All day"
-                          ) : (
-                            <>
-                              <Clock size={12} />
-                              {formatTime(event.startDate)} – {formatTime(event.endDate)}
-                              <span className="cal-event-duration">
-                                ({event.durationMinutes}m)
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        <div className="cal-event-meta">
-                          <span
-                            className="cal-event-category"
-                            style={{ backgroundColor: CATEGORY_COLORS[event.category] + "22", color: CATEGORY_COLORS[event.category] }}
-                          >
-                            {event.category}
-                          </span>
-                          {event.isVacation && (
-                            <span className="cal-event-vac-badge">
-                              <Palmtree size={11} />
-                              Vacation
-                            </span>
-                          )}
-                          {event.source !== "manual" && (
-                            <span className="cal-event-source">
-                              <Monitor size={11} />
-                              {event.sourceCalendar || event.source}
-                            </span>
-                          )}
-                        </div>
-                        {event.notes && (
-                          <p className="cal-event-notes">{event.notes}</p>
-                        )}
-                      </div>
-                      <div className="cal-event-actions">
-                        <button
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => openEditEvent(event)}
-                          title="Edit"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => handleDeleteEvent(event.id)}
-                          title="Delete"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
+          <CalendarDayDetail
+            selectedDate={selectedDate}
+            selectedDateEvents={selectedDateEvents}
+            onAddEvent={openNewEvent}
+            onEditEvent={openEditEvent}
+            onDeleteEvent={handleDeleteEvent}
+          />
         )}
 
         {/* Event Form Modal */}
         {showEventForm && (
-          <div className="cal-modal-overlay" onClick={() => setShowEventForm(false)}>
-            <div
-              className="cal-modal card animate-slide-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="cal-modal-header">
-                <h3>{editingEvent ? "Edit Event" : "New Event"}</h3>
-                <button
-                  className="btn btn-ghost btn-xs"
-                  onClick={() => setShowEventForm(false)}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="cal-modal-body">
-                <div className="cal-form-group">
-                  <label>Title</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="Meeting, Gym, Vacation..."
-                    value={formTitle}
-                    onChange={(e) => setFormTitle(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-
-                <div className="cal-form-row">
-                  <div className="cal-form-group">
-                    <label>Date</label>
-                    <input
-                      type="date"
-                      className="input"
-                      value={formDate}
-                      onChange={(e) => setFormDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="cal-form-group">
-                    <label>Category</label>
-                    <select
-                      className="input"
-                      value={formCategory}
-                      onChange={(e) =>
-                        setFormCategory(e.target.value as CalendarEvent["category"])
-                      }
-                    >
-                      {CATEGORY_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="cal-form-toggles">
-                  <label className="cal-form-check">
-                    <input
-                      type="checkbox"
-                      checked={formIsAllDay}
-                      onChange={(e) => setFormIsAllDay(e.target.checked)}
-                    />
-                    <span>All-day event</span>
-                  </label>
-                  <label className="cal-form-check">
-                    <input
-                      type="checkbox"
-                      checked={formIsVacation}
-                      onChange={(e) => setFormIsVacation(e.target.checked)}
-                    />
-                    <Palmtree size={14} />
-                    <span>Vacation / Time off</span>
-                  </label>
-                </div>
-
-                {!formIsAllDay && (
-                  <div className="cal-form-row">
-                    <div className="cal-form-group">
-                      <label>Start time</label>
-                      <input
-                        type="time"
-                        className="input"
-                        value={formStartTime}
-                        onChange={(e) => setFormStartTime(e.target.value)}
-                      />
-                    </div>
-                    <div className="cal-form-group">
-                      <label>End time</label>
-                      <input
-                        type="time"
-                        className="input"
-                        value={formEndTime}
-                        onChange={(e) => setFormEndTime(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="cal-form-group">
-                  <label>Notes (optional)</label>
-                  <textarea
-                    className="input"
-                    placeholder="Any details..."
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    rows={2}
-                  />
-                </div>
-              </div>
-
-              <div className="cal-modal-footer">
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => setShowEventForm(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSaveEvent}
-                  disabled={!formTitle.trim() || !formDate}
-                >
-                  {editingEvent ? "Save Changes" : "Add Event"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <CalendarEventFormModal
+            editingEvent={editingEvent}
+            formTitle={formTitle}
+            formDate={formDate}
+            formStartTime={formStartTime}
+            formEndTime={formEndTime}
+            formIsAllDay={formIsAllDay}
+            formCategory={formCategory}
+            formIsVacation={formIsVacation}
+            formNotes={formNotes}
+            setFormTitle={setFormTitle}
+            setFormDate={setFormDate}
+            setFormStartTime={setFormStartTime}
+            setFormEndTime={setFormEndTime}
+            setFormIsAllDay={setFormIsAllDay}
+            setFormCategory={setFormCategory}
+            setFormIsVacation={setFormIsVacation}
+            setFormNotes={setFormNotes}
+            onClose={() => setShowEventForm(false)}
+            onSave={handleSaveEvent}
+          />
         )}
       </div>
     </div>

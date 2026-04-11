@@ -18,15 +18,15 @@ import {
   FileText,
   Image as ImageIcon,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import useStore from "../store/useStore";
 import { useT } from "../i18n";
 import { analyzeQuickTask, sendHomeChatMessage, generateGoalPlan } from "../services/ai";
 import { setPlanJobId } from "../services/jobPersistence";
 import { chatRepo } from "../repositories";
-import type { PendingTask, HomeChatMessage, CalendarEvent, Goal, Reminder, GoalPlanMessage } from "../types";
+import type { PendingTask, CalendarEvent, Goal, Reminder, GoalPlanMessage } from "../types";
 import ChatListPanel from "../components/ChatListPanel";
 import { PendingTaskCard, PendingEventCard } from "../components/PendingCards";
+import HomeChatHistory from "../components/HomeChatHistory";
 import "./DashboardPage.css";
 
 /** Strip emojis and stray unicode symbols from AI text */
@@ -509,30 +509,11 @@ export default function DashboardPage() {
         )}
 
         {/* ── Chat History ── */}
-        {(homeChatMessages.length > 0 || isLoading) && (
-          <div className="home-chat-history">
-            {homeChatMessages.map((msg) => (
-              <div key={msg.id} className={`home-chat-msg home-chat-${msg.role}`}>
-                <div className="home-chat-bubble">
-                  {msg.role === "assistant" ? (
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  ) : (
-                    msg.content
-                  )}
-                </div>
-              </div>
-            ))}
-            {isLoading && (
-              <div className="home-chat-msg home-chat-assistant">
-                <div className="home-chat-bubble home-chat-loading">
-                  <Loader2 size={14} className="spin" />
-                  <span>Thinking...</span>
-                </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-        )}
+        <HomeChatHistory
+          ref={chatEndRef}
+          messages={homeChatMessages}
+          isLoading={isLoading}
+        />
 
         {/* ── Pending Event ── */}
         {pendingEvent && (

@@ -7,7 +7,6 @@ import { useEffect, useState, useCallback } from "react";
 import {
   Check,
   Flame,
-  Target,
   Clock,
   ChevronRight,
   ChevronDown,
@@ -16,7 +15,6 @@ import {
   Play,
   SkipForward,
   AlarmClock,
-  MessageCircle,
   X,
   Palmtree,
   AlertTriangle,
@@ -31,7 +29,9 @@ import MilestoneCelebration from "../components/MilestoneCelebration";
 import AgentProgress from "../components/AgentProgress";
 import BigGoalProgress from "../components/BigGoalProgress";
 import ReminderList from "../components/ReminderList";
-import type { DailyTask, ContextualNudge, Reminder } from "../types";
+import ProgressRow from "../components/ProgressRow";
+import NudgesSection from "../components/NudgesSection";
+import type { DailyTask, Reminder } from "../types";
 import "./TasksPage.css";
 
 function formatDate(): string {
@@ -558,75 +558,20 @@ export default function TasksPage() {
         )}
 
         {/* Contextual nudges */}
-        {nudges.filter((n) => !n.dismissed).length > 0 && (
-          <section className="nudges-section animate-slide-up">
-            {nudges
-              .filter((n) => !n.dismissed)
-              .slice(0, 3)
-              .map((nudge) => (
-                <NudgeCard
-                  key={nudge.id}
-                  nudge={nudge}
-                  onDismiss={() => dismissNudge(nudge.id)}
-                  onRespond={(feedbackValue, isPositive) =>
-                    respondToNudge(nudge.id, feedbackValue, isPositive)
-                  }
-                />
-              ))}
-          </section>
-        )}
+        <NudgesSection
+          nudges={nudges}
+          onDismiss={dismissNudge}
+          onRespond={respondToNudge}
+        />
 
         {/* Progress cards */}
         {todayLog && (
-          <div className="progress-row animate-fade-in">
-            <div className="progress-card">
-              <div className="progress-card-label">
-                <Target size={14} />
-                {t.dashboard.overall}
-              </div>
-              <div className="progress-card-value">
-                {todayLog.progress.overallPercent.toFixed(1)}%
-              </div>
-              <div className="progress-bar">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${todayLog.progress.overallPercent}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="progress-card">
-              <div className="progress-card-label">
-                <Flame size={14} />
-                {t.dashboard.milestone}
-              </div>
-              <div className="progress-card-value">
-                {todayLog.progress.milestonePercent.toFixed(1)}%
-              </div>
-              <div className="progress-bar">
-                <div
-                  className="progress-bar-fill green"
-                  style={{ width: `${todayLog.progress.milestonePercent}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="progress-card">
-              <div className="progress-card-label">
-                <Check size={14} />
-                {t.dashboard.today}
-              </div>
-              <div className="progress-card-value">
-                {completedCount}/{totalCount}
-              </div>
-              <div className="progress-bar">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${completionRate}%` }}
-                />
-              </div>
-            </div>
-          </div>
+          <ProgressRow
+            todayLog={todayLog}
+            completedCount={completedCount}
+            totalCount={totalCount}
+            completionRate={completionRate}
+          />
         )}
 
         {/* Heatmap */}
@@ -821,49 +766,3 @@ function GoalTaskCard({
   );
 }
 
-// ── Nudge card ──
-
-function NudgeCard({
-  nudge,
-  onDismiss,
-  onRespond,
-}: {
-  nudge: ContextualNudge;
-  onDismiss: () => void;
-  onRespond: (feedbackValue: string, isPositive: boolean) => void;
-}) {
-  const typeIcons: Record<string, string> = {
-    early_finish: "🎯", snooze_probe: "😴", missed_deadline: "⏰",
-    dead_zone: "🕳️", overwhelm: "😮‍💨", streak: "🔥", proactive: "💡",
-  };
-  const typeColors: Record<string, string> = {
-    early_finish: "nudge-positive", streak: "nudge-positive",
-    snooze_probe: "nudge-neutral", dead_zone: "nudge-neutral", proactive: "nudge-neutral",
-    missed_deadline: "nudge-warning", overwhelm: "nudge-warning",
-  };
-
-  return (
-    <div className={`nudge-card ${typeColors[nudge.type] ?? "nudge-neutral"}`}>
-      <div className="nudge-header">
-        <span className="nudge-icon">{typeIcons[nudge.type] ?? "💬"}</span>
-        <p className="nudge-message">{nudge.message}</p>
-        <button className="nudge-dismiss" onClick={onDismiss} title="Dismiss">
-          <X size={14} />
-        </button>
-      </div>
-      {(nudge.actions ?? []).length > 0 && (
-        <div className="nudge-actions">
-          {(nudge.actions ?? []).map((action, i) => (
-            <button
-              key={i}
-              className={`btn btn-xs ${action.isPositive ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => onRespond(action.feedbackValue, action.isPositive)}
-            >
-              <MessageCircle size={10} /> {action.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
