@@ -163,6 +163,52 @@
   font-weight: 500;
 }
 
+/* ── Calendar / Day-detail split ────────────────────── */
+
+.cal-split {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.cal-split > .cal-grid-container {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  transition: max-width 0.35s ease, flex-basis 0.35s ease;
+}
+
+.cal-split-open > .cal-grid-container {
+  max-width: 58%;
+}
+
+.cal-split > .cal-day-detail {
+  flex: 0 1 42%;
+  min-width: 280px;
+  max-width: 42%;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 10rem);
+  overflow-y: auto;
+}
+
+@media (max-width: 960px) {
+  .cal-split {
+    flex-direction: column;
+  }
+  .cal-split-open > .cal-grid-container {
+    max-width: 100%;
+  }
+  .cal-split > .cal-day-detail {
+    flex: 1 1 auto;
+    max-width: 100%;
+    width: 100%;
+    position: static;
+    max-height: none;
+  }
+}
+
 /* ── Calendar Grid ──────────────────────────────────── */
 
 .cal-grid-container {
@@ -317,6 +363,17 @@
 .cal-day-detail-header h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.cal-day-detail-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.cal-day-detail-close {
+  padding: 0.3rem;
+  color: var(--text-secondary);
 }
 
 .cal-day-empty {

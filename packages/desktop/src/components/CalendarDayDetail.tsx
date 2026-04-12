@@ -1,4 +1,4 @@
-import { Plus, Clock, Palmtree, Trash2, Monitor } from "lucide-react";
+import { Plus, Clock, Palmtree, Trash2, Monitor, X } from "lucide-react";
 import type { CalendarEvent } from "@northstar/core";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -25,6 +25,7 @@ interface Props {
   onAddEvent: (date: string) => void;
   onEditEvent: (event: CalendarEvent) => void;
   onDeleteEvent: (id: string) => void;
+  onClose?: () => void;
 }
 
 export default function CalendarDayDetail({
@@ -33,6 +34,7 @@ export default function CalendarDayDetail({
   onAddEvent,
   onEditEvent,
   onDeleteEvent,
+  onClose,
 }: Props) {
   return (
     <div className="cal-day-detail card animate-slide-up">
@@ -53,6 +55,16 @@ export default function CalendarDayDetail({
             <Plus size={14} />
             Add Event
           </button>
+          {onClose && (
+            <button
+              className="btn btn-ghost btn-sm cal-day-detail-close"
+              onClick={onClose}
+              title="Close"
+              aria-label="Close day detail"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
 

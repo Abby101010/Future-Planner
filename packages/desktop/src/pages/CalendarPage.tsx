@@ -456,7 +456,8 @@ export default function CalendarPage() {
           />
         )}
 
-        {/* Calendar Grid */}
+        {/* Calendar + day-detail split: calendar shrinks when a date is picked */}
+        <div className={`cal-split ${selectedDate ? "cal-split-open" : ""}`}>
         <div className="cal-grid-container card animate-fade-in">
           <div className="cal-nav">
             <button className="btn btn-ghost btn-sm" onClick={prevMonth}>
@@ -506,7 +507,9 @@ export default function CalendarPage() {
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                  onClick={() => setSelectedDate(dateStr)}
+                  onClick={() =>
+                    setSelectedDate((prev) => (prev === dateStr ? null : dateStr))
+                  }
                   onDoubleClick={() => openNewEvent(dateStr)}
                 >
                   <span className="cal-cell-day">{date.getDate()}</span>
@@ -533,7 +536,7 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Day detail panel */}
+        {/* Day detail panel — appears beside the shrunken calendar */}
         {selectedDate && (
           <CalendarDayDetail
             selectedDate={selectedDate}
@@ -541,8 +544,10 @@ export default function CalendarPage() {
             onAddEvent={openNewEvent}
             onEditEvent={openEditEvent}
             onDeleteEvent={handleDeleteEvent}
+            onClose={() => setSelectedDate(null)}
           />
         )}
+        </div>
 
         {/* Event Form Modal */}
         {showEventForm && (
