@@ -31,6 +31,13 @@ interface StoreApi {
    *  actually persists the choice. */
   language: Language;
   setLanguage: (lang: Language) => void;
+
+  /** When the user asks home chat to "research X", we store the topic
+   *  here so the News Feed page can run a focused research request
+   *  instead of the default goal-based insights feed. Cleared after
+   *  the news page consumes it. */
+  researchTopic: string | null;
+  setResearchTopic: (topic: string | null) => void;
 }
 
 const useStore = create<StoreApi>((set) => ({
@@ -42,6 +49,9 @@ const useStore = create<StoreApi>((set) => ({
 
   language: "en",
   setLanguage: (language) => set({ language }),
+
+  researchTopic: null,
+  setResearchTopic: (topic) => set({ researchTopic: topic }),
 }));
 
 export default useStore;

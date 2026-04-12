@@ -22,7 +22,8 @@ export type HomeChatIntent =
   | { kind: "reminder"; entity: ReminderShape }
   | { kind: "task"; pendingTask: PendingTaskShape }
   | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
-  | { kind: "context-change"; suggestion: string };
+  | { kind: "context-change"; suggestion: string }
+  | { kind: "research"; topic: string; relatedGoalId: string };
 
 export interface HomeChatResult {
   reply: string;
@@ -448,6 +449,14 @@ export function parseHomeChatIntent(
     };
   }
 
+  if (parsed.is_research) {
+    return {
+      kind: "research",
+      topic: asString(parsed.topic, userInput),
+      relatedGoalId: asString(parsed.relatedGoalId),
+    };
+  }
+
   return null;
 }
 
@@ -474,6 +483,8 @@ export function defaultReplyForIntent(intent: HomeChatIntent): string {
       return `Working on "${intent.goalTitle}".`;
     case "context-change":
       return intent.suggestion || "Noted — update your monthly context in Planning.";
+    case "research":
+      return `Researching "${intent.topic}" for you — head to the Insights tab to see the results.`;
   }
 }
 

@@ -503,7 +503,8 @@ export type HomeChatIntent =
       };
     }
   | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
-  | { kind: "context-change"; suggestion: string };
+  | { kind: "context-change"; suggestion: string }
+  | { kind: "research"; topic: string; relatedGoalId: string };
 
 export interface HomeChatResult {
   reply: string;
@@ -524,10 +525,11 @@ export async function fetchNewsBriefing(
     targetDate?: string;
     isHabit?: boolean;
   }>,
+  topic?: string,
 ): Promise<import("@northstar/core").NewsBriefing> {
   return aiRequest<import("@northstar/core").NewsBriefing>(
     "news-briefing",
-    { goals },
+    { goals, ...(topic ? { topic } : {}) },
   );
 }
 

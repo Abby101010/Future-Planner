@@ -83,6 +83,7 @@ export default function DashboardPage() {
   const setView = useStore((s) => s.setView);
   const activeChatId = useStore((s) => s.activeChatId);
   const setActiveChatId = useStore((s) => s.setActiveChatId);
+  const setResearchTopic = useStore((s) => s.setResearchTopic);
 
   const t = useT();
   const { data, loading, error, refetch } = useQuery<DashboardView>("view:dashboard");
@@ -426,6 +427,15 @@ export default function DashboardPage() {
             displayText = result.intent.suggestion
               ? `I noticed a change in your situation. ${result.intent.suggestion}\n\nYou can update your monthly context in the Planning tab.`
               : "It sounds like things have changed. Update your monthly context in the Planning tab.";
+            break;
+          }
+          case "research": {
+            const topic = result.intent.topic;
+            displayText = `Researching "${topic}" for you — I'll open the Insights tab with the results.`;
+            // Store the topic so NewsFeedPage picks it up and runs a focused briefing.
+            setResearchTopic(topic);
+            // Navigate to news-feed after a brief delay so the user sees the chat message first.
+            setTimeout(() => setView("news-feed"), 600);
             break;
           }
         }

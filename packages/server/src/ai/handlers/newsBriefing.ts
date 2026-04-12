@@ -22,6 +22,9 @@ interface NewsBriefingPayload {
     targetDate?: string;
     isHabit?: boolean;
   }>;
+  /** When set, generate a focused research briefing on this topic
+   *  instead of the default goal-based insights feed. */
+  topic?: string;
 }
 
 const NEWS_SYSTEM = `You are the "News & Insights" sub-agent of NorthStar, a personal goal-planning app.
@@ -40,19 +43,45 @@ Rules:
 
 Return ONLY valid JSON — no markdown fences, no commentary outside the JSON.`;
 
+const RESEARCH_SYSTEM = `You are the "Research" sub-agent of NorthStar, a personal goal-planning app.
+
+The user has asked you to research a specific topic. Your job: produce a focused, in-depth
+briefing on that topic with practical, actionable insights the user can apply to their goals.
+
+Rules:
+- Produce 5–8 items. Each item should be a specific finding, technique, best practice, or
+  actionable tip related to the user's research topic.
+- Go deep on the topic — give real, useful knowledge, not surface-level advice.
+- Each item's "source" should describe the type of knowledge (e.g., "Sports Science",
+  "Cognitive Psychology", "Nutrition Research", "Industry Best Practice", "Expert Consensus").
+- Keep summaries informative (2–4 sentences) and practical.
+- The "relevance" field should explain how this specific finding applies to the user's situation.
+- Write an overall "summary" synthesizing the key takeaways.
+- Write a "relevanceNote" connecting the research to the user's goals.
+- Do NOT invent URLs. Set "url" to "" for every item.
+- Do NOT hallucinate specific studies with fake DOIs or author names. You can reference
+  well-known general findings (e.g. "research shows…") but keep it honest.
+- Be thorough and genuinely helpful — the user came here to learn.
+
+Return ONLY valid JSON — no markdown fences, no commentary outside the JSON.`;
+
 export async function handleNewsBriefing(
   client: Anthropic,
   payload: NewsBriefingPayload,
   memoryContext: string,
 ): Promise<NewsBriefing> {
-  const { goals } = payload;
+  const { goals, topic } = payload;
   const userId = getCurrentUserId();
   const handlerKind = "newsBriefing";
+
+  const isFocusedResearch = !!topic;
 
   emitAgentProgress(userId, {
     agentId: "news",
     phase: "running",
-    message: "Generating personalised insights…",
+    message: isFocusedResearch
+      ? `Researching "${topic}"…`
+      : "Generating personalised insights…",
   });
 
   const today = new Date().toISOString().split("T")[0];
@@ -63,18 +92,24 @@ export async function handleNewsBriefing(
     )
     .join("\n");
 
-  const result = await runStreamingHandler<NewsBriefing>({
-    handlerKind,
-    client,
-    forwardTextDeltas: false,
-    createRequest: () => ({
-      model: getModelForTask("news-briefing"),
-      max_tokens: 2048,
-      system: personalizeSystem(NEWS_SYSTEM, memoryContext),
-      messages: [
-        {
-          role: "user",
-          content: `Today is ${today}.
+  const userPrompt = isFocusedResearch
+    ? `Today is ${today}.
+
+The user's active goals:
+${goalBlock}
+
+The user has asked you to research: "${topic}"
+
+Generate a focused research briefing on this topic. Return JSON matching this schema exactly:
+{
+  "date": "${today}",
+  "articles": [
+    { "title": "string", "source": "string", "url": "", "summary": "string", "relevance": "string" }
+  ],
+  "summary": "string",
+  "relevanceNote": "string"
+}`
+    : `Today is ${today}.
 
 The user's active goals:
 ${goalBlock}
@@ -87,9 +122,20 @@ Generate a personalised insights feed. Return JSON matching this schema exactly:
   ],
   "summary": "string",
   "relevanceNote": "string"
-}`,
-        },
-      ],
+}`;
+
+  const result = await runStreamingHandler<NewsBriefing>({
+    handlerKind,
+    client,
+    forwardTextDeltas: false,
+    createRequest: () => ({
+      model: getModelForTask("news-briefing"),
+      max_tokens: 2048,
+      system: personalizeSystem(
+        isFocusedResearch ? RESEARCH_SYSTEM : NEWS_SYSTEM,
+        memoryContext,
+      ),
+      messages: [{ role: "user", content: userPrompt }],
     }),
     parseResult: (finalText) => {
       const cleaned = finalText

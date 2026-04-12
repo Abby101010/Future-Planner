@@ -4,11 +4,16 @@
 
    Goal list comes from `view:news-feed`. The briefing is
    generated on-demand via the `ai:news-briefing` sub-agent.
+
+   When the user asks the home chat to "research X", the store's
+   `researchTopic` is set and this page auto-loads a focused
+   research briefing on that topic instead of the default feed.
    ────────────────────────────────────────────────────────── */
 
-import { useState, useCallback, useEffect } from "react";
-import { Globe, Loader2, RefreshCw } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Globe, Loader2, RefreshCw, Search } from "lucide-react";
 import { useT } from "../i18n";
+import useStore from "../store/useStore";
 import { useQuery } from "../hooks/useQuery";
 import { fetchNewsBriefing } from "../services/ai";
 import type { NewsBriefing, Goal } from "@northstar/core";
@@ -25,16 +30,21 @@ export default function NewsFeedPage() {
     useQuery<NewsFeedView>("view:news-feed");
   const t = useT();
 
+  const researchTopic = useStore((s) => s.researchTopic);
+  const setResearchTopic = useStore((s) => s.setResearchTopic);
+
   const goals = data?.goals ?? [];
 
   const [briefing, setBriefing] = useState<NewsBriefing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTopic, setActiveTopic] = useState<string | null>(null);
 
-  const loadNews = useCallback(async () => {
-    if (goals.length === 0) return;
+  const loadNews = useCallback(async (topic?: string) => {
+    if (goals.length === 0 && !topic) return;
     setLoading(true);
     setError(null);
+    setActiveTopic(topic ?? null);
     try {
       const result = await fetchNewsBriefing(
         goals.map((g) => ({
@@ -44,6 +54,7 @@ export default function NewsFeedPage() {
           targetDate: g.targetDate,
           isHabit: g.isHabit,
         })),
+        topic,
       );
       setBriefing(result);
     } catch (err) {
@@ -53,9 +64,21 @@ export default function NewsFeedPage() {
     }
   }, [goals]);
 
-  // Auto-load on first render when goals are available
+  // Consume researchTopic from store — auto-trigger focused research
+  const consumedTopicRef = useRef<string | null>(null);
   useEffect(() => {
-    if (goals.length > 0 && !briefing && !loading && !error) {
+    if (researchTopic && researchTopic !== consumedTopicRef.current && goals.length > 0) {
+      consumedTopicRef.current = researchTopic;
+      setResearchTopic(null); // clear so it doesn't re-trigger
+      loadNews(researchTopic);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [researchTopic, goals.length]);
+
+  // Auto-load default insights on first render when goals are available
+  // (only if no research topic was set)
+  useEffect(() => {
+    if (goals.length > 0 && !briefing && !loading && !error && !researchTopic) {
       loadNews();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,28 +119,41 @@ export default function NewsFeedPage() {
       <div className="newsfeed-scroll">
         <div className="newsfeed-header">
           <h2>
-            <Globe size={20} /> {t.agents.newsTitle}
+            {activeTopic ? <Search size={20} /> : <Globe size={20} />}{" "}
+            {activeTopic ? `Research: ${activeTopic}` : t.agents.newsTitle}
           </h2>
           <button
             className="btn btn-ghost btn-sm"
-            onClick={loadNews}
+            onClick={() => loadNews(activeTopic ?? undefined)}
             disabled={loading || goals.length === 0}
           >
             <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
           </button>
+          {activeTopic && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setActiveTopic(null);
+                loadNews();
+              }}
+              disabled={loading}
+            >
+              <Globe size={14} /> All Insights
+            </button>
+          )}
         </div>
 
         {loading && !briefing && (
           <div className="newsfeed-loading">
             <Loader2 size={18} className="spin" />
-            <span>{t.agents.newsLoading}</span>
+            <span>{activeTopic ? `Researching "${activeTopic}"…` : t.agents.newsLoading}</span>
           </div>
         )}
 
         {error && (
           <div className="newsfeed-error">
             <p>{error}</p>
-            <button className="btn btn-ghost btn-sm" onClick={loadNews}>
+            <button className="btn btn-ghost btn-sm" onClick={() => loadNews(activeTopic ?? undefined)}>
               <RefreshCw size={14} /> Retry
             </button>
           </div>

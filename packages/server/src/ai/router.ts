@@ -127,6 +127,6 @@ export async function handleAIRequestDirect(
     case "home-chat":
       return handleHomeChat(client, p as AIPayloadMap["home-chat"], memoryContext);
     case "news-briefing":
-      return handleNewsBriefing(client, p as { goals: Array<{ id: string; title: string; description?: string; targetDate?: string; isHabit?: boolean }> }, memoryContext);
+      return handleNewsBriefing(client, p as { goals: Array<{ id: string; title: string; description?: string; targetDate?: string; isHabit?: boolean }>; topic?: string }, memoryContext);
   }
 }
