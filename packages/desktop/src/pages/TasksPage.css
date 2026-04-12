@@ -237,6 +237,33 @@
   font-weight: 600;
 }
 
+.reminders-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: rgba(var(--neon-blue-raw), 0.12);
+  color: var(--neon-blue);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.reminders-empty {
+  padding: var(--space-md);
+  border: 1px dashed rgba(var(--neon-blue-raw), 0.2);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 .reminder-card {
   position: relative;
   display: flex;

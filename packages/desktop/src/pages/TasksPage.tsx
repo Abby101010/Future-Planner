@@ -427,6 +427,15 @@ export default function TasksPage() {
         {/* ── Big Goal Progress Summary ── */}
         <BigGoalProgress rows={bigGoalProgressRows} />
 
+        {/* ── Reminders (always visible, above tasks) ── */}
+        <ReminderList
+          reminders={reminders}
+          onAcknowledge={async (id) => {
+            await run("command:acknowledge-reminder", { reminderId: id });
+            refetch();
+          }}
+        />
+
         {/* ── Today's Tasks — grouped by source ── */}
         <section className="tasks-section animate-slide-up">
           <div className="tasks-header">
@@ -552,15 +561,6 @@ export default function TasksPage() {
             </div>
           )}
         </section>
-
-        {/* ── Reminders ── */}
-        <ReminderList
-          reminders={reminders}
-          onAcknowledge={async (id) => {
-            await run("command:acknowledge-reminder", { reminderId: id });
-            refetch();
-          }}
-        />
 
         {/* Contextual nudges */}
         <NudgesSection

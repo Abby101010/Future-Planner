@@ -170,6 +170,20 @@ aiRouter.post(
     // Enrich with weather + environment context
     const env = payload._environmentContext as ClientEnvironment | undefined;
     await enrichWithEnvironment(payload, env);
+
+    // Feed today's active reminders into the prompt so the generated
+    // plan scheduling respects those time slots and the AI can surface
+    // them when the user asks what's on their plate.
+    try {
+      const targetDate =
+        (typeof payload.date === "string" && payload.date) ||
+        getEffectiveDate();
+      const active = await repos.reminders.listActive();
+      payload.todayReminders = active.filter((r) => r.date === targetDate);
+    } catch (err) {
+      console.warn("[ai/daily-tasks] failed to load reminders:", err);
+    }
+
     const memory = await loadMemory(req.userId);
     const memoryContext = buildMemoryContext(memory, "daily");
     const result = (await handleAIRequest(

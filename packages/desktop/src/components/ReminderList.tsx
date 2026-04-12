@@ -7,13 +7,18 @@ interface Props {
 }
 
 export default function ReminderList({ reminders, onAcknowledge }: Props) {
-  if (reminders.length === 0) return null;
   return (
     <section className="reminders-section animate-slide-up">
       <div className="reminders-header">
         <Bell size={14} />
         <span>Reminders</span>
+        <span className="reminders-count">{reminders.length}</span>
       </div>
+      {reminders.length === 0 && (
+        <div className="reminders-empty">
+          No reminders for today. Ask the assistant to set one — e.g. "remind me to call the dentist at 3pm".
+        </div>
+      )}
       {reminders.map((reminder) => {
         const isPast = new Date(reminder.reminderTime) <= new Date();
         const timeStr = new Date(reminder.reminderTime).toLocaleTimeString(

@@ -123,6 +123,9 @@ export interface DailyTasksPayload extends EnrichedPayload {
   everydayGoals?: LooseRow[];
   repeatingGoals?: LooseRow[];
   isVacationDay?: boolean;
+  /** Active reminders for `date`. Feeds into the dailyTasks prompt so the
+   *  AI schedules around them instead of double-booking those minutes. */
+  todayReminders?: LooseRow[];
 }
 
 export interface PaceCheckPayload extends EnrichedPayload {

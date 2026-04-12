@@ -177,6 +177,23 @@ CAPACITY PROFILE (computed from user's behavioral history):
     frequency: string;
   }>;
   const isVacationDay = !!payload.isVacationDay;
+  const todayReminders = (payload.todayReminders ?? []) as Array<{
+    title: string;
+    description?: string;
+    reminderTime: string;
+    repeat?: string | null;
+  }>;
+
+  let remindersBlock = "";
+  if (todayReminders.length > 0) {
+    const lines = todayReminders.map((r) => {
+      const time = r.reminderTime?.includes("T")
+        ? r.reminderTime.split("T")[1]?.slice(0, 5)
+        : r.reminderTime;
+      return `  - "${r.title}" at ${time}${r.repeat ? ` (repeats ${r.repeat})` : ""}${r.description ? ` — ${r.description}` : ""}`;
+    });
+    remindersBlock = `\nACTIVE REMINDERS TODAY (user-set — do NOT schedule tasks that conflict with these time slots, and DO surface them if the user asks what's on their plate):\n${lines.join("\n")}`;
+  }
 
   // Build goal plan tasks block (what's scheduled for today across all goals).
   // Each task includes its source_goal_id + source_plan_node_id so the LLM
@@ -302,6 +319,7 @@ ${environmentBlock}${monthlyContextBlock}${vacationBlock}${schedulingBlock}${cap
   recommended_task_count: ${recommendedCount}
 ${calendarBlock}
 ${repeatingBlock}
+${remindersBlock}
 ${goalPlanTasksBlock}
 ${everydayBlock}
 ${quickTasksBlock}
