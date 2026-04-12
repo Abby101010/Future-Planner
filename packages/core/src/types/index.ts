@@ -8,6 +8,7 @@ export interface UserProfile {
   currentRole?: string;
   education?: string;
   location?: string;
+  timezone?: string;  // IANA timezone, e.g. "America/New_York"
   goalRaw: string;
   context?: string;
   timeAvailable?: string;
