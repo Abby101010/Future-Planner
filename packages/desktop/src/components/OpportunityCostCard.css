@@ -1,0 +1,102 @@
+/* Opportunity cost visualization card */
+
+.opp-cost-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-width: 360px;
+}
+
+.opp-cost-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.opp-cost-icon {
+  color: var(--warning, #e6a700);
+  flex-shrink: 0;
+}
+
+.opp-cost-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.opp-cost-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.opp-cost-label {
+  color: var(--text-muted);
+}
+
+.opp-cost-value {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.opp-cost-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.opp-cost-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.opp-cost-goal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+.opp-cost-goal-title {
+  color: var(--text-primary);
+}
+
+.opp-cost-goal-impact {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.opp-cost-reduction {
+  color: var(--danger, #d32f2f);
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.opp-cost-warning {
+  font-size: 12px;
+  color: var(--warning, #e6a700);
+  padding: var(--space-xs) var(--space-sm);
+  background: rgba(230, 167, 0, 0.06);
+  border-radius: var(--radius-sm);
+}
+
+.opp-cost-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.opp-cost-btn {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 12px;
+}

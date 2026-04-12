@@ -48,6 +48,9 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "news-briefing": "light",
   "reflection": "light",         // reflection engine
   "coordinator": "light",        // coordinator's own calls (routing only)
+  "gatekeeper": "light",         // signal/noise filter + priority scoring
+  "time-estimator": "light",     // duration estimation + planning fallacy
+  "scheduler": "light",          // calendar conflicts + 3-tier hierarchy
 };
 
 /** User overrides stored in settings (tier → model) */

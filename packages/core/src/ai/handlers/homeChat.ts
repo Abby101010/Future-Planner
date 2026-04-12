@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";
-import { HOME_CHAT_SYSTEM } from "../prompts.js";
+import { HOME_CHAT_SYSTEM } from "../prompts/index.js";
 import { personalizeSystem } from "../personalize.js";
 import type { HomeChatPayload } from "../payloads.js";
 
@@ -22,13 +22,55 @@ export type HomeChatIntent =
   | { kind: "reminder"; entity: ReminderShape }
   | { kind: "task"; pendingTask: PendingTaskShape }
   | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
-  | { kind: "manage-task"; taskId: string; action: "complete" | "skip" | "reschedule"; taskTitle: string; rescheduleDate?: string }
+  | {
+      kind: "manage-task";
+      taskId: string;
+      action: "complete" | "skip" | "reschedule" | "delete" | "delete_all";
+      taskTitle: string;
+      rescheduleDate?: string;
+      match?: string;
+    }
+  | {
+      kind: "manage-reminder";
+      action: "delete" | "delete_all" | "edit" | "acknowledge";
+      reminderId?: string;
+      match?: string;
+      keepMatch?: string;
+      patch?: {
+        title?: string;
+        description?: string;
+        reminderTime?: string;
+        date?: string;
+        repeat?: string | null;
+      };
+      reminderTitle?: string;
+    }
+  | {
+      kind: "manage-event";
+      action: "delete" | "delete_all" | "edit" | "reschedule";
+      eventId?: string;
+      match?: string;
+      patch?: {
+        title?: string;
+        startDate?: string;
+        endDate?: string;
+        category?: string;
+      };
+      eventTitle?: string;
+    }
   | { kind: "context-change"; suggestion: string }
   | { kind: "research"; topic: string; relatedGoalId: string };
 
 export interface HomeChatResult {
   reply: string;
+  /** Legacy single-intent field — equals intents[0] when present. Kept so
+   *  older callers that only read `intent` still work. */
   intent: HomeChatIntent | null;
+  /** All intents the model emitted in this reply, in order. The home chat
+   *  can now emit multiple JSON blocks in one message (e.g. "delete all my
+   *  reminders, then create these two") and the dispatcher executes every
+   *  one in sequence. */
+  intents: HomeChatIntent[];
 }
 
 // These mirror the renderer's types (src/types/index.ts). We duplicate
@@ -158,52 +200,66 @@ export function stripJsonBlocks(text: string): string {
 }
 
 function tryExtractJson(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
+  const all = tryExtractAllJson(text);
+  return all.length > 0 ? all[0] : null;
+}
 
-  // 1. Clean JSON?
+/** Extract every JSON object literal from the LLM reply, in order.
+ *  Used by parseHomeChatIntents so a single message like
+ *    "{"manage_reminder":true,...} {"is_reminder":true,...}"
+ *  produces multiple intents the dispatcher can execute in sequence. */
+function tryExtractAllJson(text: string): Array<Record<string, unknown>> {
+  const trimmed = text.trim();
+  const out: Array<Record<string, unknown>> = [];
+
+  // 1. Clean JSON — single object, no prose.
   try {
     const parsed = JSON.parse(trimmed);
     if (typeof parsed === "object" && parsed !== null) {
-      return parsed as Record<string, unknown>;
+      return [parsed as Record<string, unknown>];
     }
   } catch {
     /* fall through */
   }
 
-  // 2. Markdown code fence — ```json ... ``` or ``` ... ```
-  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (fenceMatch) {
+  // 2. Markdown code fences — grab every fenced block.
+  const fenceRegex = /```(?:json)?\s*\n?([\s\S]*?)\n?```/g;
+  let fenceMatch: RegExpExecArray | null;
+  let anyFenced = false;
+  while ((fenceMatch = fenceRegex.exec(trimmed)) !== null) {
+    anyFenced = true;
     try {
       const parsed = JSON.parse(fenceMatch[1].trim());
       if (typeof parsed === "object" && parsed !== null) {
-        return parsed as Record<string, unknown>;
+        out.push(parsed as Record<string, unknown>);
       }
     } catch {
-      /* fall through */
+      /* try next fence */
     }
   }
+  if (out.length > 0) return out;
 
-  // 3. Walk every balanced-brace span and return the first one that
-  //    parses as a JSON object. This handles the multi-intent case
-  //    where the LLM emits several JSON blocks interleaved with prose
-  //    — the old "first { to last }" greedy approach would try to
-  //    parse the prose too and fail.
+  // 3. Walk every balanced-brace span and collect every one that parses.
+  //    Handles the multi-intent case where the LLM emits several JSON
+  //    blocks interleaved with prose.
   for (const span of findBalancedJsonObjects(trimmed)) {
     try {
       const parsed = JSON.parse(span.text);
       if (typeof parsed === "object" && parsed !== null) {
-        return parsed as Record<string, unknown>;
+        out.push(parsed as Record<string, unknown>);
       }
     } catch {
       /* try next span */
     }
   }
 
-  console.warn(
-    "[ai:homeChat:json] failed to extract JSON from LLM response:",
-    trimmed.slice(0, 500),
-  );
-  return null;
+  if (out.length === 0 && !anyFenced) {
+    console.warn(
+      "[ai:homeChat:json] failed to extract JSON from LLM response:",
+      trimmed.slice(0, 500),
+    );
+  }
+  return out;
 }
 
 function asString(v: unknown, fallback = ""): string {
@@ -248,6 +304,7 @@ export function buildHomeChatRequest(
     durationMinutes?: number;
   }>;
   const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
+    id?: string;
     title: string;
     startDate: string;
     endDate: string;
@@ -304,7 +361,10 @@ export function buildHomeChatRequest(
   const calendarSummary =
     todayCalendarEvents.length > 0
       ? todayCalendarEvents
-          .map((e) => `- ${e.title} (${e.startDate}, ${e.category})`)
+          .map((e) => {
+            const idTag = e.id ? ` [eventId:${e.id}]` : "";
+            return `- ${e.title} (${e.startDate}, ${e.category})${idTag}`;
+          })
           .join("\n")
       : "No calendar events.";
 
@@ -316,7 +376,7 @@ export function buildHomeChatRequest(
             const repeat = r.repeat && r.repeat !== "none" ? `, repeats ${r.repeat}` : "";
             const ack = r.acknowledged ? " [acknowledged]" : "";
             const desc = r.description ? ` — ${r.description}` : "";
-            return `- "${r.title}"${desc} (${time}${repeat})${ack}`;
+            return `- "${r.title}"${desc} (${time}${repeat})${ack} [reminderId:${r.id}]`;
           })
           .join("\n")
       : "No active reminders.";
@@ -417,18 +477,44 @@ ${remindersSummary}`;
 }
 
 /**
- * Parse a completed home-chat LLM reply into a structured intent, or
- * return null for plain-text replies. Shared between the blocking handler
- * and the SSE streaming route so both produce identical entity shapes.
+ * Parse a completed home-chat LLM reply into a list of structured intents.
+ * A single reply may contain multiple JSON blocks — e.g. "delete all
+ * reminders, then create these two" — and each block becomes its own
+ * intent the dispatcher executes in order.
+ */
+export function parseHomeChatIntents(
+  chatText: string,
+  userInput: string,
+  todayDate?: string,
+): HomeChatIntent[] {
+  const blocks = tryExtractAllJson(chatText);
+  const out: HomeChatIntent[] = [];
+  for (const parsed of blocks) {
+    const intent = parseSingleIntent(parsed, userInput, todayDate);
+    if (intent) out.push(intent);
+  }
+  return out;
+}
+
+/**
+ * Legacy single-intent parser — returns the first intent found, or null.
+ * Kept for callers (like the SSE route) that still expect a single intent;
+ * new code should use parseHomeChatIntents.
  */
 export function parseHomeChatIntent(
   chatText: string,
   userInput: string,
   todayDate?: string,
 ): HomeChatIntent | null {
-  const parsed = tryExtractJson(chatText);
-  if (!parsed) return null;
+  const list = parseHomeChatIntents(chatText, userInput, todayDate);
+  return list.length > 0 ? list[0] : null;
+}
 
+function parseSingleIntent(
+  parsed: Record<string, unknown>,
+  userInput: string,
+  todayDate?: string,
+): HomeChatIntent | null {
   const nowIso = () => new Date().toISOString();
   // Prefer the caller's effective "today" (server computes it via the
   // 6 AM day-boundary + timezone), falling back to UTC if unavailable.
@@ -539,8 +625,16 @@ export function parseHomeChatIntent(
 
   if (parsed.manage_task) {
     const rawAction = asString(parsed.action, "complete");
-    const action: "complete" | "skip" | "reschedule" =
-      rawAction === "skip" ? "skip" : rawAction === "reschedule" ? "reschedule" : "complete";
+    const action: "complete" | "skip" | "reschedule" | "delete" | "delete_all" =
+      rawAction === "skip"
+        ? "skip"
+        : rawAction === "reschedule"
+          ? "reschedule"
+          : rawAction === "delete"
+            ? "delete"
+            : rawAction === "delete_all"
+              ? "delete_all"
+              : "complete";
     return {
       kind: "manage-task",
       taskId: asString(parsed.taskId),
@@ -548,6 +642,87 @@ export function parseHomeChatIntent(
       taskTitle: asString(parsed.taskTitle),
       ...(action === "reschedule" && parsed.rescheduleDate
         ? { rescheduleDate: asString(parsed.rescheduleDate) }
+        : {}),
+      ...(typeof parsed.match === "string" ? { match: parsed.match } : {}),
+    };
+  }
+
+  if (parsed.manage_reminder) {
+    const rawAction = asString(parsed.action, "delete");
+    const action: "delete" | "delete_all" | "edit" | "acknowledge" =
+      rawAction === "delete_all"
+        ? "delete_all"
+        : rawAction === "edit"
+          ? "edit"
+          : rawAction === "acknowledge"
+            ? "acknowledge"
+            : "delete";
+    const patchRaw = (parsed.patch ?? {}) as Record<string, unknown>;
+    const patch = {
+      ...(typeof patchRaw.title === "string" ? { title: patchRaw.title } : {}),
+      ...(typeof patchRaw.description === "string"
+        ? { description: patchRaw.description }
+        : {}),
+      ...(typeof patchRaw.reminderTime === "string"
+        ? { reminderTime: patchRaw.reminderTime }
+        : {}),
+      ...(typeof patchRaw.date === "string" ? { date: patchRaw.date } : {}),
+      ...(typeof patchRaw.repeat === "string"
+        ? { repeat: patchRaw.repeat }
+        : patchRaw.repeat === null
+          ? { repeat: null }
+          : {}),
+    };
+    return {
+      kind: "manage-reminder",
+      action,
+      ...(typeof parsed.reminderId === "string" && parsed.reminderId
+        ? { reminderId: parsed.reminderId }
+        : {}),
+      ...(typeof parsed.match === "string" ? { match: parsed.match } : {}),
+      ...(typeof parsed.keepMatch === "string"
+        ? { keepMatch: parsed.keepMatch }
+        : {}),
+      ...(Object.keys(patch).length > 0 ? { patch } : {}),
+      ...(typeof parsed.reminderTitle === "string"
+        ? { reminderTitle: parsed.reminderTitle }
+        : {}),
+    };
+  }
+
+  if (parsed.manage_event) {
+    const rawAction = asString(parsed.action, "delete");
+    const action: "delete" | "delete_all" | "edit" | "reschedule" =
+      rawAction === "delete_all"
+        ? "delete_all"
+        : rawAction === "edit"
+          ? "edit"
+          : rawAction === "reschedule"
+            ? "reschedule"
+            : "delete";
+    const patchRaw = (parsed.patch ?? {}) as Record<string, unknown>;
+    const patch = {
+      ...(typeof patchRaw.title === "string" ? { title: patchRaw.title } : {}),
+      ...(typeof patchRaw.startDate === "string"
+        ? { startDate: patchRaw.startDate }
+        : {}),
+      ...(typeof patchRaw.endDate === "string"
+        ? { endDate: patchRaw.endDate }
+        : {}),
+      ...(typeof patchRaw.category === "string"
+        ? { category: patchRaw.category }
+        : {}),
+    };
+    return {
+      kind: "manage-event",
+      action,
+      ...(typeof parsed.eventId === "string" && parsed.eventId
+        ? { eventId: parsed.eventId }
+        : {}),
+      ...(typeof parsed.match === "string" ? { match: parsed.match } : {}),
+      ...(Object.keys(patch).length > 0 ? { patch } : {}),
+      ...(typeof parsed.eventTitle === "string"
+        ? { eventTitle: parsed.eventTitle }
         : {}),
     };
   }
@@ -595,7 +770,30 @@ export function defaultReplyForIntent(intent: HomeChatIntent): string {
       if (intent.action === "complete") return `Done — I've marked "${intent.taskTitle}" as complete.`;
       if (intent.action === "skip") return `Got it — I've skipped "${intent.taskTitle}" for today.`;
       if (intent.action === "reschedule") return `Moved "${intent.taskTitle}" to ${intent.rescheduleDate ?? "another day"}.`;
+      if (intent.action === "delete") return `Deleted "${intent.taskTitle}".`;
+      if (intent.action === "delete_all") return `Cleared every task for today.`;
       return `Updated "${intent.taskTitle}".`;
+    }
+    case "manage-reminder": {
+      if (intent.action === "delete")
+        return `Deleted reminder${intent.reminderTitle ? ` "${intent.reminderTitle}"` : ""}.`;
+      if (intent.action === "delete_all")
+        return intent.keepMatch
+          ? `Cleared your reminders (keeping ${intent.keepMatch}).`
+          : `Cleared your reminders.`;
+      if (intent.action === "edit")
+        return `Updated reminder${intent.reminderTitle ? ` "${intent.reminderTitle}"` : ""}.`;
+      if (intent.action === "acknowledge")
+        return `Marked reminder${intent.reminderTitle ? ` "${intent.reminderTitle}"` : ""} as acknowledged.`;
+      return `Updated reminder.`;
+    }
+    case "manage-event": {
+      if (intent.action === "delete")
+        return `Removed ${intent.eventTitle ? `"${intent.eventTitle}"` : "that event"} from your calendar.`;
+      if (intent.action === "delete_all") return `Cleared your calendar.`;
+      if (intent.action === "edit" || intent.action === "reschedule")
+        return `Updated ${intent.eventTitle ? `"${intent.eventTitle}"` : "that event"}.`;
+      return `Updated event.`;
     }
     case "context-change":
       return intent.suggestion || "Noted — update your monthly context in Planning.";
@@ -624,20 +822,23 @@ export async function handleHomeChat(
   const chatText =
     response.content[0].type === "text" ? response.content[0].text.trim() : "";
 
-  const intent = parseHomeChatIntent(chatText, userInput, payload.todayDate);
-  // Always strip JSON from the user-facing reply. When the model
-  // emits prose + structured intent(s), the prose carries real
-  // content (reasoning, suggestions, commentary) that we don't want
-  // to throw away — so prefer the sanitized text over a generic
-  // defaultReplyForIntent confirmation. Only fall back to the
-  // default when stripping leaves nothing but whitespace.
+  const intents = parseHomeChatIntents(chatText, userInput, payload.todayDate);
+  const intent = intents.length > 0 ? intents[0] : null;
+  // Always strip JSON from the user-facing reply. When the model emits
+  // prose + structured intent(s), the prose carries real content
+  // (reasoning, commentary) we keep alongside the per-intent
+  // confirmations the client generates. When the model emits ONLY JSON,
+  // we leave `reply` empty so the client renders its own intent-derived
+  // messages without duplication; the legacy fallback to
+  // defaultReplyForIntent still kicks in when there are no intents at
+  // all (pure-text replies the parser couldn't match to a schema).
   const stripped = stripJsonBlocks(chatText);
   const reply =
     stripped.length > 0
       ? stripped
-      : intent
-        ? defaultReplyForIntent(intent)
+      : intents.length > 0
+        ? ""
         : chatText;
-  return { reply, intent };
+  return { reply, intent, intents };
 }
 

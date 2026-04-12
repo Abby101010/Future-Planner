@@ -2,7 +2,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";
-import { CLASSIFY_GOAL_SYSTEM } from "../prompts.js";
+import { CLASSIFY_GOAL_SYSTEM } from "../prompts/index.js";
 import { personalizeSystem } from "../personalize.js";
 import type { ClassifyGoalPayload } from "../payloads.js";
 

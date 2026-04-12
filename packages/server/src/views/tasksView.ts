@@ -23,6 +23,10 @@ import type {
 } from "@northstar/core";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import { hydrateDailyLog, nudgeToContextual } from "./_mappers";
+import { generateAndPersistDailyTasks } from "../services/dailyTaskGeneration";
+import { detectPaceMismatches, type PaceMismatch } from "../services/paceDetection";
+import { loadMemory, computeCapacityProfile } from "../memory";
+import { getCurrentUserId } from "../middleware/requestContext";
 
 export interface TasksVacationMode {
   active: boolean;
@@ -76,6 +80,10 @@ export interface TasksView {
   /** Derived: goal-plan tasks scheduled for today that the daily-tasks
    *  LLM hasn't yet pulled into today's log. */
   pendingGoalTasks: PendingGoalTask[];
+  /** Active big goals where the user's pace is behind the plan. */
+  paceMismatches: PaceMismatch[];
+  /** True on Sunday/Monday if user hasn't done a weekly review this week. */
+  weeklyReviewDue: boolean;
 }
 
 /** Try to extract a date range from a week label like "Jan 6 – Jan 12"
@@ -154,9 +162,9 @@ function dayMatchesToday(
       const inWeek = todayInWeek(weekLabel, today);
       if (inWeek === true) return true;
       if (inWeek === false) return false;
-      // null = couldn't parse range → fall through to legacy match
     }
-    return true;
+    // No week range available — weekday names are ambiguous, skip.
+    return false;
   }
 
   return false;
@@ -172,9 +180,18 @@ function computePendingGoalTasks(
       .map((t) => t.planNodeId ?? "")
       .filter(Boolean),
   );
+  // Goals already represented in the daily log — the AI already
+  // considered them and made its selection. Don't show their remaining
+  // plan tasks as "pending" since that bypasses the cognitive budget.
+  const representedGoalIds = new Set<string>(
+    (todayLog?.tasks ?? [])
+      .map((t) => t.goalId ?? "")
+      .filter(Boolean),
+  );
   const out: PendingGoalTask[] = [];
   for (const g of goals) {
     if (!g.plan || !Array.isArray(g.plan.years)) continue;
+    if (representedGoalIds.has(g.id)) continue;
     for (const year of g.plan.years) {
       for (const month of year.months) {
         for (const week of month.weeks) {
@@ -200,10 +217,14 @@ function computePendingGoalTasks(
   return out;
 }
 
-function computeTodayProgress(todayLog: DailyLog | null): TodayProgressSummary {
-  const tasks = todayLog?.tasks ?? [];
-  const completed = tasks.filter((t) => t.completed).length;
-  const total = tasks.length;
+function computeTodayProgress(
+  todayLog: DailyLog | null,
+  pendingGoalTasks: PendingGoalTask[],
+): TodayProgressSummary {
+  const logTasks = todayLog?.tasks ?? [];
+  const pendingCompleted = pendingGoalTasks.filter((t) => t.completed).length;
+  const completed = logTasks.filter((t) => t.completed).length + pendingCompleted;
+  const total = logTasks.length + pendingGoalTasks.length;
   const ratePercent = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0;
   return { completed, total, ratePercent };
 }
@@ -255,6 +276,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     todayEvents,
     nudges,
     vacationState,
+    userProfile,
   ] = await Promise.all([
     repos.goals.list(),
     repos.dailyLogs.list(rangeStart, today),
@@ -264,6 +286,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     repos.calendar.listForRange(`${today}T00:00:00`, `${today}T23:59:59`),
     repos.nudges.list(true),
     repos.vacationMode.get(),
+    repos.users.get(),
   ]);
 
   // Group tasks by date for cheap hydration.
@@ -274,14 +297,66 @@ export async function resolveTasksView(): Promise<TasksView> {
     tasksByDate.set(t.date, arr);
   }
 
-  const hydratedLogs: DailyLog[] = logs
+  let hydratedLogs: DailyLog[] = logs
     .map((log) => hydrateDailyLog(log, tasksByDate.get(log.date) ?? []))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  const todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
+  let todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
 
+  // Auto-generate daily tasks if: no log for today, goals exist,
+  // and the current time is past the user's dailyTaskRefreshTime.
+  if (!todayLog && goals.length > 0) {
+    const refreshTime = userProfile?.settings?.dailyTaskRefreshTime ?? "06:00";
+    const now = new Date();
+    const [rh, rm] = refreshTime.split(":").map(Number);
+    const refreshMinutes = (rh || 0) * 60 + (rm || 0);
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    if (nowMinutes >= refreshMinutes) {
+      try {
+        await generateAndPersistDailyTasks({
+          date: today,
+          goals,
+          calendarEvents: todayEvents,
+          pastLogs: hydratedLogs.slice(0, 14),
+          heatmapData,
+          activeReminders,
+        });
+        // Re-fetch the newly created tasks and log so this response
+        // includes them (avoids requiring a second round-trip).
+        const freshTasks = await repos.dailyTasks.listForDateRange(today, today);
+        const freshLogs = await repos.dailyLogs.list(today, today);
+        for (const t of freshTasks) {
+          const arr = tasksByDate.get(t.date) ?? [];
+          arr.push(t);
+          tasksByDate.set(t.date, arr);
+        }
+        if (freshLogs.length > 0) {
+          const freshLog = hydrateDailyLog(freshLogs[0], tasksByDate.get(today) ?? []);
+          hydratedLogs = [freshLog, ...hydratedLogs];
+          todayLog = freshLog;
+        }
+      } catch (err) {
+        console.warn("[tasksView] auto-generation failed:", err);
+      }
+    }
+  }
+
+  const todayDow = new Date(today + "T00:00:00").getDay();
+  const todayDom = new Date(today + "T00:00:00").getDate();
   const todayReminders = activeReminders
-    .filter((r) => r.date === today)
+    .filter((r) => {
+      if (r.date === today) return true;
+      if (r.repeat === "daily") return true;
+      if (r.repeat === "weekly") {
+        const rDow = new Date(r.date + "T00:00:00").getDay();
+        return rDow === todayDow;
+      }
+      if (r.repeat === "monthly") {
+        const rDom = new Date(r.date + "T00:00:00").getDate();
+        return rDom === todayDom;
+      }
+      return false;
+    })
     .sort((a, b) => a.reminderTime.localeCompare(b.reminderTime));
 
   const totalIncompleteTasks = hydratedLogs.reduce(
@@ -297,9 +372,73 @@ export async function resolveTasksView(): Promise<TasksView> {
       }
     : { active: false, startDate: null, endDate: null };
 
-  const todayProgress = computeTodayProgress(todayLog);
-  const todayMissedTasks = (todayLog?.tasks ?? []).filter((t) => !t.completed);
-  const pendingGoalTasks = computePendingGoalTasks(goals, todayLog, today);
+  let pendingGoalTasks = computePendingGoalTasks(goals, todayLog, today);
+
+  console.debug(
+    `[tasksView] ${pendingGoalTasks.length} pending goal tasks, ` +
+    `todayLog has ${todayLog?.tasks.length ?? 0} tasks`,
+  );
+
+  const todayProgress = computeTodayProgress(todayLog, pendingGoalTasks);
+  const todayMissedTasks = [
+    ...(todayLog?.tasks ?? []).filter((t) => !t.completed),
+    ...pendingGoalTasks.filter((t) => !t.completed),
+  ];
+
+  // Pace mismatch detection: compare user's actual task rate against plan assumptions
+  let paceMismatches: PaceMismatch[] = [];
+  try {
+    const userId = getCurrentUserId();
+    const memory = await loadMemory(userId);
+    const logsForCapacity = hydratedLogs.map((l) => ({
+      date: l.date,
+      tasks: l.tasks.map((t) => ({ completed: t.completed, skipped: !!t.skipped })),
+    }));
+    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay());
+    paceMismatches = detectPaceMismatches(goals, capacity.avgTasksCompletedPerDay, today);
+
+    // Insert pace_warning nudges for severe mismatches (deduped per goal per week)
+    const weekNum = Math.floor(new Date(today + "T00:00:00").getTime() / (7 * 86400000));
+    for (const m of paceMismatches.filter((p) => p.severity === "severe")) {
+      try {
+        await repos.nudges.insert({
+          id: `pace-${m.goalId}-w${weekNum}`,
+          kind: "pace_warning",
+          title: `Falling behind on ${m.goalTitle}`,
+          body: `At your current pace (~${m.actualTasksPerDay} tasks/day), you'll miss the target by ~${m.estimatedDelayDays} days.`,
+          priority: 8,
+          context: m.goalId,
+          actions: [
+            { label: "Adjust Plan", feedbackValue: "reschedule", isPositive: true },
+            { label: "Dismiss", feedbackValue: "dismiss", isPositive: false },
+          ],
+        });
+      } catch {
+        // nudge insertion is best-effort
+      }
+    }
+  } catch {
+    // pace detection is best-effort
+  }
+
+  // Weekly review is due on Sunday (0) or Monday (1) and hasn't been done this week.
+  // We check memory for last_weekly_review timestamp.
+  const todayDowForReview = new Date(today + "T00:00:00").getDay();
+  const isReviewDay = todayDowForReview === 0 || todayDowForReview === 1;
+  const userId = getCurrentUserId();
+  let weeklyReviewDue = false;
+  if (isReviewDay) {
+    try {
+      const mem = await loadMemory(userId);
+      const lastReview = (mem as unknown as Record<string, unknown>).lastWeeklyReview as string | undefined;
+      const weekStart = new Date(today + "T00:00:00");
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const weekKey = weekStart.toISOString().split("T")[0];
+      weeklyReviewDue = !lastReview || lastReview < weekKey;
+    } catch {
+      weeklyReviewDue = false;
+    }
+  }
 
   return {
     todayDate: today,
@@ -317,5 +456,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     todayProgress,
     todayMissedTasks,
     pendingGoalTasks,
+    paceMismatches,
+    weeklyReviewDue,
   };
 }

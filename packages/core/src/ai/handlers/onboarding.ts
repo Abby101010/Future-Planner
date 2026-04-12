@@ -2,7 +2,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";
-import { ONBOARDING_SYSTEM } from "../prompts.js";
+import { ONBOARDING_SYSTEM } from "../prompts/index.js";
 import { personalizeSystem } from "../personalize.js";
 import type { OnboardingPayload } from "../payloads.js";
 

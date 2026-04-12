@@ -16,6 +16,9 @@ export type CommandKind =
   | "command:delete-goal"
   | "command:toggle-task"
   | "command:skip-task"
+  | "command:delete-task"
+  | "command:delete-tasks-for-date"
+  | "command:update-task"
   | "command:confirm-pending-task"
   | "command:reject-pending-task"
   | "command:create-pending-task"
@@ -24,6 +27,9 @@ export type CommandKind =
   | "command:upsert-reminder"
   | "command:acknowledge-reminder"
   | "command:delete-reminder"
+  | "command:delete-reminders-batch"
+  | "command:defer-overflow"
+  | "command:undo-defer"
   | "command:save-monthly-context"
   | "command:delete-monthly-context"
   | "command:update-settings"
@@ -34,7 +40,10 @@ export type CommandKind =
   | "command:clear-home-chat"
   | "command:confirm-goal-plan"
   | "command:regenerate-goal-plan"
-  | "command:reallocate-goal-plan";
+  | "command:reallocate-goal-plan"
+  | "command:adaptive-reschedule"
+  | "command:regenerate-daily-tasks"
+  | "command:dismiss-nudge";
 
 export type EventKind =
   | "ai:stream-start"

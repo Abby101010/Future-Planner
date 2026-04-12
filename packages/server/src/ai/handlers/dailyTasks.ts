@@ -212,6 +212,29 @@ CAPACITY PROFILE (computed from user's behavioral history):
     goalPlanTasksBlock = `\nTASKS FROM GOAL PLANS (scheduled for today — SELECT from these; copy source_goal_id and source_plan_node_id verbatim for any task you pick from here):\n${lines.join("\n")}`;
   }
 
+  // Build goal rotation context: which goals got tasks in recent days
+  let rotationBlock = "";
+  if (goalPlanSummaries.length > 1) {
+    const recentGoalDays = new Map<string, string[]>();
+    for (const log of pastLogs.slice(-7)) {
+      const logDate = (log as Record<string, unknown>).date as string;
+      const tasks = ((log as Record<string, unknown>).tasks ?? []) as Array<Record<string, unknown>>;
+      for (const t of tasks) {
+        const gid = t.goalId ?? t.goal_id;
+        if (typeof gid === "string" && gid) {
+          const days = recentGoalDays.get(gid) ?? [];
+          if (!days.includes(logDate)) days.push(logDate);
+          recentGoalDays.set(gid, days);
+        }
+      }
+    }
+    const lines = goalPlanSummaries.map((g) => {
+      const days = recentGoalDays.get(g.goalId ?? "") ?? [];
+      return `  - "${g.goalTitle}" [${g.goalId ?? ""}]: tasks on ${days.length} of last 7 days${days.length === 0 ? " ← NEEDS ATTENTION" : ""}`;
+    });
+    rotationBlock = `\nGOAL ROTATION (spread tasks across goals — favor goals that haven't been worked on recently):\n${lines.join("\n")}`;
+  }
+
   // Build confirmed quick tasks block (user added via chat)
   let quickTasksBlock = "";
   if (confirmedQuickTasks.length > 0) {
@@ -321,6 +344,7 @@ ${calendarBlock}
 ${repeatingBlock}
 ${remindersBlock}
 ${goalPlanTasksBlock}
+${rotationBlock}
 ${everydayBlock}
 ${quickTasksBlock}
 
@@ -331,7 +355,7 @@ IMPORTANT REMINDERS:
 - If there are CONFIRMED QUICK TASKS, include them in the count (they are pre-approved).
 - If there are EVERYDAY TASKS, slot them into gaps — don't let them hang unfinished.
 - REPEATING EVENTS are non-negotiable time blocks. Include them and schedule around them.${isVacationDay ? "\n- VACATION DAY: Only light everyday tasks and mandatory repeating events. No big goal work." : ""}
-- If there are GOAL PLAN TASKS, select the most impactful ones for today.
+- If there are GOAL PLAN TASKS, select from DIFFERENT goals — rotate across all active goals.
 - If the user has calendar events, schedule tasks around them (not during them).
 - Sequence: momentum task first → hardest task → moderate → satisfying close.
 

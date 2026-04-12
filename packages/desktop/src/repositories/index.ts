@@ -150,6 +150,7 @@ interface NewGoalInput {
   }>;
   repeatSchedule?: unknown;
   suggestedTimeSlot?: string;
+  goalSlot?: "primary" | "secondary" | "personal" | null;
 }
 
 export const entitiesRepo = {

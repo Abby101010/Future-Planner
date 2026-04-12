@@ -9,7 +9,10 @@ export type AgentId =
   | "research"
   | "planner"
   | "task"
-  | "news";
+  | "news"
+  | "gatekeeper"
+  | "timeEstimator"
+  | "scheduler";
 
 /** Status of an individual agent during execution */
 export type AgentStatus =

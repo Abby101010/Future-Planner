@@ -8,16 +8,17 @@ import { wsClient } from "./services/wsClient";
 import { I18nProvider } from "./i18n";
 import { useQuery } from "./hooks/useQuery";
 import Sidebar from "./components/Sidebar";
-import WelcomePage from "./pages/WelcomePage";
-import OnboardingPage from "./pages/OnboardingPage";
-import DashboardPage from "./pages/DashboardPage";
-import CalendarPage from "./pages/CalendarPage";
-import GoalPlanPage from "./pages/GoalPlanPage";
-import RoadmapPage from "./pages/RoadmapPage";
-import SettingsPage from "./pages/SettingsPage";
-import PlanningPage from "./pages/PlanningPage";
-import TasksPage from "./pages/TasksPage";
-import NewsFeedPage from "./pages/NewsFeedPage";
+import Chat from "./components/Chat";
+import ErrorBoundary from "./components/ErrorBoundary";
+import WelcomePage from "./pages/welcome/WelcomePage";
+import OnboardingPage from "./pages/onboarding/OnboardingPage";
+import CalendarPage from "./pages/calendar/CalendarPage";
+import GoalPlanPage from "./pages/goals/GoalPlanPage";
+import RoadmapPage from "./pages/roadmap/RoadmapPage";
+import SettingsPage from "./pages/settings/SettingsPage";
+import PlanningPage from "./pages/goals/PlanningPage";
+import TasksPage from "./pages/tasks/TasksPage";
+import NewsFeedPage from "./pages/news/NewsFeedPage";
 import "./styles/global.css";
 import "./App.css";
 
@@ -46,7 +47,7 @@ function App() {
     const lang = boot.user?.settings?.language;
     if (lang && lang !== language) setLanguage(lang);
     if (currentView === "welcome") {
-      setView(boot.onboardingComplete ? "dashboard" : "onboarding");
+      setView(boot.onboardingComplete ? "tasks" : "onboarding");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boot]);
@@ -62,7 +63,6 @@ function App() {
   }, []);
 
   const showSidebar =
-    currentView === "dashboard" ||
     currentView === "planning" ||
     currentView === "tasks" ||
     currentView === "calendar" ||
@@ -82,18 +82,20 @@ function App() {
       <div className="drag-region" />
 
       {showSidebar && <Sidebar />}
+      {showSidebar && <Chat />}
 
       <main className={`app-main ${showSidebar ? "app-main--with-sidebar" : ""}`}>
-        {currentView === "welcome" && <WelcomePage />}
-        {currentView === "onboarding" && <OnboardingPage />}
-        {currentView === "dashboard" && <DashboardPage />}
-        {currentView === "planning" && <PlanningPage />}
-        {currentView === "tasks" && <TasksPage />}
-        {currentView === "calendar" && <CalendarPage />}
-        {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
-        {currentView === "roadmap" && <RoadmapPage />}
-        {currentView === "news-feed" && <NewsFeedPage />}
-        {currentView === "settings" && <SettingsPage />}
+        <ErrorBoundary>
+          {currentView === "welcome" && <WelcomePage />}
+          {currentView === "onboarding" && <OnboardingPage />}
+          {currentView === "planning" && <PlanningPage />}
+          {currentView === "tasks" && <TasksPage />}
+          {currentView === "calendar" && <CalendarPage />}
+          {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
+          {currentView === "roadmap" && <RoadmapPage />}
+          {currentView === "news-feed" && <NewsFeedPage />}
+          {currentView === "settings" && <SettingsPage />}
+        </ErrorBoundary>
       </main>
     </div>
     </I18nProvider>

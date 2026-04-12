@@ -21,7 +21,8 @@ export type NudgeKind =
   | "dead_zone"
   | "overwhelm"
   | "streak"
-  | "proactive";
+  | "proactive"
+  | "pace_warning";
 
 export interface NudgeAction {
   label: string;
@@ -167,6 +168,18 @@ export async function remove(id: string): Promise<void> {
     userId,
     id,
   ]);
+}
+
+export async function dismissByContext(context: string): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update nudges
+        set dismissed_at = now(), updated_at = now()
+      where user_id = $1
+        and dismissed_at is null
+        and payload->>'context' = $2`,
+    [userId, context],
+  );
 }
 
 export { remove as delete_ };

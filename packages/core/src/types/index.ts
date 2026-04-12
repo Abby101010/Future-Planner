@@ -31,6 +31,8 @@ export interface TimeBlock {
 export interface UserSettings {
   enableNewsFeed: boolean;
   dailyReminderTime?: string;
+  /** HH:MM when the server should auto-generate today's daily tasks (default "06:00"). */
+  dailyTaskRefreshTime?: string;
   theme: "light" | "dark" | "system";
   language: "en" | "zh";
   apiKey?: string;
@@ -487,6 +489,8 @@ export interface Goal {
   notes?: string;
   /** User has dismissed the "you have N incomplete tasks" reschedule banner for this goal */
   rescheduleBannerDismissed?: boolean;
+  /** @deprecated — slot system removed. Column kept for backward compat but no longer used. */
+  goalSlot?: "primary" | "secondary" | "personal" | null;
 }
 
 /** A message in the goal planning chat */
@@ -640,7 +644,7 @@ export interface ReflectionResult {
 /** Contextual feedback nudge — smart probes triggered by behavior */
 export interface ContextualNudge {
   id: string;
-  type: "early_finish" | "snooze_probe" | "missed_deadline" | "dead_zone" | "overwhelm" | "streak" | "proactive";
+  type: "early_finish" | "snooze_probe" | "missed_deadline" | "dead_zone" | "overwhelm" | "streak" | "proactive" | "pace_warning";
   message: string;
   /** Optional actions the user can take */
   actions?: Array<{
@@ -698,6 +702,13 @@ export interface Reminder {
   createdAt: string;
 }
 
+/** Interactive widget attached to a follow-up question in chat */
+export type ChatWidget =
+  | { type: "choices"; options: Array<{ label: string; value: string }>; resolved?: boolean }
+  | { type: "date-picker"; resolved?: boolean }
+  | { type: "time-picker"; resolved?: boolean }
+  | { type: "datetime-picker"; resolved?: boolean };
+
 /** Chat message on the home page */
 export interface HomeChatMessage {
   id: string;
@@ -706,6 +717,8 @@ export interface HomeChatMessage {
   /** If this message resulted in a pending task */
   pendingTaskId?: string;
   timestamp: string;
+  /** Interactive widget for follow-up questions */
+  widget?: ChatWidget;
 }
 
 /** A chat session containing multiple messages */
@@ -715,4 +728,21 @@ export interface ChatSession {
   messages: HomeChatMessage[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Pace mismatch detected between a goal plan's assumed pace and the user's
+ *  actual completion rate. Used by PaceBanner and GoalPlanPage. */
+export interface PaceMismatch {
+  goalId: string;
+  goalTitle: string;
+  planTasksPerDay: number;
+  actualTasksPerDay: number;
+  overdueTasks: number;
+  totalPlanTasks: number;
+  completedPlanTasks: number;
+  remainingTasks: number;
+  daysRemaining: number;
+  requiredTasksPerDay: number;
+  severity: "mild" | "moderate" | "severe";
+  estimatedDelayDays: number;
 }

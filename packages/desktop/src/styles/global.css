@@ -14,9 +14,9 @@
   --bg-input: rgba(255, 255, 255, 0.45);
   --bg-overlay: rgba(250, 251, 254, 0.75);
 
-  --text-primary: #4a5568;
-  --text-secondary: #6b7f99;
-  --text-muted: #8a9bb0;
+  --text-primary: #1a2332;
+  --text-secondary: #3d4f66;
+  --text-muted: #5f7388;
   --text-inverse: #ffffff;
 
   /* ── Neon gradient accents — desaturated pastels ── */
@@ -396,12 +396,54 @@ textarea.input {
   to { transform: rotate(360deg); }
 }
 
+.spin {
+  animation: spin 1s linear infinite;
+}
+
 .animate-fade-in {
   animation: fadeIn 0.4s ease forwards;
 }
 
 .animate-slide-up {
   animation: slideUp 0.5s ease forwards;
+}
+
+/* ── Error card (shared across pages) ── */
+.error-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  background: var(--red-soft);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.error-card-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.error-card-content svg {
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+.error-card-content p {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0;
+}
+
+.error-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
 }
 
 .loading-dots::after {

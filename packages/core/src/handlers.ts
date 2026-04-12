@@ -13,3 +13,4 @@ export * from "./ai/handlers/goalPlanEdit.js";
 export * from "./ai/handlers/generateGoalPlan.js";
 export * from "./ai/handlers/analyzeMonthlyContext.js";
 export * from "./ai/handlers/homeChat.js";
+export * from "./ai/handlers/chat.js";

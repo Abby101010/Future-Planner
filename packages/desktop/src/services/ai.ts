@@ -29,6 +29,7 @@ import type {
   Reminder,
 } from "@northstar/core";
 import { cloudInvoke } from "./cloudTransport";
+import { postSseStream } from "./transport";
 import { collectEnvironment } from "./environment";
 import { createLogger } from "../utils/logger";
 
@@ -56,6 +57,10 @@ async function aiRequest<T = unknown>(
     return result;
   } catch (err) {
     log.error(`${type} failed (${Date.now() - started}ms)`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/credit balance|billing|too low/i.test(msg)) {
+      throw new Error("AI features are temporarily unavailable — please check your API billing settings.");
+    }
     throw err;
   }
 }
@@ -132,7 +137,7 @@ export async function generateDailyTasks(
         const range = parseWeekRange(weekLabel);
         if (range) return date >= range[0] && date <= range[1];
       }
-      return true; // Can't determine week — fall back to match
+      return false; // Can't determine week — weekday names are ambiguous, skip
     }
     return false;
   };
@@ -491,6 +496,7 @@ export async function sendHomeChatMessage(
     const eventDate = e.startDate.split("T")[0];
     return eventDate === today || !!e.recurring;
   }).map((e) => ({
+    id: e.id,
     title: e.title,
     startDate: e.startDate,
     endDate: e.endDate,
@@ -542,6 +548,76 @@ export async function sendHomeChatMessage(
   return cloudInvoke<HomeChatResult>("ai:home-chat", payload);
 }
 
+/** Stream a home chat message via SSE for real-time token display. */
+export async function streamHomeChatMessage(
+  userInput: string,
+  chatHistory: Array<{ role: string; content: string }>,
+  goals: Goal[],
+  todayTasks: DailyTask[],
+  calendarEvents?: CalendarEvent[],
+  attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>,
+  userMessageId?: string,
+  reminders?: Reminder[],
+  handlers?: {
+    onDelta?: (text: string) => void;
+    onDone?: (result: HomeChatResult) => void;
+    onError?: (msg: string) => void;
+  },
+): Promise<void> {
+  const today = new Date().toISOString().split("T")[0];
+  const todayEvents = (calendarEvents || []).filter((e) => {
+    const eventDate = e.startDate.split("T")[0];
+    return eventDate === today || !!e.recurring;
+  }).map((e) => ({
+    id: e.id,
+    title: e.title,
+    startDate: e.startDate,
+    endDate: e.endDate,
+    category: e.category,
+  }));
+
+  const payload: Record<string, unknown> = {
+    userInput,
+    query: userInput,
+    userMessageId,
+    chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
+    goals: goals.map((g) => ({
+      id: g.id,
+      title: g.title,
+      scope: g.scope,
+      goalType: g.goalType,
+      status: g.status,
+      hasPlan: !!g.plan,
+      planConfirmed: g.planConfirmed,
+    })),
+    todayTasks: todayTasks.map((t) => ({ id: t.id, title: t.title, completed: t.completed, skipped: !!t.skipped, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
+    todayCalendarEvents: todayEvents,
+    activeReminders: (reminders || []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      reminderTime: r.reminderTime,
+      date: r.date,
+      acknowledged: r.acknowledged,
+      repeat: r.repeat,
+    })),
+    attachments,
+  };
+
+  try {
+    const env = await collectEnvironment();
+    payload._environmentContext = env;
+  } catch {
+    // best-effort
+  }
+
+  await postSseStream<HomeChatResult>("/ai/home-chat/stream", payload, {
+    onDelta: handlers?.onDelta,
+    onDone: handlers?.onDone,
+    onError: handlers?.onError,
+  });
+}
+
 // Intent shape returned by the backend home-chat handler.
 // Mirrors electron/ai/handlers/homeChat.ts HomeChatIntent. Fields are
 // fully populated by the backend (server-assigned IDs, defaults applied);
@@ -566,13 +642,51 @@ export type HomeChatIntent =
       };
     }
   | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
-  | { kind: "manage-task"; taskId: string; action: "complete" | "skip" | "reschedule"; taskTitle: string; rescheduleDate?: string }
+  | {
+      kind: "manage-task";
+      taskId: string;
+      action: "complete" | "skip" | "reschedule" | "delete" | "delete_all";
+      taskTitle: string;
+      rescheduleDate?: string;
+      match?: string;
+    }
+  | {
+      kind: "manage-reminder";
+      action: "delete" | "delete_all" | "edit" | "acknowledge";
+      reminderId?: string;
+      match?: string;
+      keepMatch?: string;
+      patch?: {
+        title?: string;
+        description?: string;
+        reminderTime?: string;
+        date?: string;
+        repeat?: string | null;
+      };
+      reminderTitle?: string;
+    }
+  | {
+      kind: "manage-event";
+      action: "delete" | "delete_all" | "edit" | "reschedule";
+      eventId?: string;
+      match?: string;
+      patch?: {
+        title?: string;
+        startDate?: string;
+        endDate?: string;
+        category?: string;
+      };
+      eventTitle?: string;
+    }
   | { kind: "context-change"; suggestion: string }
   | { kind: "research"; topic: string; relatedGoalId: string };
 
 export interface HomeChatResult {
   reply: string;
+  /** Legacy: first intent in the list, kept so old code still compiles. */
   intent: HomeChatIntent | null;
+  /** All intents the model emitted, in order. Dispatcher runs each. */
+  intents?: HomeChatIntent[];
   /** Server-assigned message ids so the dashboard's optimistic merge
    *  can reconcile its in-flight rows against what got persisted. */
   userMessageId?: string;

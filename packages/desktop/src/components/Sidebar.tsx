@@ -4,7 +4,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  LayoutDashboard,
   Map,
   Settings,
   CalendarDays,
@@ -13,6 +12,9 @@ import {
   Compass,
   Newspaper,
   Download,
+  MessageCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { useQuery } from "../hooks/useQuery";
@@ -40,6 +42,9 @@ interface SidebarSettingsView {
 export default function Sidebar() {
   const currentView = useStore((s) => s.currentView);
   const setView = useStore((s) => s.setView);
+  const toggleChat = useStore((s) => s.toggleChat);
+  const isCollapsed = useStore((s) => s.isSidebarCollapsed);
+  const toggleSidebar = useStore((s) => s.toggleSidebar);
   const lang = useStore((s) => s.language);
   const { data: planningData } = useQuery<SidebarPlanningView>("view:planning");
   const { data: roadmapData } = useQuery<SidebarRoadmapView>("view:roadmap");
@@ -81,9 +86,8 @@ export default function Sidebar() {
   ).length;
 
   const nav: NavItem[] = [
-    { icon: <LayoutDashboard size={18} />, label: t.sidebar.today, view: "dashboard" },
+    { icon: <CheckSquare size={18} />, label: t.sidebar.today, view: "tasks" },
     { icon: <Compass size={18} />, label: "Planning", view: "planning" },
-    { icon: <CheckSquare size={18} />, label: t.sidebar.tasks, view: "tasks" },
     { icon: <CalendarDays size={18} />, label: t.sidebar.calendar, view: "calendar" },
     { icon: <Map size={18} />, label: t.sidebar.roadmap, view: "roadmap" },
     {
@@ -105,12 +109,27 @@ export default function Sidebar() {
   });
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isCollapsed ? "sidebar--collapsed" : ""}`}>
       <div className="sidebar-brand">
-        <span className="sidebar-title">NorthStar</span>
+        {!isCollapsed && <span className="sidebar-title">NorthStar</span>}
+        <button
+          className="btn btn-ghost sidebar-collapse-btn"
+          onClick={toggleSidebar}
+          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
       </div>
 
       <nav className="sidebar-nav">
+        <button
+          className="sidebar-item sidebar-chat-btn"
+          onClick={toggleChat}
+        >
+          <MessageCircle size={18} />
+          <span>Chat</span>
+        </button>
+        <div className="sidebar-divider" />
         {visibleNav.map((item) => (
           <button
             key={item.view + item.label}
@@ -181,7 +200,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        {updateVersion && (
+        {updateVersion && !isCollapsed && (
           <button
             type="button"
             className="sidebar-update-badge"
@@ -192,16 +211,28 @@ export default function Sidebar() {
             <span>Update available · {updateVersion}</span>
           </button>
         )}
-        <div className="sidebar-user">
-          <CalendarDays size={14} />
-          <span className="sidebar-date">
-            {new Date().toLocaleDateString(getDateLocale(lang), {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </span>
-        </div>
+        {updateVersion && isCollapsed && (
+          <button
+            type="button"
+            className="sidebar-update-badge sidebar-update-badge--icon"
+            onClick={handleOpenReleases}
+            title={`Update available: ${updateVersion}`}
+          >
+            <Download size={14} />
+          </button>
+        )}
+        {!isCollapsed && (
+          <div className="sidebar-user">
+            <CalendarDays size={14} />
+            <span className="sidebar-date">
+              {new Date().toLocaleDateString(getDateLocale(lang), {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+        )}
       </div>
     </aside>
   );

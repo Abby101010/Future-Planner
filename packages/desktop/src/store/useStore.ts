@@ -38,6 +38,15 @@ interface StoreApi {
    *  the news page consumes it. */
   researchTopic: string | null;
   setResearchTopic: (topic: string | null) => void;
+
+  /** Whether the slide-out chat panel is open. */
+  isChatOpen: boolean;
+  setChatOpen: (open: boolean) => void;
+  toggleChat: () => void;
+
+  /** Whether the sidebar is collapsed (icons only). */
+  isSidebarCollapsed: boolean;
+  toggleSidebar: () => void;
 }
 
 const useStore = create<StoreApi>((set) => ({
@@ -52,6 +61,13 @@ const useStore = create<StoreApi>((set) => ({
 
   researchTopic: null,
   setResearchTopic: (topic) => set({ researchTopic: topic }),
+
+  isChatOpen: false,
+  setChatOpen: (open) => set({ isChatOpen: open }),
+  toggleChat: () => set((s) => ({ isChatOpen: !s.isChatOpen })),
+
+  isSidebarCollapsed: false,
+  toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
 }));
 
 export default useStore;

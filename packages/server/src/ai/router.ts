@@ -1,29 +1,14 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar server — AI request router (simplified)
+   NorthStar server — AI request router
 
-   Differences from electron/ai/router.ts:
-   1. NO multi-agent coordinator. Complex requests that previously
-      went through `coordinateRequest` (generate-goal-plan,
-      goal-plan-edit, daily-tasks, goal-breakdown, reallocate) now
-      go directly to their handlers without the research /
-      scheduling / capacity enrichment pass.
-   2. NO memory context. The memory/reflection system stays in the
-      Electron shell for phase 1 — buildMemoryContext always returns
-      an empty string here, which handlers treat as "fresh install".
+   Routes AI requests to handlers. Complex requests (daily-tasks,
+   generate-goal-plan, reallocate, adaptive-reschedule) go through
+   the Coordinator first for multi-agent enrichment, then the
+   enriched context is injected into the handler's payload via
+   EnrichedPayload fields.
 
-   This is a deliberate scope cut: bringing the coordinator and
-   memory pipeline to the cloud is phase 1b work. Phase 1's MVP
-   just needs every AI channel to respond with usable output.
-
-   Handler quality trade-off:
-   - Simple requests (home-chat, classify-goal, pace-check,
-     analyze-quick-task, analyze-monthly-context, onboarding,
-     goal-plan-chat, goal-plan-edit, recovery) work exactly as
-     they did in Electron.
-   - Complex requests (generate-goal-plan, goal-breakdown,
-     daily-tasks, reallocate) produce output but without the
-     multi-agent context enrichment. Still useful, just less
-     context-aware. Phase 1b restores parity.
+   Simple requests (home-chat, classify-goal, etc.) go directly
+   to handlers without coordinator overhead.
    ────────────────────────────────────────────────────────── */
 
 import type Anthropic from "@anthropic-ai/sdk";
@@ -52,8 +37,90 @@ import {
   handleGenerateGoalPlan,
   handleAnalyzeMonthlyContext,
   handleHomeChat,
+  handleUnifiedChat,
 } from "@northstar/core/handlers";
-import type { AIPayloadMap } from "@northstar/core";
+import type { AIPayloadMap, TaskState, ScheduleBlock } from "@northstar/core";
+
+function buildScheduleBlockText(tierEnforcement: {
+  calendarBlocks: ScheduleBlock[];
+  goalBlocks: ScheduleBlock[];
+  taskSlots: ScheduleBlock[];
+}): string {
+  const lines: string[] = ["SCHEDULE STRUCTURE (pre-computed by scheduling agent):"];
+
+  lines.push("Tier 1 — Calendar (FIXED, do not move):");
+  if (tierEnforcement.calendarBlocks.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const b of tierEnforcement.calendarBlocks) {
+      lines.push(`  [${b.startTime}-${b.endTime}] ${b.label} (${b.durationMinutes}min)`);
+    }
+  }
+
+  lines.push("Tier 2 — Goal Deep Work (PROTECTED):");
+  if (tierEnforcement.goalBlocks.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const b of tierEnforcement.goalBlocks) {
+      lines.push(`  [${b.startTime}-${b.endTime}] ${b.label} (${b.durationMinutes}min)`);
+    }
+  }
+
+  lines.push("Tier 3 — Available for daily tasks:");
+  if (tierEnforcement.taskSlots.length === 0) {
+    lines.push("  (none)");
+  } else {
+    let totalAvailable = 0;
+    for (const b of tierEnforcement.taskSlots) {
+      lines.push(`  [${b.startTime}-${b.endTime}] ${b.durationMinutes}min`);
+      totalAvailable += b.durationMinutes;
+    }
+    lines.push(`Total available: ${totalAvailable}min`);
+  }
+
+  return lines.join("\n");
+}
+
+function enrichPayload(
+  payload: Record<string, unknown>,
+  taskState: TaskState,
+): Record<string, unknown> {
+  const enriched = { ...payload };
+
+  if (taskState.agents.gatekeeper) {
+    enriched._researchContext = {
+      filteredTasks: taskState.agents.gatekeeper.filteredTasks,
+      priorityScores: taskState.agents.gatekeeper.priorityScores,
+      budgetCheck: taskState.agents.gatekeeper.budgetCheck,
+    };
+  }
+
+  if (taskState.agents.scheduler?.tierEnforcement) {
+    enriched._schedulingContext = taskState.agents.scheduler;
+    enriched._schedulingContextFormatted = buildScheduleBlockText(
+      taskState.agents.scheduler.tierEnforcement,
+    );
+  }
+
+  if (taskState.agents.timeEstimator) {
+    enriched._environmentContext = {
+      timeEstimates: taskState.agents.timeEstimator.estimates,
+      totalMinutes: taskState.agents.timeEstimator.totalMinutes,
+      exceedsDeepWorkCeiling: taskState.agents.timeEstimator.exceedsDeepWorkCeiling,
+    };
+    const est = taskState.agents.timeEstimator;
+    const entries = Object.entries(est.estimates);
+    if (entries.length > 0) {
+      const lines = entries.map(([id, e]) =>
+        `${id}: ${e.adjustedMinutes}min (original: ${e.originalMinutes}min, buffer: ${e.bufferMinutes}min, confidence: ${e.confidence})`,
+      );
+      enriched._environmentContextFormatted =
+        `TIME ESTIMATES (planning-fallacy corrected):\n${lines.join("\n")}\nTotal: ${est.totalMinutes}min${est.exceedsDeepWorkCeiling ? " ⚠ EXCEEDS 3-HOUR DEEP WORK CEILING" : ""}`;
+    }
+  }
+
+  return enriched;
+}
 
 export type RequestType =
   | "onboarding"
@@ -69,12 +136,14 @@ export type RequestType =
   | "analyze-quick-task"
   | "analyze-monthly-context"
   | "home-chat"
+  | "chat"
   | "news-briefing";
 
 export async function handleAIRequest(
   type: RequestType,
   payload: Record<string, unknown>,
   memoryContext = "",
+  coordinatorState?: TaskState,
 ): Promise<unknown> {
   const client = getClient();
   if (!client) {
@@ -82,7 +151,10 @@ export async function handleAIRequest(
       "ANTHROPIC_API_KEY not configured on server. Set it in Fly secrets.",
     );
   }
-  return handleAIRequestDirect(type, payload, memoryContext, client);
+  const enrichedPayload = coordinatorState
+    ? enrichPayload(payload, coordinatorState)
+    : payload;
+  return handleAIRequestDirect(type, enrichedPayload, memoryContext, client);
 }
 
 export async function handleAIRequestDirect(
@@ -132,6 +204,11 @@ export async function handleAIRequestDirect(
       const homePayload = p as AIPayloadMap["home-chat"];
       if (!homePayload.todayDate) homePayload.todayDate = getEffectiveDate();
       return handleHomeChat(client, homePayload, memoryContext);
+    }
+    case "chat": {
+      const chatPayload = p as AIPayloadMap["chat"];
+      if (!chatPayload.todayDate) chatPayload.todayDate = getEffectiveDate();
+      return handleUnifiedChat(client, chatPayload, memoryContext);
     }
     case "news-briefing":
       return handleNewsBriefing(client, p as { goals: Array<{ id: string; title: string; description?: string; targetDate?: string; isHabit?: boolean }>; topic?: string }, memoryContext);

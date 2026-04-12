@@ -175,6 +175,9 @@ export async function cloudInvoke<T>(
         /* ignore */
       }
       log.error(`${channel} HTTP ${res.status} (${elapsed}ms)`, bodyText.slice(0, 200));
+      if (/credit balance|billing|too low/i.test(bodyText)) {
+        throw new Error("AI features are temporarily unavailable — please check your API billing settings.");
+      }
       throw new Error(
         `${channel} failed: HTTP ${res.status}${bodyText ? ` — ${bodyText.slice(0, 200)}` : ""}`,
       );

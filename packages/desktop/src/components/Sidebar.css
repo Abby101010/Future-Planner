@@ -126,6 +126,11 @@
   font-size: 16px;
   line-height: 1;
   flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sidebar-goal-progress {
@@ -174,4 +179,64 @@
 }
 .sidebar-update-badge:active {
   transform: translateY(0);
+}
+
+/* Chat button — prominent at top */
+.sidebar-chat-btn {
+  color: var(--accent) !important;
+  font-weight: 500 !important;
+}
+.sidebar-chat-btn:hover {
+  background: var(--accent-gradient-soft) !important;
+}
+
+/* Collapse toggle */
+.sidebar-collapse-btn {
+  padding: 4px;
+  margin-left: auto;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ── Collapsed state ── */
+.sidebar--collapsed {
+  width: 52px;
+}
+
+.sidebar--collapsed .sidebar-brand {
+  justify-content: center;
+  padding: var(--space-lg) var(--space-xs) var(--space-xl);
+}
+
+.sidebar--collapsed .sidebar-nav {
+  padding: 0 4px;
+}
+
+.sidebar--collapsed .sidebar-item {
+  justify-content: center;
+  padding: 8px;
+}
+
+.sidebar--collapsed .sidebar-item span {
+  display: none;
+}
+
+.sidebar--collapsed .sidebar-divider {
+  margin: var(--space-xs) 4px;
+}
+
+.sidebar--collapsed .sidebar-section-label {
+  display: none;
+}
+
+.sidebar--collapsed .sidebar-footer {
+  padding: var(--space-sm);
+}
+
+.sidebar-update-badge--icon {
+  justify-content: center;
+  padding: 6px;
 }

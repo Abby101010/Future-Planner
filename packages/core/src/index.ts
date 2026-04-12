@@ -1,8 +1,9 @@
 export * from "./types/index.js";
 export * from "./types/agents.js";
+export * from "./types/taskState.js";
 export * from "./ai/sanitize.js";
 export * from "./ai/personalize.js";
-export * from "./ai/prompts.js";
+export * from "./ai/prompts/index.js";
 // payloads.ts has a narrower `DeviceIntegrations` that collides with the
 // richer one in types/index.ts. Re-export everything except that one name
 // so downstream code keeps the canonical type from types/index.ts.
@@ -21,6 +22,7 @@ export {
   type GoalBreakdownPayload,
   type ReallocatePayload,
   type DailyTasksPayload,
+  type UnifiedChatPayload,
   type AIPayloadMap,
 } from "./ai/payloads.js";
 export * from "./model-config.js";

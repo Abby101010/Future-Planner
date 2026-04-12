@@ -20,6 +20,10 @@ import type {
   GoalPlan,
   GoalPlanMessage,
 } from "@northstar/core";
+import { detectPaceMismatches, type PaceMismatch } from "../services/paceDetection";
+import { loadMemory, computeCapacityProfile } from "../memory";
+import { getCurrentUserId } from "../middleware/requestContext";
+import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
 
 export interface GoalPlanViewArgs {
   goalId: string;
@@ -44,6 +48,8 @@ export interface GoalPlanView {
   /** Calendar events over the plan's date range — GoalPlanPage passes
    *  these into the reallocate flow. Empty array when no plan exists. */
   calendarEvents: CalendarEvent[];
+  /** Pace mismatch for this specific goal (null if on track). */
+  paceMismatch: PaceMismatch | null;
 }
 
 function isDateBefore(dateStr: string, today: string): boolean {
@@ -117,6 +123,7 @@ export async function resolveGoalPlanView(
       overdueTaskCount: 0,
       needsRescheduling: false,
       calendarEvents: [],
+      paceMismatch: null,
     };
   }
 
@@ -151,6 +158,36 @@ export async function resolveGoalPlanView(
     `${rangeEnd}T23:59:59`,
   );
 
+  // Pace mismatch detection for this goal — use the reconstructed plan
+  // (same data the UI displays), not the inline goal.plan which may lag.
+  let paceMismatch: PaceMismatch | null = null;
+  try {
+    const userId = getCurrentUserId();
+    const memory = await loadMemory(userId);
+    const rangeStart = getEffectiveDaysAgo(90);
+    const logs = await repos.dailyLogs.list(rangeStart, today);
+    const tasks = await repos.dailyTasks.listForDateRange(rangeStart, today);
+    const tasksByDate = new Map<string, typeof tasks>();
+    for (const t of tasks) {
+      const arr = tasksByDate.get(t.date) ?? [];
+      arr.push(t);
+      tasksByDate.set(t.date, arr);
+    }
+    const logsForCapacity = logs.map((l) => {
+      const dayTasks = tasksByDate.get(l.date) ?? [];
+      return {
+        date: l.date,
+        tasks: dayTasks.map((t) => ({ completed: t.completed, skipped: false })),
+      };
+    });
+    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay());
+    const goalForPace = plan ? { ...goal, plan } : goal;
+    const mismatches = detectPaceMismatches([goalForPace], capacity.avgTasksCompletedPerDay, today);
+    paceMismatch = mismatches.length > 0 ? mismatches[0] : null;
+  } catch {
+    // pace detection is best-effort
+  }
+
   return {
     goal,
     plan,
@@ -159,5 +196,6 @@ export async function resolveGoalPlanView(
     overdueTaskCount,
     needsRescheduling,
     calendarEvents,
+    paceMismatch,
   };
 }

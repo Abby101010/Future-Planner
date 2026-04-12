@@ -86,6 +86,32 @@ export interface HomeChatPayload extends EnrichedPayload {
   todayDate?: string;
 }
 
+export interface UnifiedChatPayload extends EnrichedPayload {
+  userInput: string;
+  chatHistory?: ChatMessage[];
+  context?: {
+    currentPage: string;
+    selectedGoalId?: string;
+    selectedGoalPlan?: Record<string, unknown>;
+    goalTitle?: string;
+    targetDate?: string;
+    importance?: string;
+    isHabit?: boolean;
+    description?: string;
+    visibleTasks?: LooseRow[];
+    weeklyReviewDue?: boolean;
+    activeGoals?: LooseRow[];
+    todayCalendarEvents?: LooseRow[];
+    activeReminders?: LooseRow[];
+  };
+  goals?: LooseRow[];
+  todayTasks?: LooseRow[];
+  todayCalendarEvents?: LooseRow[];
+  activeReminders?: LooseRow[];
+  attachments?: LooseRow[];
+  todayDate?: string;
+}
+
 export interface RecoveryPayload extends EnrichedPayload {
   blockerId: string;
   breakdown?: unknown;
@@ -157,4 +183,5 @@ export interface AIPayloadMap {
   "analyze-quick-task": AnalyzeQuickTaskPayload;
   "analyze-monthly-context": AnalyzeMonthlyContextPayload;
   "home-chat": HomeChatPayload;
+  "chat": UnifiedChatPayload;
 }

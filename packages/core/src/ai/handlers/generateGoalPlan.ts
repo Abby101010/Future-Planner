@@ -2,7 +2,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";
-import { GENERATE_GOAL_PLAN_SYSTEM } from "../prompts.js";
+import { GENERATE_GOAL_PLAN_SYSTEM } from "../prompts/index.js";
 import { personalizeSystem } from "../personalize.js";
 import type { GenerateGoalPlanPayload } from "../payloads.js";
 

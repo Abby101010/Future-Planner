@@ -29,6 +29,7 @@ interface GoalRow {
   icon: string | null;
   plan_confirmed: boolean;
   progress_percent: number | null;
+  goal_slot: string | null;
   payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
@@ -56,6 +57,7 @@ function rowToGoal(r: GoalRow): Goal {
     scopeReasoning: (meta.scopeReasoning as string) ?? "",
     repeatSchedule: (meta.repeatSchedule as Goal["repeatSchedule"]) ?? null,
     suggestedTimeSlot: meta.suggestedTimeSlot as string | undefined,
+    goalSlot: (r.goal_slot as Goal["goalSlot"]) ?? null,
     progressPercent: r.progress_percent ?? undefined,
     notes: meta.notes as string | undefined,
     rescheduleBannerDismissed: meta.rescheduleBannerDismissed as
@@ -103,9 +105,9 @@ export async function upsert(goal: Goal): Promise<void> {
     `insert into goals (
        id, user_id, title, description, target_date, status, priority,
        goal_type, scope, is_habit, icon, plan_confirmed, progress_percent,
-       payload, updated_at
+       goal_slot, payload, updated_at
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, now()
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, now()
      )
      on conflict (user_id, id) do update set
        title = excluded.title,
@@ -119,6 +121,7 @@ export async function upsert(goal: Goal): Promise<void> {
        icon = excluded.icon,
        plan_confirmed = excluded.plan_confirmed,
        progress_percent = excluded.progress_percent,
+       goal_slot = excluded.goal_slot,
        payload = excluded.payload,
        updated_at = now()`,
     [
@@ -135,6 +138,7 @@ export async function upsert(goal: Goal): Promise<void> {
       goal.icon ?? null,
       goal.planConfirmed,
       goal.progressPercent ?? null,
+      goal.goalSlot ?? null,
       JSON.stringify(goalToPayload(goal)),
     ],
   );
@@ -155,6 +159,19 @@ export async function updateProgress(
         set progress_percent = $3, updated_at = now()
       where user_id = $1 and id = $2`,
     [userId, id, Math.max(0, Math.min(100, Math.round(percent)))],
+  );
+}
+
+export async function setGoalSlot(
+  id: string,
+  slot: "primary" | "secondary" | "personal" | null,
+): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update goals
+        set goal_slot = $3, updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, id, slot],
   );
 }
 

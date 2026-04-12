@@ -15,10 +15,13 @@ import { getClient } from "../ai/client";
 import {
   buildHomeChatRequest,
   parseHomeChatIntent,
+  parseHomeChatIntents,
   stripJsonBlocks,
   buildGoalPlanChatRequest,
   parseGoalPlanChatResult,
   extractReplyFromText,
+  buildUnifiedChatRequest,
+  parseUnifiedChatResult,
 } from "@northstar/core/handlers";
 import type { AIPayloadMap, GoalPlan, GoalPlanMessage } from "@northstar/core";
 import { applyPlanPatch } from "@northstar/core";
@@ -48,6 +51,7 @@ const CONTEXT_TYPE_BY_CHANNEL: Record<
   "goal-plan-chat": "planning",
   "analyze-quick-task": "daily",
   "home-chat": "general",
+  "chat": "general",
   "news-briefing": "general",
   onboarding: "general",
   "classify-goal": "general",
@@ -179,7 +183,19 @@ aiRouter.post(
         (typeof payload.date === "string" && payload.date) ||
         getEffectiveDate();
       const active = await repos.reminders.listActive();
-      payload.todayReminders = active.filter((r) => r.date === targetDate);
+      const todayDow = new Date(targetDate + "T00:00:00").getDay();
+      const todayDom = new Date(targetDate + "T00:00:00").getDate();
+      payload.todayReminders = active.filter((r) => {
+        if (r.date === targetDate) return true;
+        if (r.repeat === "daily") return true;
+        if (r.repeat === "weekly") {
+          return new Date(r.date + "T00:00:00").getDay() === todayDow;
+        }
+        if (r.repeat === "monthly") {
+          return new Date(r.date + "T00:00:00").getDate() === todayDom;
+        }
+        return false;
+      });
     } catch (err) {
       console.warn("[ai/daily-tasks] failed to load reminders:", err);
     }
@@ -312,17 +328,33 @@ aiRouter.post(
     }
 
     const payload = (req.body ?? {}) as AIPayloadMap["home-chat"];
-    // Stamp effective "today" so the intent parser lands on the same date
-    // the TasksView filter uses (6 AM boundary + TZ). Without this, a
-    // reminder created at 00:30 local gets stored for the wrong calendar
-    // day and silently drops out of tasksView.todayReminders.
     payload.todayDate = getEffectiveDate();
-    // Enrich with weather + environment context
     const envRaw = (payload as unknown as Record<string, unknown>)._environmentContext as ClientEnvironment | undefined;
     await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
     const memory = await loadMemory(req.userId);
     const memoryContext = buildMemoryContext(memory, "general");
     const request = buildHomeChatRequest(payload, memoryContext);
+
+    // Persist user message before streaming starts
+    const nowIso = new Date().toISOString();
+    const rawBody = req.body as Record<string, unknown>;
+    const userText = payload.userInput ?? (typeof rawBody.query === "string" ? rawBody.query : "") ?? "";
+    const userMessageId =
+      typeof rawBody.userMessageId === "string"
+        ? (rawBody.userMessageId as string)
+        : randomUUID();
+    if (userText) {
+      try {
+        await chatRepo.insertHomeMessage({
+          id: userMessageId,
+          role: "user",
+          content: userText,
+          timestamp: nowIso,
+        });
+      } catch (err) {
+        console.warn("[ai/home-chat/stream] failed to persist user message:", err);
+      }
+    }
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -353,12 +385,37 @@ aiRouter.post(
 
       await stream.finalMessage();
       const trimmed = fullText.trim();
-      const intent = parseHomeChatIntent(trimmed, payload.userInput, payload.todayDate);
-      // Strip any JSON blocks out of the final reply so the sanitized
-      // text overwrites whatever the client streamed via delta events.
+      const intents = parseHomeChatIntents(trimmed, payload.userInput, payload.todayDate);
+      const intent = intents.length > 0 ? intents[0] : null;
       const cleaned = stripJsonBlocks(trimmed);
-      const reply = cleaned.length > 0 ? cleaned : trimmed;
-      send("done", { reply, intent });
+      // When the LLM emits ONLY JSON (no prose), stripped is empty.
+      // Return "" so the client renders intent-derived messages instead
+      // of showing raw JSON. Match the blocking endpoint's logic.
+      const reply =
+        cleaned.length > 0
+          ? cleaned
+          : intents.length > 0
+            ? ""
+            : trimmed;
+      console.debug("[ai/home-chat/stream] raw=%d chars, cleaned=%d chars, intents=%d, reply=%d chars",
+        trimmed.length, cleaned.length, intents.length, reply.length);
+
+      // Persist assistant reply
+      const assistantMessageId = randomUUID();
+      if (reply) {
+        try {
+          await chatRepo.insertHomeMessage({
+            id: assistantMessageId,
+            role: "assistant",
+            content: reply,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn("[ai/home-chat/stream] failed to persist assistant reply:", err);
+        }
+      }
+
+      send("done", { reply, intent, intents, userMessageId, assistantMessageId });
     } catch (err) {
       send("error", {
         error: err instanceof Error ? err.message : String(err),
@@ -565,6 +622,188 @@ aiRouter.post(
         planReady: result.planReady,
         plan: result.plan,
         planPatch: result.planPatch,
+      });
+    } catch (err) {
+      send("error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      res.end();
+    }
+  }),
+);
+
+// ── SSE streaming: unified chat ─────────────────────────────
+//
+// Context-aware chat endpoint that handles both home-chat-style intents
+// and goal-plan-chat-style patches depending on context.currentPage.
+// Wire format matches the home-chat/stream endpoint.
+aiRouter.post(
+  "/chat/stream",
+  asyncHandler(async (req, res) => {
+    const client = getClient();
+    if (!client) {
+      res.status(500).json({ ok: false, error: "AI client unavailable" });
+      return;
+    }
+
+    const payload = (req.body ?? {}) as AIPayloadMap["chat"] & {
+      goalId?: string;
+      userMessageId?: string;
+    };
+    payload.todayDate = getEffectiveDate();
+    const envRaw = (payload as unknown as Record<string, unknown>)._environmentContext as ClientEnvironment | undefined;
+    await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
+
+    const isGoalPlanMode = payload.context?.currentPage === "goal-plan";
+    const memory = await loadMemory(req.userId);
+    const memoryContext = buildMemoryContext(memory, isGoalPlanMode ? "planning" : "general");
+    const request = buildUnifiedChatRequest(payload, memoryContext);
+
+    // Persist user message before streaming starts
+    const nowIso = new Date().toISOString();
+    const userText = payload.userInput ?? "";
+    const userMessageId =
+      typeof payload.userMessageId === "string"
+        ? payload.userMessageId
+        : randomUUID();
+
+    if (!isGoalPlanMode && userText) {
+      try {
+        await chatRepo.insertHomeMessage({
+          id: userMessageId,
+          role: "user",
+          content: userText,
+          timestamp: nowIso,
+        });
+      } catch (err) {
+        console.warn("[ai/chat/stream] failed to persist user message:", err);
+      }
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const stream = client.messages.stream({
+        model: request.model,
+        max_tokens: request.maxTokens,
+        system: request.system,
+        messages: request.messages as Parameters<
+          typeof client.messages.create
+        >[0]["messages"],
+      });
+
+      let fullText = "";
+      stream.on("text", (chunk: string) => {
+        fullText += chunk;
+        send("delta", { text: chunk });
+      });
+
+      await stream.finalMessage();
+      const result = parseUnifiedChatResult(
+        fullText,
+        request.mode,
+        payload.userInput,
+        payload.todayDate,
+      );
+
+      // Persist assistant reply for home-style chat
+      let assistantMessageId = randomUUID();
+      if (!isGoalPlanMode && result.reply) {
+        try {
+          await chatRepo.insertHomeMessage({
+            id: assistantMessageId,
+            role: "assistant",
+            content: result.reply,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn("[ai/chat/stream] failed to persist assistant reply:", err);
+        }
+      }
+
+      // Persist plan changes for goal-plan-style chat
+      const goalId = typeof payload.goalId === "string" ? payload.goalId : "";
+      let planReplaced = false;
+      if (isGoalPlanMode && goalId) {
+        try {
+          const goal = await repos.goals.get(goalId);
+          if (goal) {
+            const nextChat: GoalPlanMessage[] = [...(goal.planChat ?? [])];
+            if (payload.userMessageId && userText) {
+              nextChat.push({
+                id: payload.userMessageId,
+                role: "user",
+                content: userText,
+                timestamp: nowIso,
+              });
+            }
+            if (result.reply) {
+              nextChat.push({
+                id: randomUUID(),
+                role: "assistant",
+                content: extractReplyFromText(result.reply),
+                timestamp: new Date().toISOString(),
+              });
+            }
+
+            let nextPlan: GoalPlan | null = null;
+            const planNodes = await repos.goalPlan.listForGoal(goalId);
+            if (planNodes.length > 0) {
+              const reconstructed = repos.goalPlan.reconstructPlan(planNodes);
+              if (reconstructed.years.length > 0 || reconstructed.milestones.length > 0) {
+                nextPlan = reconstructed;
+              }
+            }
+            if (!nextPlan) nextPlan = goal.plan ?? null;
+
+            if (result.planReady && result.plan && Array.isArray((result.plan as { years?: unknown }).years)) {
+              const planObj = result.plan as unknown as GoalPlan;
+              await repos.goalPlan.replacePlan(goalId, planObj);
+              nextPlan = planObj;
+              planReplaced = true;
+            } else if (result.planPatch && nextPlan) {
+              const patched = applyPlanPatch(nextPlan, result.planPatch);
+              await repos.goalPlan.replacePlan(goalId, patched);
+              nextPlan = patched;
+              planReplaced = true;
+            }
+
+            await repos.goals.upsert({ ...goal, planChat: nextChat, plan: nextPlan });
+          }
+        } catch (err) {
+          console.warn("[ai/chat/stream] persist failed:", err);
+        }
+
+        try {
+          emitViewInvalidate(req.userId, {
+            viewKinds: planReplaced
+              ? ["view:goal-plan", "view:tasks", "view:dashboard"]
+              : ["view:goal-plan"],
+          });
+        } catch (err) {
+          console.warn("[ai/chat/stream] invalidate failed:", err);
+        }
+      }
+
+      send("done", {
+        reply: isGoalPlanMode ? extractReplyFromText(result.reply) : result.reply,
+        intent: result.intent,
+        intents: result.intents,
+        planReady: result.planReady,
+        plan: result.plan,
+        planPatch: result.planPatch,
+        userMessageId,
+        assistantMessageId,
       });
     } catch (err) {
       send("error", {
