@@ -48,6 +48,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     title: "NorthStar 北极星",
+    icon: path.join(process.env.VITE_PUBLIC!, "icon.png"),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: "#ffffff",
