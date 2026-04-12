@@ -14,6 +14,7 @@
  */
 
 import * as repos from "../repositories";
+import { getEffectiveDate, getEffectiveMonthKey } from "../dateUtils";
 import type {
   CalendarEvent,
   ContextualNudge,
@@ -67,20 +68,8 @@ export interface DashboardView {
   needsMonthlyContext: boolean;
 }
 
-function todayISO(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function currentMonthKey(): string {
-  // MonthlyContext.month is stored as "YYYY-MM".
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
-
 export async function resolveDashboardView(): Promise<DashboardView> {
-  const today = todayISO();
+  const today = getEffectiveDate();
 
   // ── Fire the independent repo reads in parallel ─────────────
   const [
@@ -157,7 +146,7 @@ export async function resolveDashboardView(): Promise<DashboardView> {
       }
     : { active: false, startDate: null, endDate: null };
 
-  const monthKey = currentMonthKey();
+  const monthKey = getEffectiveMonthKey();
   const currentMonthContext =
     monthlyContexts.find((c) => c.month === monthKey) ?? null;
 

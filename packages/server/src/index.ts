@@ -14,6 +14,7 @@ import express from "express";
 import cors from "cors";
 import { authMiddleware } from "./middleware/auth";
 import { errorHandler } from "./middleware/errorHandler";
+import { timezoneStore } from "./dateUtils";
 import { entitiesRouter } from "./routes/entities";
 import { aiRouter } from "./routes/ai";
 import { calendarRouter } from "./routes/calendar";
@@ -71,6 +72,14 @@ app.get("/health", async (_req, res) => {
 // ── Authenticated routes ─────────────────────────────────
 // Every route past this point runs with req.userId populated.
 app.use(authMiddleware);
+
+// Timezone middleware — stores the X-Timezone header (IANA timezone
+// string from the client) in AsyncLocalStorage so getEffectiveDate()
+// can compute "today" in the user's local time with a 6 AM boundary.
+app.use((req, _res, next) => {
+  const tz = req.header("X-Timezone") || "UTC";
+  timezoneStore.run(tz, () => next());
+});
 
 // ── Phase 5a: envelope-wrapped view + commands dispatchers ──
 // Mounted BEFORE legacy routes so URLs on /view/* and /commands/*

@@ -1,7 +1,10 @@
-import { forwardRef } from "react";
+import { forwardRef, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { HomeChatMessage } from "@northstar/core";
+
+/** Max number of user↔assistant exchanges to show (× 2 = messages). */
+const MAX_VISIBLE_EXCHANGES = 4;
 
 interface Props {
   messages: HomeChatMessage[];
@@ -10,10 +13,16 @@ interface Props {
 
 const HomeChatHistory = forwardRef<HTMLDivElement, Props>(
   ({ messages, isLoading }, chatEndRef) => {
-    if (messages.length === 0 && !isLoading) return null;
+    // Only show the last N exchanges so the home page stays tidy
+    const visibleMessages = useMemo(
+      () => messages.slice(-(MAX_VISIBLE_EXCHANGES * 2)),
+      [messages],
+    );
+
+    if (visibleMessages.length === 0 && !isLoading) return null;
     return (
       <div className="home-chat-history">
-        {messages.map((msg) => (
+        {visibleMessages.map((msg) => (
           <div key={msg.id} className={`home-chat-msg home-chat-${msg.role}`}>
             <div className="home-chat-bubble">
               {msg.role === "assistant" ? (

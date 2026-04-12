@@ -67,6 +67,7 @@ export async function fetchEnvelope<T>(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${getAuthToken()}`,
+        "X-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
       signal: controller.signal,

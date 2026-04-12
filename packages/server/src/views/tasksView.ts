@@ -11,6 +11,7 @@
  */
 
 import * as repos from "../repositories";
+import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
 import type {
   CalendarEvent,
   ContextualNudge,
@@ -75,16 +76,6 @@ export interface TasksView {
   /** Derived: goal-plan tasks scheduled for today that the daily-tasks
    *  LLM hasn't yet pulled into today's log. */
   pendingGoalTasks: PendingGoalTask[];
-}
-
-function todayISO(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function isoDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().split("T")[0];
 }
 
 /** Try to extract a date range from a week label like "Jan 6 – Jan 12"
@@ -252,8 +243,8 @@ function computeBigGoalProgress(goals: Goal[]): BigGoalProgress[] {
 }
 
 export async function resolveTasksView(): Promise<TasksView> {
-  const today = todayISO();
-  const rangeStart = isoDaysAgo(90);
+  const today = getEffectiveDate();
+  const rangeStart = getEffectiveDaysAgo(90);
 
   const [
     goals,
