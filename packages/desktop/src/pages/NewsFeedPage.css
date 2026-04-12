@@ -97,7 +97,7 @@
   white-space: nowrap;
   flex-shrink: 0;
   padding: 2px 6px;
-  background: rgba(108, 159, 255, 0.06);
+  background: rgba(168, 196, 240, 0.06);
   border-radius: 6px;
 }
 
@@ -120,5 +120,5 @@
   color: var(--text-muted);
   margin-top: var(--space-md);
   padding-left: 8px;
-  border-left: 2px solid rgba(108, 159, 255, 0.15);
+  border-left: 2px solid rgba(168, 196, 240, 0.15);
 }

@@ -433,7 +433,7 @@
 .cal-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(108, 159, 255, 0.08);
+  background: rgba(168, 196, 240, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;

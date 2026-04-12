@@ -30,12 +30,12 @@
 }
 
 .rich-toolbar-btn:hover {
-  background: rgba(108, 159, 255, 0.06);
+  background: rgba(168, 196, 240, 0.06);
   color: var(--text-primary);
 }
 
 .rich-toolbar-btn.active {
-  background: rgba(108, 159, 255, 0.08);
+  background: rgba(168, 196, 240, 0.08);
   color: var(--text-primary);
 }
 
@@ -89,7 +89,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(108, 159, 255, 0.08);
+  border-bottom: 1px solid rgba(168, 196, 240, 0.08);
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -111,7 +111,7 @@
 }
 
 .rich-panel-close:hover {
-  background: rgba(108, 159, 255, 0.06);
+  background: rgba(168, 196, 240, 0.06);
   color: var(--text-primary);
 }
 
@@ -142,7 +142,7 @@
 }
 
 .rich-emoji-btn:hover {
-  background: rgba(108, 159, 255, 0.06);
+  background: rgba(168, 196, 240, 0.06);
 }
 
 /* Color grid */
@@ -175,7 +175,7 @@
 }
 
 .rich-highlight-swatch {
-  border: 1px solid rgba(108, 159, 255, 0.1);
+  border: 1px solid rgba(168, 196, 240, 0.1);
 }
 
 .rich-color-swatch.no-color {
@@ -184,7 +184,7 @@
   justify-content: center;
   font-size: 12px;
   color: var(--text-muted);
-  border: 1px dashed rgba(108, 159, 255, 0.15);
+  border: 1px dashed rgba(168, 196, 240, 0.15);
 }
 
 /* ── Icon Picker ─────────────────────────────────────── */
@@ -209,7 +209,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(108, 159, 255, 0.08);
+  border-bottom: 1px solid rgba(168, 196, 240, 0.08);
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -239,11 +239,11 @@
 }
 
 .icon-picker-btn:hover {
-  background: rgba(108, 159, 255, 0.06);
+  background: rgba(168, 196, 240, 0.06);
 }
 
 .icon-picker-btn.active {
-  background: rgba(108, 159, 255, 0.08);
+  background: rgba(168, 196, 240, 0.08);
 }
 
 /* ── Goal icon button (inline in cards/sidebar) ── */
@@ -254,7 +254,7 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1px dashed rgba(108, 159, 255, 0.2);
+  border: 1px dashed rgba(168, 196, 240, 0.2);
   background: transparent;
   border-radius: 6px;
   font-size: 14px;
@@ -265,7 +265,7 @@
 }
 
 .goal-icon-btn:hover {
-  border-color: rgba(108, 159, 255, 0.4);
+  border-color: rgba(168, 196, 240, 0.4);
 }
 
 .goal-icon-btn.has-icon {

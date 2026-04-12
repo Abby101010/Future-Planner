@@ -363,7 +363,7 @@
 }
 
 .gb-month.expanded {
-  border-color: rgba(139, 92, 246, 0.4);
+  border-color: rgba(184, 164, 224, 0.4);
 }
 
 .gb-month-header {
@@ -390,7 +390,7 @@
 }
 
 .gb-month-icon {
-  color: #8b5cf6;
+  color: #b8a4e0;
 }
 
 .gb-month-right {
@@ -454,7 +454,7 @@
 }
 
 .gb-week.expanded {
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: rgba(168, 196, 240, 0.4);
 }
 
 .gb-week-header {
@@ -538,7 +538,7 @@
 }
 
 .gb-day.weekend {
-  background: rgba(59, 130, 246, 0.03);
+  background: rgba(168, 196, 240, 0.03);
   opacity: 0.7;
 }
 
@@ -581,7 +581,7 @@
 .gb-task {
   padding: 0.5rem;
   border-radius: 4px;
-  background: rgba(108, 159, 255, 0.03);
+  background: rgba(168, 196, 240, 0.03);
 }
 
 .gb-task-title {

@@ -32,7 +32,7 @@
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
-  background: rgba(108, 159, 255, 0.12);
+  background: rgba(168, 196, 240, 0.12);
   transition: all 0.3s ease;
 }
 
@@ -71,7 +71,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(108, 159, 255, 0.15);
+  border: 1px solid rgba(168, 196, 240, 0.15);
   box-shadow: 0 4px 16px rgba(var(--neon-blue-raw), 0.1);
 }
 
