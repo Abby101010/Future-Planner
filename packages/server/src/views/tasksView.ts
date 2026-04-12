@@ -87,10 +87,51 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
+/** Try to extract a date range from a week label like "Jan 6 – Jan 12"
+ *  or "Apr 6 - Apr 12". Returns [startISO, endISO] or null. */
+function parseWeekLabelRange(
+  weekLabel: string,
+  referenceYear: number,
+): [string, string] | null {
+  // Match patterns: "Jan 6 – Jan 12", "Apr 6 - Apr 12", "January 6 – January 12"
+  const m = weekLabel.match(
+    /([A-Za-z]+)\s+(\d{1,2})\s*[–\-]\s*([A-Za-z]+)\s+(\d{1,2})/,
+  );
+  if (!m) return null;
+  const parse = (mon: string, day: string): string | null => {
+    // Try with reference year first, then next year for Dec→Jan wraps
+    for (const yr of [referenceYear, referenceYear + 1]) {
+      const d = new Date(`${mon} ${day}, ${yr}`);
+      if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+    }
+    return null;
+  };
+  const start = parse(m[1], m[2]);
+  const end = parse(m[3], m[4]);
+  if (!start || !end) return null;
+  return [start, end];
+}
+
+/** Check whether `today` falls within the parent week's date range.
+ *  Returns true (inside), false (outside), or null (can't determine). */
+function todayInWeek(weekLabel: string, today: string): boolean | null {
+  const yr = new Date(`${today}T00:00:00`).getFullYear();
+  const range = parseWeekLabelRange(weekLabel, yr);
+  if (!range) return null; // label is "Week 1" etc. — can't tell
+  return today >= range[0] && today <= range[1];
+}
+
 /** Plan generators emit day labels in several shapes ("Monday", "Mon",
  *  "Jan 6", "2026-04-11", etc.). Match against today leniently so the
- *  page surfaces plan tasks regardless of generator style. */
-function dayMatchesToday(rawLabel: string, today: string): boolean {
+ *  page surfaces plan tasks regardless of generator style.
+ *  `weekLabel` is the parent GoalPlanWeek.label — when it contains a
+ *  date range (e.g. "Jan 6 – Jan 12") we use it to avoid matching a
+ *  "Monday" in a different week. */
+function dayMatchesToday(
+  rawLabel: string,
+  today: string,
+  weekLabel?: string,
+): boolean {
   const label = rawLabel.toLowerCase().trim();
   if (!label) return false;
   const d = new Date(`${today}T00:00:00`);
@@ -104,11 +145,29 @@ function dayMatchesToday(rawLabel: string, today: string): boolean {
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
     .toLowerCase();
   const monthDayPadded = monthDay.replace(/\s(\d)$/, " 0$1");
+
+  // Exact ISO date match — always unambiguous
   if (label === today || label.includes(today)) return true;
-  if (label === weekdayLong || label === weekdayShort) return true;
-  if (label.startsWith(`${weekdayShort} `)) return true;
+  // Month+day match (e.g. "Jan 6", "Apr 11") — also unambiguous within a year
   if (label === monthDay || label.includes(monthDay)) return true;
   if (label === monthDayPadded || label.includes(monthDayPadded)) return true;
+
+  // Weekday-only labels ("Monday", "Mon") are AMBIGUOUS — the same name
+  // repeats every week. Use the parent week's date range to disambiguate.
+  const isWeekdayMatch =
+    label === weekdayLong ||
+    label === weekdayShort ||
+    label.startsWith(`${weekdayShort} `);
+  if (isWeekdayMatch) {
+    if (weekLabel) {
+      const inWeek = todayInWeek(weekLabel, today);
+      if (inWeek === true) return true;
+      if (inWeek === false) return false;
+      // null = couldn't parse range → fall through to legacy match
+    }
+    return true;
+  }
+
   return false;
 }
 
@@ -130,7 +189,7 @@ function computePendingGoalTasks(
         for (const week of month.weeks) {
           if (week.locked) continue;
           for (const day of week.days) {
-            if (!dayMatchesToday(day.label, today)) continue;
+            if (!dayMatchesToday(day.label, today, week.label)) continue;
             for (const tk of day.tasks) {
               if (tk.completed) continue;
               if (consumed.has(tk.id)) continue;

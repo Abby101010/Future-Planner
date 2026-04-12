@@ -82,14 +82,47 @@ export async function generateDailyTasks(
   const todayWeekdayShort = d.toLocaleDateString("en-US", { weekday: "short" }).toLowerCase();
   const todayMonthDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase();
   const todayMonthDayPadded = todayMonthDay.replace(/\s(\d)$/, " 0$1");
-  const dayMatchesToday = (rawLabel: string): boolean => {
+
+  /** Try to extract a date range from a week label like "Jan 6 – Jan 12". */
+  const parseWeekRange = (weekLabel: string): [string, string] | null => {
+    const m = weekLabel.match(
+      /([A-Za-z]+)\s+(\d{1,2})\s*[–\-]\s*([A-Za-z]+)\s+(\d{1,2})/,
+    );
+    if (!m) return null;
+    const yr = d.getFullYear();
+    const parse = (mon: string, dy: string): string | null => {
+      for (const y of [yr, yr + 1]) {
+        const dt = new Date(`${mon} ${dy}, ${y}`);
+        if (!isNaN(dt.getTime())) return dt.toISOString().split("T")[0];
+      }
+      return null;
+    };
+    const s = parse(m[1], m[2]);
+    const e = parse(m[3], m[4]);
+    return s && e ? [s, e] : null;
+  };
+
+  const dayMatchesToday = (rawLabel: string, weekLabel?: string): boolean => {
     const label = rawLabel.toLowerCase().trim();
     if (!label) return false;
+    // Exact ISO date match — always unambiguous
     if (label === date || label.includes(date)) return true;
-    if (label === todayWeekdayLong || label === todayWeekdayShort) return true;
-    if (label.startsWith(`${todayWeekdayShort} `)) return true;
+    // Month+day match (e.g. "Jan 6", "Apr 11") — unambiguous within a year
     if (label === todayMonthDay || label === todayMonthDayPadded) return true;
     if (label.includes(todayMonthDay) || label.includes(todayMonthDayPadded)) return true;
+
+    // Weekday-only labels are AMBIGUOUS — use parent week range to disambiguate
+    const isWeekdayMatch =
+      label === todayWeekdayLong ||
+      label === todayWeekdayShort ||
+      label.startsWith(`${todayWeekdayShort} `);
+    if (isWeekdayMatch) {
+      if (weekLabel) {
+        const range = parseWeekRange(weekLabel);
+        if (range) return date >= range[0] && date <= range[1];
+      }
+      return true; // Can't determine week — fall back to match
+    }
     return false;
   };
 
@@ -111,7 +144,7 @@ export async function generateDailyTasks(
             for (const week of month.weeks) {
               if (week.locked) continue;
               for (const day of week.days) {
-                if (!dayMatchesToday(day.label)) continue;
+                if (!dayMatchesToday(day.label, week.label)) continue;
                 for (const t of day.tasks) {
                   if (t.completed) continue;
                   todayTasks.push({
@@ -472,7 +505,7 @@ export async function sendHomeChatMessage(
       hasPlan: !!g.plan,
       planConfirmed: g.planConfirmed,
     })),
-    todayTasks: todayTasks.map((t) => ({ title: t.title, completed: t.completed, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
+    todayTasks: todayTasks.map((t) => ({ id: t.id, title: t.title, completed: t.completed, skipped: !!t.skipped, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
     attachments,
   };
@@ -503,6 +536,7 @@ export type HomeChatIntent =
       };
     }
   | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
+  | { kind: "manage-task"; taskId: string; action: "complete" | "skip" | "reschedule"; taskTitle: string; rescheduleDate?: string }
   | { kind: "context-change"; suggestion: string }
   | { kind: "research"; topic: string; relatedGoalId: string };
 

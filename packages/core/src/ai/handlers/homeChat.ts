@@ -22,6 +22,7 @@ export type HomeChatIntent =
   | { kind: "reminder"; entity: ReminderShape }
   | { kind: "task"; pendingTask: PendingTaskShape }
   | { kind: "manage-goal"; goalId: string; action: string; goalTitle: string }
+  | { kind: "manage-task"; taskId: string; action: "complete" | "skip" | "reschedule"; taskTitle: string; rescheduleDate?: string }
   | { kind: "context-change"; suggestion: string }
   | { kind: "research"; topic: string; relatedGoalId: string };
 
@@ -175,8 +176,10 @@ export function buildHomeChatRequest(
     milestoneCount?: number;
   }>;
   const todayTasks = (payload.todayTasks ?? []) as Array<{
+    id: string;
     title: string;
     completed: boolean;
+    skipped?: boolean;
     cognitiveWeight?: number;
     durationMinutes?: number;
   }>;
@@ -209,7 +212,7 @@ export function buildHomeChatRequest(
       ? todayTasks
           .map(
             (t) =>
-              `- [${t.completed ? "✓" : " "}] ${t.title} (weight: ${t.cognitiveWeight || 3}, ${t.durationMinutes || 30}min)`,
+              `- [${t.completed ? "✓" : t.skipped ? "S" : " "}] "${t.title}" [taskId:${t.id}] (weight: ${t.cognitiveWeight || 3}, ${t.durationMinutes || 30}min)`,
           )
           .join("\n")
       : "No tasks today.";
@@ -442,6 +445,21 @@ export function parseHomeChatIntent(
     };
   }
 
+  if (parsed.manage_task) {
+    const rawAction = asString(parsed.action, "complete");
+    const action: "complete" | "skip" | "reschedule" =
+      rawAction === "skip" ? "skip" : rawAction === "reschedule" ? "reschedule" : "complete";
+    return {
+      kind: "manage-task",
+      taskId: asString(parsed.taskId),
+      action,
+      taskTitle: asString(parsed.taskTitle),
+      ...(action === "reschedule" && parsed.rescheduleDate
+        ? { rescheduleDate: asString(parsed.rescheduleDate) }
+        : {}),
+    };
+  }
+
   if (parsed.context_change) {
     return {
       kind: "context-change",
@@ -481,6 +499,12 @@ export function defaultReplyForIntent(intent: HomeChatIntent): string {
       return `Got it — analyzing "${intent.pendingTask.userInput}" and adding it to pending tasks.`;
     case "manage-goal":
       return `Working on "${intent.goalTitle}".`;
+    case "manage-task": {
+      if (intent.action === "complete") return `Done — I've marked "${intent.taskTitle}" as complete.`;
+      if (intent.action === "skip") return `Got it — I've skipped "${intent.taskTitle}" for today.`;
+      if (intent.action === "reschedule") return `Moved "${intent.taskTitle}" to ${intent.rescheduleDate ?? "another day"}.`;
+      return `Updated "${intent.taskTitle}".`;
+    }
     case "context-change":
       return intent.suggestion || "Noted — update your monthly context in Planning.";
     case "research":

@@ -494,6 +494,7 @@ The user is chatting with you on their home page. They might:
 5. Ask for advice or motivation
 6. Discuss their day, energy level, or blockers
 7. Ask you to research a topic related to their goals (e.g., "research meal prep for muscle gain", "look into best study techniques", "find out about HIIT workouts")
+8. Manage their existing tasks (e.g., "mark the reading task done", "skip the workout", "move that task to tomorrow", "these tasks are for tomorrow not today")
 
 DETECTION RULES:
 - If the user is clearly adding a task or errand (no specific time), respond with a JSON block:
@@ -534,6 +535,17 @@ DETECTION RULES:
   - "archive" = mark as archived
   - Match the user's request to the closest goal by title. If ambiguous, ask which goal they mean.
   - If a goal has no plan (hasPlan: false), suggest refreshing it.
+- If the user wants to MANAGE an existing task (complete it, skip it, move it to another day,
+  remove it from today, reschedule it), respond with ONLY this JSON:
+  {"manage_task": true, "taskId": "the task's ID from context", "action": "complete|skip|reschedule", "taskTitle": "task title for confirmation", "rescheduleDate": "YYYY-MM-DD (only for reschedule)"}
+  RULES for task management:
+  - You can see the user's today tasks with their IDs ([taskId:...]) in the context.
+  - "complete" = mark the task as done (user says "done", "finished", "completed", "I did it")
+  - "skip" = skip the task for today (user says "skip", "not doing it today", "remove from today", "I'll pass")
+  - "reschedule" = move to another day. Use today's date to resolve relative dates ("tomorrow", "Friday"). Include rescheduleDate for reschedule actions.
+  - Match the user's request to the closest task by title. If ambiguous, ask which task they mean.
+  - If the user says tasks "are for tomorrow" or "should be tomorrow", that means reschedule those tasks.
+  - You can handle multiple tasks at once — but emit ONE manage_task JSON per task. For bulk operations, handle the FIRST matching task and confirm.
 - If the user mentions a significant context change (schedule shift, new deadline, cancelled plans,
   energy change, illness, unexpected free time, etc.), respond with:
   {"context_change": true, "summary": "brief description of what changed", "suggestion": "what you recommend"}

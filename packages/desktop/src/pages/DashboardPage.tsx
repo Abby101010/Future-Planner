@@ -423,6 +423,53 @@ export default function DashboardPage() {
             }
             break;
           }
+          case "manage-task": {
+            const intent = result.intent;
+            const matchedTask = todayFlatTasks.find((t) => t.id === intent.taskId);
+            if (!matchedTask) {
+              displayText = `I couldn't find that task. Could you clarify which task you mean?`;
+            } else if (intent.action === "complete") {
+              await run("command:toggle-task", { taskId: intent.taskId });
+              displayText = `Done — I've marked "${matchedTask.title}" as complete.`;
+            } else if (intent.action === "skip") {
+              await run("command:skip-task", { taskId: intent.taskId });
+              displayText = `Got it — I've skipped "${matchedTask.title}" for today.`;
+            } else if (intent.action === "reschedule") {
+              // Skip the task from today (removes it from today's list)
+              await run("command:skip-task", { taskId: intent.taskId });
+              // If there's a reschedule date, create a new task for that date
+              if (intent.rescheduleDate) {
+                const dateStr = new Date(intent.rescheduleDate + "T12:00:00").toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                });
+                // Create a pending task then immediately confirm it so it
+                // becomes a real daily_task on the target date.
+                const pendingId = crypto.randomUUID();
+                await run("command:create-pending-task", {
+                  id: pendingId,
+                  userInput: matchedTask.title,
+                  status: "ready",
+                  analysis: {
+                    title: matchedTask.title,
+                    description: matchedTask.description || "",
+                    suggestedDate: intent.rescheduleDate,
+                    durationMinutes: matchedTask.durationMinutes || 30,
+                    cognitiveWeight: matchedTask.cognitiveWeight || 3,
+                    priority: matchedTask.priority || "should-do",
+                    category: matchedTask.category || "planning",
+                    reasoning: `Rescheduled from today via home chat`,
+                  },
+                });
+                await run("command:confirm-pending-task", { pendingId });
+                displayText = `Moved "${matchedTask.title}" to ${dateStr}.`;
+              } else {
+                displayText = `Removed "${matchedTask.title}" from today's tasks.`;
+              }
+            }
+            break;
+          }
           case "context-change": {
             displayText = result.intent.suggestion
               ? `I noticed a change in your situation. ${result.intent.suggestion}\n\nYou can update your monthly context in the Planning tab.`
