@@ -79,6 +79,11 @@ export interface HomeChatPayload extends EnrichedPayload {
   todayCalendarEvents?: LooseRow[];
   activeReminders?: LooseRow[];
   attachments?: LooseRow[];
+  /** Caller-supplied effective "today" (6 AM boundary + timezone). When
+   *  absent, the parser falls back to UTC — prefer always passing this
+   *  from the server so reminder/event dates land on the same day the
+   *  TasksView filters on. */
+  todayDate?: string;
 }
 
 export interface RecoveryPayload extends EnrichedPayload {

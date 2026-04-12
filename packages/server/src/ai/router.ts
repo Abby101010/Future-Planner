@@ -39,6 +39,7 @@ import { handleRecovery } from "./handlers/recovery";
 import { handlePaceCheck } from "./handlers/paceCheck";
 import { handleAnalyzeQuickTask } from "./handlers/analyzeQuickTask";
 import { handleNewsBriefing } from "./handlers/newsBriefing";
+import { getEffectiveDate } from "../dateUtils";
 
 // Agnostic handlers — live in @northstar/core/handlers (server-only subpath).
 // They pull in @anthropic-ai/sdk + node:crypto, so they must NOT come from
@@ -124,8 +125,14 @@ export async function handleAIRequestDirect(
       return handleAnalyzeQuickTask(client, p as AIPayloadMap["analyze-quick-task"], memoryContext);
     case "analyze-monthly-context":
       return handleAnalyzeMonthlyContext(client, p as AIPayloadMap["analyze-monthly-context"], memoryContext);
-    case "home-chat":
-      return handleHomeChat(client, p as AIPayloadMap["home-chat"], memoryContext);
+    case "home-chat": {
+      // Stamp effective "today" (6 AM boundary + TZ) so reminder/event
+      // intents parsed from the chat reply land on the same calendar
+      // day tasksView.ts filters against.
+      const homePayload = p as AIPayloadMap["home-chat"];
+      if (!homePayload.todayDate) homePayload.todayDate = getEffectiveDate();
+      return handleHomeChat(client, homePayload, memoryContext);
+    }
     case "news-briefing":
       return handleNewsBriefing(client, p as { goals: Array<{ id: string; title: string; description?: string; targetDate?: string; isHabit?: boolean }>; topic?: string }, memoryContext);
   }

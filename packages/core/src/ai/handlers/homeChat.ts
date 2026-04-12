@@ -360,11 +360,15 @@ ${remindersSummary}`;
 export function parseHomeChatIntent(
   chatText: string,
   userInput: string,
+  todayDate?: string,
 ): HomeChatIntent | null {
   const parsed = tryExtractJson(chatText);
   if (!parsed) return null;
 
   const nowIso = () => new Date().toISOString();
+  // Prefer the caller's effective "today" (server computes it via the
+  // 6 AM day-boundary + timezone), falling back to UTC if unavailable.
+  const effectiveToday = todayDate ?? nowIso().split("T")[0];
 
   if (parsed.is_event) {
     const startDate = asString(parsed.startDate, nowIso());
@@ -435,13 +439,12 @@ export function parseHomeChatIntent(
   }
 
   if (parsed.is_reminder) {
-    const today = nowIso().split("T")[0];
     const reminder: ReminderShape = {
       id: randomUUID(),
       title: asString(parsed.title, userInput),
       description: asString(parsed.description),
-      reminderTime: asString(parsed.reminderTime, `${today}T09:00:00`),
-      date: asString(parsed.date, today),
+      reminderTime: asString(parsed.reminderTime, `${effectiveToday}T09:00:00`),
+      date: asString(parsed.date, effectiveToday),
       acknowledged: false,
       repeat: typeof parsed.repeat === "string" ? parsed.repeat : null,
       source: "chat",
@@ -557,7 +560,7 @@ export async function handleHomeChat(
   const chatText =
     response.content[0].type === "text" ? response.content[0].text.trim() : "";
 
-  const intent = parseHomeChatIntent(chatText, userInput);
+  const intent = parseHomeChatIntent(chatText, userInput, payload.todayDate);
   // If the LLM returned a structured intent, don't echo the raw JSON back
   // as the chat reply — replace it with a human-readable confirmation.
   const reply = intent ? defaultReplyForIntent(intent) : chatText;

@@ -24,6 +24,7 @@ import { applyPlanPatch } from "@northstar/core";
 import * as chatRepo from "../repositories/chatRepo";
 import * as repos from "../repositories";
 import { emitViewInvalidate } from "../ws/events";
+import { getEffectiveDate } from "../dateUtils";
 
 export const aiRouter = Router();
 
@@ -296,6 +297,11 @@ aiRouter.post(
     }
 
     const payload = (req.body ?? {}) as AIPayloadMap["home-chat"];
+    // Stamp effective "today" so the intent parser lands on the same date
+    // the TasksView filter uses (6 AM boundary + TZ). Without this, a
+    // reminder created at 00:30 local gets stored for the wrong calendar
+    // day and silently drops out of tasksView.todayReminders.
+    payload.todayDate = getEffectiveDate();
     // Enrich with weather + environment context
     const envRaw = (payload as unknown as Record<string, unknown>)._environmentContext as ClientEnvironment | undefined;
     await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
@@ -332,7 +338,7 @@ aiRouter.post(
 
       await stream.finalMessage();
       const trimmed = fullText.trim();
-      const intent = parseHomeChatIntent(trimmed, payload.userInput);
+      const intent = parseHomeChatIntent(trimmed, payload.userInput, payload.todayDate);
       send("done", { reply: trimmed, intent });
     } catch (err) {
       send("error", {
