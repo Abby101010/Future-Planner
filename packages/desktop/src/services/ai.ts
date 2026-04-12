@@ -29,6 +29,7 @@ import type {
   Reminder,
 } from "@northstar/core";
 import { cloudInvoke } from "./cloudTransport";
+import { collectEnvironment } from "./environment";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("ai:service");
@@ -38,6 +39,16 @@ async function aiRequest<T = unknown>(
   payload: Record<string, unknown>,
 ): Promise<T> {
   log.debug(`submit ${type}`, { payloadKeys: Object.keys(payload) });
+
+  // Attach environment snapshot (local time, timezone, GPS) so the
+  // server can enrich the payload with weather + location context.
+  try {
+    const env = await collectEnvironment();
+    payload._environmentContext = env;
+  } catch {
+    // Environment is best-effort — never block an AI request
+  }
+
   const started = Date.now();
   try {
     const result = await cloudInvoke<T>(`ai:${type}`, payload);
@@ -519,6 +530,15 @@ export async function sendHomeChatMessage(
     })),
     attachments,
   };
+
+  // Attach environment snapshot for weather/time awareness
+  try {
+    const env = await collectEnvironment();
+    (payload as Record<string, unknown>)._environmentContext = env;
+  } catch {
+    // best-effort
+  }
+
   return cloudInvoke<HomeChatResult>("ai:home-chat", payload);
 }
 

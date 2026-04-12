@@ -12,7 +12,7 @@
    No IPC handlers are registered here anymore.
    ────────────────────────────────────────────────────────── */
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { initAutoUpdater } from "./auto-updater";
@@ -84,6 +84,14 @@ app.on("activate", () => {
 });
 
 app.whenReady().then(async () => {
+  // Grant geolocation permission so the renderer can collect GPS
+  // coordinates for weather-aware task scheduling.
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      callback(permission === "geolocation");
+    },
+  );
+
   createWindow();
   initAutoUpdater(mainWindow);
 });

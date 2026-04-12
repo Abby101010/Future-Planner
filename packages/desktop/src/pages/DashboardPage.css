@@ -336,11 +336,14 @@
 }
 
 .home-chat-user .home-chat-bubble {
-  background: var(--accent-gradient);
-  color: white;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: var(--text-primary);
+  border: 1.5px solid var(--accent);
   border-bottom-right-radius: 4px;
   white-space: pre-wrap;
-  box-shadow: 0 2px 12px rgba(var(--neon-blue-raw), 0.2);
+  box-shadow: 0 2px 8px rgba(var(--neon-blue-raw), 0.1);
 }
 
 .home-chat-assistant .home-chat-bubble {

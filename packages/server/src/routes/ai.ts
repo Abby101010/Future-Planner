@@ -10,6 +10,7 @@ import { Router } from "express";
 import { handleAIRequest, type RequestType } from "../ai/router";
 import { asyncHandler } from "../middleware/errorHandler";
 import { loadMemory, buildMemoryContext } from "../memory";
+import { enrichWithEnvironment, type ClientEnvironment } from "../environment";
 import { getClient } from "../ai/client";
 import {
   buildHomeChatRequest,
@@ -56,6 +57,9 @@ function makeAIRoute(channel: string, type: RequestType) {
     `/${channel}`,
     asyncHandler(async (req, res) => {
       const payload = (req.body ?? {}) as Record<string, unknown>;
+      // Enrich payload with weather + formatted environment context
+      const env = payload._environmentContext as ClientEnvironment | undefined;
+      await enrichWithEnvironment(payload, env);
       // Load the user's memory store and build a personalization block to
       // inject into the AI prompt. Channels with no useful memory mapping
       // fall back to "general".
@@ -96,6 +100,9 @@ aiRouter.post(
   "/home-chat",
   asyncHandler(async (req, res) => {
     const payload = (req.body ?? {}) as Record<string, unknown>;
+    // Enrich with weather + environment context
+    const env = payload._environmentContext as ClientEnvironment | undefined;
+    await enrichWithEnvironment(payload, env);
     const memory = await loadMemory(req.userId);
     const memoryContext = buildMemoryContext(memory, "general");
     const result = (await handleAIRequest(
@@ -158,6 +165,9 @@ aiRouter.post(
   "/daily-tasks",
   asyncHandler(async (req, res) => {
     const payload = (req.body ?? {}) as Record<string, unknown>;
+    // Enrich with weather + environment context
+    const env = payload._environmentContext as ClientEnvironment | undefined;
+    await enrichWithEnvironment(payload, env);
     const memory = await loadMemory(req.userId);
     const memoryContext = buildMemoryContext(memory, "daily");
     const result = (await handleAIRequest(
@@ -286,6 +296,9 @@ aiRouter.post(
     }
 
     const payload = (req.body ?? {}) as AIPayloadMap["home-chat"];
+    // Enrich with weather + environment context
+    const envRaw = (payload as unknown as Record<string, unknown>)._environmentContext as ClientEnvironment | undefined;
+    await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
     const memory = await loadMemory(req.userId);
     const memoryContext = buildMemoryContext(memory, "general");
     const request = buildHomeChatRequest(payload, memoryContext);
