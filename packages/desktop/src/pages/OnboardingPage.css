@@ -32,17 +32,18 @@
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
-  background: rgba(0, 0, 0, 0.08);
+  background: rgba(108, 159, 255, 0.12);
   transition: all 0.3s ease;
 }
 
 .onboarding-progress-dot--active {
   width: 24px;
-  background: var(--text-primary);
+  background: var(--accent-gradient);
+  box-shadow: 0 0 8px rgba(var(--neon-blue-raw), 0.3);
 }
 
 .onboarding-progress-dot--done {
-  background: var(--text-muted);
+  background: var(--accent);
 }
 
 /* Step cards */
@@ -65,11 +66,13 @@
   width: 56px;
   height: 56px;
   border-radius: var(--radius-xl);
-  background: var(--accent-soft);
+  background: var(--accent-gradient-soft);
   color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid rgba(108, 159, 255, 0.15);
+  box-shadow: 0 4px 16px rgba(var(--neon-blue-raw), 0.1);
 }
 
 .onboarding-step-icon--done {

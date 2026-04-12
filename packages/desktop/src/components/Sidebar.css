@@ -1,15 +1,19 @@
-/* Sidebar styles */
+/* Sidebar styles — Frosted glass */
 
 .sidebar {
   width: var(--sidebar-width);
   height: 100%;
-  background: #ffffff;
-  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(30px) saturate(1.2);
+  -webkit-backdrop-filter: blur(30px) saturate(1.2);
+  border-right: 1px solid rgba(255, 255, 255, 0.5);
   display: flex;
   flex-direction: column;
   padding-top: var(--titlebar-height);
   flex-shrink: 0;
   user-select: none;
+  z-index: 2;
+  box-shadow: 1px 0 20px rgba(108, 159, 255, 0.04);
 }
 
 .sidebar-brand {
@@ -62,19 +66,19 @@
 }
 
 .sidebar-item:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(108, 159, 255, 0.06);
   color: var(--text-primary);
 }
 
 .sidebar-item.active {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--text-primary);
+  background: var(--accent-gradient-soft);
+  color: var(--accent);
   font-weight: 500;
 }
 
 .sidebar-footer {
   padding: var(--space-lg);
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .sidebar-user {
@@ -91,7 +95,7 @@
 
 .sidebar-divider {
   height: 1px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(108, 159, 255, 0.08);
   margin: var(--space-sm) var(--space-md);
 }
 
@@ -127,8 +131,8 @@
 .sidebar-goal-progress {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.04);
+  color: var(--accent);
+  background: rgba(108, 159, 255, 0.08);
   padding: 1px 6px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
@@ -138,7 +142,7 @@
 .sidebar-count {
   font-size: 10px;
   font-weight: 600;
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(108, 159, 255, 0.08);
   padding: 1px 6px;
   border-radius: var(--radius-full);
   color: var(--text-muted);
@@ -152,7 +156,7 @@
   gap: 6px;
   padding: 8px 10px;
   margin-bottom: 8px;
-  background: var(--accent, #3b82f6);
+  background: var(--accent-gradient);
   color: white;
   border: none;
   border-radius: var(--radius-md, 8px);
@@ -162,6 +166,7 @@
   width: 100%;
   text-align: left;
   transition: transform 0.1s ease, opacity 0.15s ease;
+  box-shadow: 0 2px 12px rgba(var(--neon-blue-raw), 0.25);
 }
 .sidebar-update-badge:hover {
   opacity: 0.9;

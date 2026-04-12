@@ -5,8 +5,10 @@
   align-items: center;
   gap: 2px;
   padding: 3px 4px;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-sm);
   position: relative;
 }
@@ -28,12 +30,12 @@
 }
 
 .rich-toolbar-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(108, 159, 255, 0.06);
   color: var(--text-primary);
 }
 
 .rich-toolbar-btn.active {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(108, 159, 255, 0.08);
   color: var(--text-primary);
 }
 
@@ -71,10 +73,12 @@
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   animation: fadeIn 0.15s ease;
   min-width: 200px;
@@ -85,7 +89,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(108, 159, 255, 0.08);
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -107,7 +111,7 @@
 }
 
 .rich-panel-close:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(108, 159, 255, 0.06);
   color: var(--text-primary);
 }
 
@@ -138,7 +142,7 @@
 }
 
 .rich-emoji-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(108, 159, 255, 0.06);
 }
 
 /* Color grid */
@@ -171,7 +175,7 @@
 }
 
 .rich-highlight-swatch {
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(108, 159, 255, 0.1);
 }
 
 .rich-color-swatch.no-color {
@@ -180,7 +184,7 @@
   justify-content: center;
   font-size: 12px;
   color: var(--text-muted);
-  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border: 1px dashed rgba(108, 159, 255, 0.15);
 }
 
 /* ── Icon Picker ─────────────────────────────────────── */
@@ -189,10 +193,12 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   animation: fadeIn 0.15s ease;
   width: 240px;
@@ -203,7 +209,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(108, 159, 255, 0.08);
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -233,11 +239,11 @@
 }
 
 .icon-picker-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(108, 159, 255, 0.06);
 }
 
 .icon-picker-btn.active {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(108, 159, 255, 0.08);
 }
 
 /* ── Goal icon button (inline in cards/sidebar) ── */
@@ -248,7 +254,7 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border: 1px dashed rgba(108, 159, 255, 0.2);
   background: transparent;
   border-radius: 6px;
   font-size: 14px;
@@ -259,7 +265,7 @@
 }
 
 .goal-icon-btn:hover {
-  border-color: rgba(0, 0, 0, 0.25);
+  border-color: rgba(108, 159, 255, 0.4);
 }
 
 .goal-icon-btn.has-icon {
@@ -272,7 +278,7 @@
   max-width: 100%;
   max-height: 200px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   margin: var(--space-sm) 0;
   object-fit: contain;
 }

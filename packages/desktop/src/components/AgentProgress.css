@@ -4,8 +4,10 @@
    ────────────────────────────────────────────────────────── */
 
 .agent-progress {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-md);
   padding: 14px 16px;
   margin: 12px 0;
@@ -13,11 +15,11 @@
 }
 
 .agent-progress--done {
-  border-color: var(--border);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .agent-progress--error {
-  border-color: var(--border);
+  border-color: rgba(248, 113, 113, 0.2);
 }
 
 @keyframes agentFadeIn {
@@ -55,13 +57,13 @@
 
 .agent-progress__bar {
   height: 100%;
-  background: var(--text-primary);
+  background: var(--accent-gradient);
   border-radius: 1px;
   transition: width 0.5s ease;
 }
 
 .agent-progress--done .agent-progress__bar {
-  background: var(--text-primary);
+  background: var(--accent-gradient);
 }
 
 /* Events stream */

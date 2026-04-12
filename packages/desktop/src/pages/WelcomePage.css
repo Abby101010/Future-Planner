@@ -1,4 +1,4 @@
-/* Welcome page styles */
+/* Welcome page styles — Dreamy frosted glass */
 
 .welcome {
   width: 100%;
@@ -17,14 +17,17 @@
   top: -200px;
   left: 50%;
   transform: translateX(-50%);
-  width: 600px;
-  height: 600px;
+  width: 700px;
+  height: 700px;
   background: radial-gradient(
     circle,
-    rgba(115, 100, 227, 0.08) 0%,
+    rgba(108, 159, 255, 0.12) 0%,
+    rgba(255, 179, 108, 0.06) 50%,
     transparent 70%
   );
   pointer-events: none;
+  filter: blur(40px);
+  animation: ambientDrift 20s ease-in-out infinite alternate;
 }
 
 .welcome-content {
@@ -40,9 +43,13 @@
   width: 88px;
   height: 88px;
   border-radius: var(--radius-xl);
-  background: var(--accent-soft);
+  background: var(--accent-gradient-soft);
   color: var(--accent);
   margin-bottom: var(--space-xl);
+  box-shadow: 0 8px 32px rgba(var(--neon-blue-raw), 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .welcome-title {
@@ -88,11 +95,12 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-full);
-  background: var(--accent-soft);
+  background: var(--accent-gradient-soft);
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;
+  border: 1px solid rgba(108, 159, 255, 0.15);
 }
 
 .welcome-cta {

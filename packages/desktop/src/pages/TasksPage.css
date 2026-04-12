@@ -126,12 +126,12 @@
 .bonus-tasks-divider::after {
   content: "";
   flex: 1;
-  border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+  border-bottom: 1px dashed rgba(108, 159, 255, 0.15);
 }
 
 .tasks-list-bonus .task-card {
   opacity: 0.75;
-  border-left: 2px dashed rgba(99, 102, 241, 0.2);
+  border-left: 2px dashed rgba(108, 159, 255, 0.25);
 }
 .tasks-list-bonus .task-card:hover {
   opacity: 1;
@@ -144,10 +144,13 @@
   align-items: center;
   gap: var(--space-sm);
   padding: 8px var(--space-md);
-  background: rgba(251, 191, 36, 0.06);
+  background: rgba(240, 180, 41, 0.08);
   border-radius: var(--radius-md);
   color: var(--yellow);
   font-size: 12px;
+  border: 1px solid rgba(240, 180, 41, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .vacation-banner svg {
@@ -211,10 +214,10 @@
 }
 
 .progress-bar-fill.complete {
-  background: linear-gradient(90deg, var(--green), #10b981);
+  background: linear-gradient(90deg, var(--green), #6cdfb0);
 }
 
-/* ── Reminders — neon minimalistic ── */
+/* ── Reminders — neon frosted glass ── */
 
 .reminders-section {
   display: flex;
@@ -228,7 +231,7 @@
   align-items: center;
   gap: var(--space-sm);
   font-size: 11px;
-  color: #00d4ff;
+  color: var(--neon-blue);
   text-transform: uppercase;
   letter-spacing: 1.2px;
   font-weight: 600;
@@ -240,21 +243,25 @@
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-sm) var(--space-md);
-  border: 1px solid rgba(0, 212, 255, 0.12);
+  border: 1px solid rgba(var(--neon-blue-raw), 0.15);
   border-radius: var(--radius-md);
-  background: var(--bg-card);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   transition: all var(--transition-fast);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .reminder-card:hover {
-  border-color: rgba(0, 212, 255, 0.28);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.06);
+  border-color: rgba(var(--neon-blue-raw), 0.3);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .reminder-card-active {
-  border-color: rgba(0, 212, 255, 0.35);
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.1), 0 0 4px rgba(0, 212, 255, 0.15);
+  border-color: rgba(var(--neon-blue-raw), 0.4);
+  box-shadow: 0 0 20px rgba(var(--neon-blue-raw), 0.1), var(--shadow-md);
 }
 
 .reminder-card-glow {
@@ -263,12 +270,12 @@
   left: 0;
   width: 3px;
   height: 100%;
-  background: linear-gradient(180deg, #00d4ff, #0099cc);
-  box-shadow: 0 0 6px rgba(0, 212, 255, 0.3);
+  background: var(--accent-gradient);
+  box-shadow: 0 0 8px rgba(var(--neon-blue-raw), 0.3);
 }
 
 .reminder-card-active .reminder-card-glow {
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5), 0 0 20px rgba(0, 212, 255, 0.15);
+  box-shadow: 0 0 12px rgba(var(--neon-blue-raw), 0.5), 0 0 24px rgba(var(--neon-orange-raw), 0.15);
   animation: neon-pulse 2s ease-in-out infinite;
 }
 
@@ -290,7 +297,7 @@
   align-items: center;
   gap: var(--space-xs);
   font-size: 11px;
-  color: #00d4ff;
+  color: var(--neon-blue);
   font-weight: 500;
 }
 
@@ -298,8 +305,8 @@
   font-size: 10px;
   padding: 1px 6px;
   border-radius: var(--radius-full);
-  background: rgba(0, 212, 255, 0.06);
-  color: #00b8d9;
+  background: rgba(var(--neon-blue-raw), 0.08);
+  color: var(--accent);
 }
 
 .reminder-card-title {
@@ -319,17 +326,17 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border: 1px solid rgba(var(--neon-blue-raw), 0.2);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: #00d4ff;
+  color: var(--neon-blue);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .reminder-acknowledge-btn:hover {
-  background: rgba(0, 212, 255, 0.06);
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.12);
+  background: rgba(var(--neon-blue-raw), 0.08);
+  box-shadow: 0 0 10px rgba(var(--neon-blue-raw), 0.12);
 }
 
 /* ── All Tasks (collapsible) ── */
@@ -344,18 +351,21 @@
   gap: var(--space-sm);
   width: 100%;
   padding: var(--space-sm) var(--space-md);
-  background: transparent;
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  transition: background var(--transition-fast);
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .all-tasks-toggle:hover {
-  background: rgba(0, 0, 0, 0.02);
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: var(--shadow-sm);
 }
 
 .all-tasks-badge {
@@ -363,16 +373,19 @@
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
-  background: rgba(251, 191, 36, 0.1);
+  background: rgba(240, 180, 41, 0.1);
   padding: 2px 8px;
   border-radius: var(--radius-full);
 }
 
 .all-tasks-list {
   margin-top: var(--space-sm);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-md);
   overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .all-tasks-date-group {
