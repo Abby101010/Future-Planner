@@ -45,6 +45,7 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "classify-goal": "light",
   "analyze-quick-task": "light",
   "analyze-monthly-context": "light",
+  "news-briefing": "light",
   "reflection": "light",         // reflection engine
   "coordinator": "light",        // coordinator's own calls (routing only)
 };

@@ -719,6 +719,18 @@ PLAN MODIFICATION RULES (when a plan already exists) — READ CAREFULLY:
   "start over", "completely redo", "throw this away". Tweaks, additions, swaps, lighter/heavier,
   re-ordering, removing one thing — those are ALL patches.
 
+HOW PATCHING WORKS — this is critical:
+- When you include a day in your patch, its "tasks" array REPLACES the existing tasks for
+  that day entirely. Tasks you omit from the array are REMOVED. Tasks you include are kept.
+- TO REMOVE A TASK: include the day in your patch with a "tasks" array that contains only
+  the tasks you want to KEEP. Omit the tasks you want to delete.
+- TO REMOVE ALL TASKS FROM A DAY: include the day with "tasks": [].
+- Days you do NOT mention in the patch remain untouched — their tasks stay as they are.
+- Example: if Day "Monday" has tasks A, B, C and the user says "remove task B", your patch
+  should include Monday with tasks [A, C] (keeping their original ids and fields).
+- ALWAYS include a planPatch when the user asks you to change, add, remove, swap, or
+  modify any tasks. Never respond with planPatch: null if the user asked for a change.
+
 WHEN THE USER CONFIRMS or says something like "looks good", "let's go", "confirm", "start":
 You MUST include a structured plan in your response using the HIERARCHICAL format below.
 
@@ -737,7 +749,7 @@ Respond ONLY with valid JSON:
   "planPatch": null
 }
 
-For targeted changes when a plan already exists:
+For targeted changes when a plan already exists (e.g. modifying or adding tasks):
 {
   "reply": "I've adjusted week 2 to be lighter...",
   "planReady": false,
@@ -755,6 +767,41 @@ For targeted changes when a plan already exists:
                 "id": "week-2",
                 "objective": "NEW objective (rest of fields unchanged)",
                 "days": [...]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+For REMOVING tasks (e.g. user says "remove task B from Monday"):
+Include the day with only the tasks to KEEP — omitted tasks are deleted:
+{
+  "reply": "Done — I've removed task B from Monday.",
+  "planReady": false,
+  "plan": null,
+  "planPatch": {
+    "years": [
+      {
+        "id": "<year-id>",
+        "months": [
+          {
+            "id": "<month-id>",
+            "weeks": [
+              {
+                "id": "<week-id>",
+                "days": [
+                  {
+                    "id": "<monday-id>",
+                    "label": "Monday",
+                    "tasks": [
+                      { "id": "<task-A-id>", "title": "Task A (kept)", "description": "...", "durationMinutes": 30, "priority": "must-do", "category": "learning", "completed": false },
+                      { "id": "<task-C-id>", "title": "Task C (kept)", "description": "...", "durationMinutes": 20, "priority": "should-do", "category": "exercise", "completed": false }
+                    ]
+                  }
+                ]
               }
             ]
           }

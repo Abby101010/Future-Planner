@@ -514,3 +514,20 @@ export interface HomeChatResult {
   assistantMessageId?: string;
 }
 
+// ── News Briefing ────────────────────────────────────────
+
+export async function fetchNewsBriefing(
+  goals: Array<{
+    id: string;
+    title: string;
+    description?: string;
+    targetDate?: string;
+    isHabit?: boolean;
+  }>,
+): Promise<import("@northstar/core").NewsBriefing> {
+  return aiRequest<import("@northstar/core").NewsBriefing>(
+    "news-briefing",
+    { goals },
+  );
+}
+

@@ -62,6 +62,7 @@ export const CLOUD_CHANNELS: ReadonlySet<string> = new Set([
   "ai:analyze-quick-task",
   "ai:analyze-monthly-context",
   "ai:home-chat",
+  "ai:news-briefing",
   // calendar (device:* stays local — macOS-only)
   "calendar:list-events",
   "calendar:upsert-event",

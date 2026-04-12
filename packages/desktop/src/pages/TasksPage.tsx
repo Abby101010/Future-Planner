@@ -2,15 +2,8 @@
    NorthStar — Tasks page
 
    Phase 7: read-side consumes `view:tasks`. Toggle-task is wired
-   to `command:toggle-task`. Snooze / skip / timer / heatmap /
-   nudge-dismiss are local no-ops: the server has no matching
-   commands yet (command:snooze-task, command:skip-task,
-   command:start-task-timer, command:stop-task-timer,
-   command:dismiss-nudge, command:respond-to-nudge) and the
-   underlying state already lives server-side, so the worst case
-   is that the button appears to do nothing until those commands
-   land. Follow-up: add the six commands listed above to
-   packages/server/src/routes/commands.ts.
+   to `command:toggle-task`. Skip wired to `command:skip-task`.
+   Today's tasks are grouped by source: Goals, Calendar, Tasks.
 
    DailyTaskRecord (DB-shape with jsonb `payload`) is flattened to
    the core DailyTask shape before handing it to TaskCard / ProgressRow
@@ -40,7 +33,6 @@ import ProgressRow from "../components/ProgressRow";
 import NudgesSection from "../components/NudgesSection";
 import TaskCard from "../components/TaskCard";
 import GoalTaskCard from "../components/GoalTaskCard";
-import AllTasksSection from "../components/AllTasksSection";
 import type {
   CalendarEvent,
   ContextualNudge,
@@ -101,11 +93,7 @@ function formatDate(): string {
 }
 
 // Local no-ops that stand in for commands that don't exist yet on the
-// server. Each one has a named follow-up in the page header comment.
-const snoozeTask = (_taskId: string): void => {};
-const skipTask = (_taskId: string): void => {};
-const startTaskTimer = (_taskId: string): void => {};
-const stopTaskTimer = (_taskId: string): void => {};
+// server.
 const setVacationMode = (
   _mode: { active: boolean; startDate: string; endDate: string } | null,
 ): void => {};
@@ -125,7 +113,6 @@ export default function TasksPage() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [showAgentProgress, setShowAgentProgress] = useState(false);
   const [showVacationInput, setShowVacationInput] = useState(false);
-  const [showAllTasks, setShowAllTasks] = useState(false);
   const [taskJobId, setTaskJobId] = useState<string | null>(null);
   const [vacStartDate, setVacStartDate] = useState("");
   const [vacEndDate, setVacEndDate] = useState("");
@@ -148,10 +135,6 @@ export default function TasksPage() {
   const nudges: ContextualNudge[] = data?.recentNudges ?? [];
 
   const todayLog: DailyLog | null = data?.todayLog ?? null;
-  const allTasksByDate = dailyLogs
-    .filter((log) => log.tasks.length > 0)
-    .map((log) => ({ date: log.date, tasks: log.tasks }));
-  const totalIncompleteTasks = data?.totalIncompleteTasks ?? 0;
 
   const hasActivePlan = goals.length > 0;
 
@@ -288,6 +271,39 @@ export default function TasksPage() {
     refetch();
   };
 
+  const handleSkipTask = async (taskId: string) => {
+    await run("command:skip-task", { taskId });
+    refetch();
+  };
+
+  // ── Group today's tasks by source ──
+  const allTodayTasks = todayLog?.tasks ?? [];
+
+  // Goal-sourced: has goalId or planNodeId
+  const goalTasks = allTodayTasks.filter(
+    (t) => t.goalId || t.planNodeId,
+  );
+  // Calendar-sourced: category hint or progressContribution mentions calendar
+  const calendarTasks = allTodayTasks.filter(
+    (t) =>
+      !t.goalId &&
+      !t.planNodeId &&
+      (t.progressContribution?.toLowerCase().includes("calendar") ||
+        t.whyToday?.toLowerCase().includes("calendar")),
+  );
+  // Everything else = general tasks
+  const generalTasks = allTodayTasks.filter(
+    (t) =>
+      !goalTasks.includes(t) && !calendarTasks.includes(t),
+  );
+
+  // Find the goal title for a goalId
+  const goalTitleFor = (goalId: string | null | undefined) => {
+    if (!goalId) return undefined;
+    const g = goals.find((g) => g.id === goalId);
+    return g ? `🎯 ${g.title}` : "🎯 Goal";
+  };
+
   return (
     <div className="tasks-page">
       {/* Celebration overlay */}
@@ -411,26 +427,11 @@ export default function TasksPage() {
         {/* ── Big Goal Progress Summary ── */}
         <BigGoalProgress rows={bigGoalProgressRows} />
 
-        {/* ── Tasks Section ── */}
+        {/* ── Today's Tasks — grouped by source ── */}
         <section className="tasks-section animate-slide-up">
           <div className="tasks-header">
             <h3>{t.dashboard.today}</h3>
             <div className="tasks-header-right">
-              {todayLog && todayLog.tasks.length > 0 && (() => {
-                const totalWeight = todayLog.tasks.reduce(
-                  (sum, task) => sum + (task.cognitiveWeight || 3),
-                  0,
-                );
-                const maxBudget = 12;
-                return (
-                  <span
-                    className="tasks-weight-summary"
-                    title={t.dashboard.cognitiveWeight}
-                  >
-                    🧠 {totalWeight}/{maxBudget} {t.dashboard.weightPts}
-                  </span>
-                );
-              })()}
               {hasActivePlan && (
                 <button
                   className="btn btn-ghost btn-sm"
@@ -444,157 +445,108 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* Adaptive reasoning — explain WHY this many tasks */}
-          {todayLog && (todayLog as unknown as { adaptiveReasoning?: string }).adaptiveReasoning && (
-            <div className="adaptive-reasoning">
-              <span className="adaptive-reasoning-label">🎯</span>
-              <span className="adaptive-reasoning-text">
-                {(todayLog as unknown as { adaptiveReasoning?: string }).adaptiveReasoning}
-              </span>
-            </div>
-          )}
-
-          {/* Today's AI-curated tasks (THE primary task list) */}
-          {todayLog && (() => {
-            const dailyTasks = todayLog.tasks.filter(
-              (task) => task.priority === "must-do" || task.priority === "should-do",
-            );
-            const bonusTasks = todayLog.tasks.filter(
-              (task) => task.priority === "bonus",
-            );
-            return (
-              <>
-                {dailyTasks.length > 0 && (
-                  <div className="tasks-list">
-                    {dailyTasks.map((task, i) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        isOneThing={
-                          task.id ===
-                          (todayLog as unknown as { one_thing?: string }).one_thing
-                        }
-                        onToggle={() => handleToggleTask(task.id)}
-                        onSnooze={() => snoozeTask(task.id)}
-                        onSkip={() => skipTask(task.id)}
-                        onStartTimer={() => startTaskTimer(task.id)}
-                        onStopTimer={() => stopTaskTimer(task.id)}
-                        index={i}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {bonusTasks.length > 0 && (
-                  <>
-                    <div className="bonus-tasks-divider">
-                      <span>
-                        ✨ {t.dashboard.bonusTasks || "Bonus — if you have extra energy"}
-                      </span>
-                    </div>
-                    <div className="tasks-list tasks-list-bonus">
-                      {bonusTasks.map((task, i) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          isOneThing={false}
-                          onToggle={() => handleToggleTask(task.id)}
-                          onSnooze={() => snoozeTask(task.id)}
-                          onSkip={() => skipTask(task.id)}
-                          onStartTimer={() => startTaskTimer(task.id)}
-                          onStopTimer={() => stopTaskTimer(task.id)}
-                          index={i}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {dailyTasks.length === 0 && bonusTasks.length === 0 && (
-                  <div className="tasks-empty">
-                    <p>{t.dashboard.noTasks}</p>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-
-          {/* Goal plan tasks for today that the daily-tasks LLM did not
-              already pick into today's log. Dedupe lives in pendingGoalTasks
-              above via consumedPlanNodeIds. */}
-          {pendingGoalTasks.length > 0 && (
-            <div className="tasks-list">
-              <div className="goal-tasks-divider">
-                <span>{t.dashboard.goalTasks || "From your goal plans"}</span>
+          {/* From Goals */}
+          {goalTasks.length > 0 && (
+            <>
+              <div className="tasks-source-divider">
+                <span>🎯 From Goals</span>
               </div>
-              {pendingGoalTasks.map((task) => (
-                <GoalTaskCard
-                  key={task.id}
-                  task={{
-                    id: task.id,
-                    title: task.title,
-                    description: task.description ?? "",
-                    durationMinutes: task.durationMinutes ?? 30,
-                    completed: task.completed,
-                    // GoalPlanTask has no dueDate field in core; default to today.
-                    dueDate: today,
-                  }}
-                  goalTitle={task.goalTitle}
-                  onToggle={async () => {
-                    // Follow-up: add command:toggle-plan-task so this
-                    // mutation doesn't have to resend the whole plan.
-                    const goal = goals.find((g) => g.id === task.goalId);
-                    if (!goal) return;
-                    if (
-                      goal.plan &&
-                      Array.isArray(goal.plan.years) &&
-                      task.weekId &&
-                      task.dayId
-                    ) {
-                      const updatedPlan = {
-                        ...goal.plan,
-                        years: goal.plan.years.map((yr) => ({
-                          ...yr,
-                          months: yr.months.map((mo) => ({
-                            ...mo,
-                            weeks: mo.weeks.map((wk) => {
-                              if (wk.id !== task.weekId) return wk;
-                              return {
-                                ...wk,
-                                days: wk.days.map((dy) => {
-                                  if (dy.id !== task.dayId) return dy;
-                                  return {
-                                    ...dy,
-                                    tasks: dy.tasks.map((tk) =>
-                                      tk.id === task.id
-                                        ? {
-                                            ...tk,
-                                            completed: !tk.completed,
-                                            completedAt: !tk.completed
-                                              ? new Date().toISOString()
-                                              : undefined,
-                                          }
-                                        : tk,
-                                    ),
-                                  };
-                                }),
-                              };
-                            }),
-                          })),
-                        })),
-                      };
-                      await run("command:update-goal", {
-                        goal: { ...goal, plan: updatedPlan },
-                      });
-                      refetch();
+              <div className="tasks-list">
+                {goalTasks.map((task, i) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    isOneThing={
+                      task.id ===
+                      (todayLog as unknown as { one_thing?: string })?.one_thing
                     }
-                  }}
-                />
-              ))}
-            </div>
+                    onToggle={() => handleToggleTask(task.id)}
+                    onSkip={() => handleSkipTask(task.id)}
+                    index={i}
+                    sourceBadge={goalTitleFor(task.goalId)}
+                  />
+                ))}
+              </div>
+            </>
           )}
 
-          {pendingGoalTasks.length === 0 && !todayLog && (
+          {/* Pending goal-plan tasks not yet in daily tasks */}
+          {pendingGoalTasks.length > 0 && (
+            <>
+              {goalTasks.length === 0 && (
+                <div className="tasks-source-divider">
+                  <span>🎯 From Goals</span>
+                </div>
+              )}
+              <div className="tasks-list">
+                {pendingGoalTasks.map((task, i) => (
+                  <GoalTaskCard
+                    key={task.id}
+                    task={{
+                      id: task.id,
+                      title: task.title,
+                      description: task.description ?? "",
+                      durationMinutes: task.durationMinutes ?? 30,
+                      completed: task.completed,
+                      dueDate: today,
+                    }}
+                    goalTitle={task.goalTitle}
+                    onToggle={async () => {
+                      await run("command:toggle-task", { taskId: task.id });
+                      refetch();
+                    }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* From Calendar */}
+          {calendarTasks.length > 0 && (
+            <>
+              <div className="tasks-source-divider">
+                <span>📅 From Calendar</span>
+              </div>
+              <div className="tasks-list">
+                {calendarTasks.map((task, i) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    isOneThing={false}
+                    onToggle={() => handleToggleTask(task.id)}
+                    onSkip={() => handleSkipTask(task.id)}
+                    index={i}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* General Tasks */}
+          {generalTasks.length > 0 && (
+            <>
+              <div className="tasks-source-divider">
+                <span>📋 Tasks</span>
+              </div>
+              <div className="tasks-list">
+                {generalTasks.map((task, i) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    isOneThing={
+                      task.id ===
+                      (todayLog as unknown as { one_thing?: string })?.one_thing
+                    }
+                    onToggle={() => handleToggleTask(task.id)}
+                    onSkip={() => handleSkipTask(task.id)}
+                    index={i}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {allTodayTasks.length === 0 && pendingGoalTasks.length === 0 && (
             <div className="tasks-empty">
               <p>{t.dashboard.noTasks}</p>
             </div>
@@ -608,13 +560,6 @@ export default function TasksPage() {
             await run("command:acknowledge-reminder", { reminderId: id });
             refetch();
           }}
-        />
-
-        <AllTasksSection
-          groups={allTasksByDate}
-          totalIncomplete={totalIncompleteTasks}
-          isExpanded={showAllTasks}
-          onToggle={() => setShowAllTasks(!showAllTasks)}
         />
 
         {/* Contextual nudges */}

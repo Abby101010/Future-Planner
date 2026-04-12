@@ -99,6 +99,23 @@ export async function getNode(id: string): Promise<GoalPlanNode | null> {
   return rows.length > 0 ? rowToNode(rows[0]) : null;
 }
 
+/** Merge `patch` into the existing `payload` JSONB of a single node.
+ *  Used by toggle-task to sync completion state from daily_tasks back
+ *  into the goal plan tree without rewriting every node. */
+export async function patchNodePayload(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update goal_plan_nodes
+        set payload = payload || $3::jsonb,
+            updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, id, JSON.stringify(patch)],
+  );
+}
+
 /** Bulk upsert a set of nodes for a single goal. Callers are responsible for
  *  computing parent/child relationships — this function does not mutate the
  *  shape, it just persists it row-by-row in one implicit batch. */

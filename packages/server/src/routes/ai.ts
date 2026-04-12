@@ -45,6 +45,7 @@ const CONTEXT_TYPE_BY_CHANNEL: Record<
   "goal-plan-chat": "planning",
   "analyze-quick-task": "daily",
   "home-chat": "general",
+  "news-briefing": "general",
   onboarding: "general",
   "classify-goal": "general",
   "analyze-monthly-context": "planning",
@@ -85,6 +86,7 @@ makeAIRoute("generate-goal-plan", "generate-goal-plan");
 makeAIRoute("goal-plan-edit", "goal-plan-edit");
 makeAIRoute("analyze-quick-task", "analyze-quick-task");
 makeAIRoute("analyze-monthly-context", "analyze-monthly-context");
+makeAIRoute("news-briefing", "news-briefing");
 // home-chat is registered below with a custom handler that also persists
 // the user message + assistant reply into home_chat_messages so the
 // dashboard view shows real history on refetch / restart. The client
@@ -385,6 +387,15 @@ aiRouter.post(
       await stream.finalMessage();
       const result = parseGoalPlanChatResult(fullText);
 
+      console.log("[goal-plan-chat/stream] raw LLM output (first 500 chars):", fullText.slice(0, 500));
+      console.log("[goal-plan-chat/stream] parsed result:", {
+        replyLen: result.reply?.length ?? 0,
+        planReady: result.planReady,
+        hasPlan: !!result.plan,
+        hasPlanPatch: !!result.planPatch,
+        planPatchKeys: result.planPatch ? Object.keys(result.planPatch) : [],
+      });
+
       // Persist user + assistant onto goal.planChat and (if plan is
       // ready) replace the plan tree. All best-effort: SSE delivery to
       // the client must not fail because of DB issues.
@@ -422,14 +433,23 @@ aiRouter.post(
             // back to inline goal.plan for legacy/simple cases.
             let nextPlan: GoalPlan | null = null;
             const planNodes = await repos.goalPlan.listForGoal(goalId);
+            console.log("[goal-plan-chat/stream] planNodes count:", planNodes.length);
             if (planNodes.length > 0) {
               const reconstructed = repos.goalPlan.reconstructPlan(planNodes);
+              console.log("[goal-plan-chat/stream] reconstructed plan:", {
+                yearsCount: reconstructed.years?.length ?? 0,
+                milestonesCount: reconstructed.milestones?.length ?? 0,
+              });
               if (reconstructed.years.length > 0 || reconstructed.milestones.length > 0) {
                 nextPlan = reconstructed;
               }
             }
             if (!nextPlan) {
               nextPlan = goal.plan ?? null;
+              console.log("[goal-plan-chat/stream] using inline goal.plan:", {
+                hasPlan: !!nextPlan,
+                yearsCount: nextPlan?.years?.length ?? 0,
+              });
             }
 
             if (
@@ -438,16 +458,47 @@ aiRouter.post(
               Array.isArray((result.plan as { years?: unknown }).years)
             ) {
               // Full replacement — user asked to start over.
+              console.log("[goal-plan-chat/stream] FULL PLAN REPLACEMENT");
               const planObj = result.plan as unknown as GoalPlan;
               await repos.goalPlan.replacePlan(goalId, planObj);
               nextPlan = planObj;
               planReplaced = true;
             } else if (result.planPatch && nextPlan) {
               // Sparse patch — merge by id into the existing plan tree.
+              console.log("[goal-plan-chat/stream] APPLYING PLAN PATCH");
+              console.log("[goal-plan-chat/stream] planPatch:", JSON.stringify(result.planPatch).slice(0, 2000));
+              console.log("[goal-plan-chat/stream] existing plan year IDs:", nextPlan.years?.map(y => y.id));
+              console.log("[goal-plan-chat/stream] existing plan structure:", nextPlan.years?.map(y => ({
+                id: y.id,
+                months: y.months?.map(m => ({
+                  id: m.id,
+                  weeks: m.weeks?.map(w => ({
+                    id: w.id,
+                    days: w.days?.map(d => ({
+                      id: d.id,
+                      label: d.label,
+                      taskCount: d.tasks?.length ?? 0,
+                    })),
+                  })),
+                })),
+              })));
               const patched = applyPlanPatch(nextPlan, result.planPatch);
+              // Log the result to confirm tasks were actually changed
+              const daysBefore = nextPlan.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days ?? []) ?? []) ?? []) ?? [];
+              const daysAfter = patched.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days ?? []) ?? []) ?? []) ?? [];
+              const taskCountBefore = daysBefore.reduce((s, d) => s + (d.tasks?.length ?? 0), 0);
+              const taskCountAfter = daysAfter.reduce((s, d) => s + (d.tasks?.length ?? 0), 0);
+              console.log("[goal-plan-chat/stream] patch result: tasks before=%d, after=%d", taskCountBefore, taskCountAfter);
               await repos.goalPlan.replacePlan(goalId, patched);
               nextPlan = patched;
               planReplaced = true;
+            } else {
+              console.log("[goal-plan-chat/stream] NO PLAN CHANGE:", {
+                hasPlanPatch: !!result.planPatch,
+                hasNextPlan: !!nextPlan,
+                planReady: result.planReady,
+                hasPlan: !!result.plan,
+              });
             }
 
             await repos.goals.upsert({

@@ -91,6 +91,27 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* Source section dividers */
+.tasks-source-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+  margin-top: var(--space-sm);
+}
+.tasks-source-divider:first-child {
+  margin-top: 0;
+}
+.tasks-source-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 /* Bonus tasks divider */
 .bonus-tasks-divider {
   display: flex;

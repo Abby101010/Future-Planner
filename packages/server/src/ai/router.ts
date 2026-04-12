@@ -38,6 +38,7 @@ import { handleDailyTasks } from "./handlers/dailyTasks";
 import { handleRecovery } from "./handlers/recovery";
 import { handlePaceCheck } from "./handlers/paceCheck";
 import { handleAnalyzeQuickTask } from "./handlers/analyzeQuickTask";
+import { handleNewsBriefing } from "./handlers/newsBriefing";
 
 // Agnostic handlers — live in @northstar/core/handlers (server-only subpath).
 // They pull in @anthropic-ai/sdk + node:crypto, so they must NOT come from
@@ -66,7 +67,8 @@ export type RequestType =
   | "generate-goal-plan"
   | "analyze-quick-task"
   | "analyze-monthly-context"
-  | "home-chat";
+  | "home-chat"
+  | "news-briefing";
 
 export async function handleAIRequest(
   type: RequestType,
@@ -124,5 +126,7 @@ export async function handleAIRequestDirect(
       return handleAnalyzeMonthlyContext(client, p as AIPayloadMap["analyze-monthly-context"], memoryContext);
     case "home-chat":
       return handleHomeChat(client, p as AIPayloadMap["home-chat"], memoryContext);
+    case "news-briefing":
+      return handleNewsBriefing(client, p as { goals: Array<{ id: string; title: string; description?: string; targetDate?: string; isHabit?: boolean }> }, memoryContext);
   }
 }

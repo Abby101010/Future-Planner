@@ -84,11 +84,58 @@ async function cmdDeleteGoal(body: Record<string, unknown>): Promise<unknown> {
   return { ok: true, goalId };
 }
 
+async function cmdSkipTask(body: Record<string, unknown>): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  if (!taskId) throw new Error("command:skip-task requires args.taskId");
+
+  const task = await repos.dailyTasks.get(taskId);
+  if (!task) return { ok: true, taskId, skipped: null };
+
+  const isSkipped = !(task.payload as Record<string, unknown>)?.skipped;
+  await repos.dailyTasks.update(taskId, {
+    payload: { skipped: isSkipped },
+  });
+  return { ok: true, taskId, skipped: isSkipped };
+}
+
 async function cmdToggleTask(body: Record<string, unknown>): Promise<unknown> {
   const taskId = body.taskId as string | undefined;
   if (!taskId) throw new Error("command:toggle-task requires args.taskId");
+
+  // Try toggling as a daily task first.
   const next = await repos.dailyTasks.toggleCompleted(taskId);
-  return { ok: true, taskId, completed: next };
+
+  if (next !== null) {
+    // Successfully toggled a daily task — sync state to the linked
+    // goal plan node so the goal-plan page reflects it.
+    const task = await repos.dailyTasks.get(taskId);
+    if (task?.planNodeId) {
+      try {
+        await repos.goalPlan.patchNodePayload(task.planNodeId, {
+          completed: next,
+          completedAt: next ? new Date().toISOString() : null,
+        });
+      } catch (err) {
+        console.warn("[toggle-task] failed to sync plan node:", err);
+      }
+    }
+    return { ok: true, taskId, completed: next };
+  }
+
+  // Not found in daily_tasks — the id might be a goal_plan_node id
+  // (user toggled directly on the goal plan page).
+  const planNode = await repos.goalPlan.getNode(taskId);
+  if (planNode && planNode.nodeType === "task") {
+    const wasCompleted = Boolean(planNode.payload.completed);
+    const nowCompleted = !wasCompleted;
+    await repos.goalPlan.patchNodePayload(taskId, {
+      completed: nowCompleted,
+      completedAt: nowCompleted ? new Date().toISOString() : null,
+    });
+    return { ok: true, taskId, completed: nowCompleted };
+  }
+
+  return { ok: true, taskId, completed: null };
 }
 
 async function cmdConfirmPendingTask(
@@ -98,7 +145,52 @@ async function cmdConfirmPendingTask(
   if (!pendingId) {
     throw new Error("command:confirm-pending-task requires args.pendingId");
   }
+
+  // Mark the pending task as confirmed.
   await repos.pendingTasks.updateStatus(pendingId, "confirmed");
+
+  // Read the pending task to extract its analysis, then insert a real
+  // daily task so it shows up in the Tasks page.
+  const pending = await repos.pendingTasks.get(pendingId);
+  if (pending) {
+    const pl = pending.payload;
+    const analysis = (pl.analysis ?? null) as {
+      title?: string;
+      description?: string;
+      suggestedDate?: string;
+      durationMinutes?: number;
+      cognitiveWeight?: number;
+      priority?: string;
+      category?: string;
+      reasoning?: string;
+    } | null;
+
+    const today = new Date().toISOString().split("T")[0];
+    const date = analysis?.suggestedDate || today;
+
+    // Determine orderIndex: append after existing tasks for that date.
+    const existing = await repos.dailyTasks.listForDate(date);
+    const orderIndex = existing.length;
+
+    await repos.dailyTasks.insert({
+      id: crypto.randomUUID(),
+      date,
+      title: analysis?.title || (pl.userInput as string) || pending.title || "Untitled task",
+      completed: false,
+      orderIndex,
+      payload: {
+        description: analysis?.description || "",
+        durationMinutes: analysis?.durationMinutes ?? 30,
+        cognitiveWeight: analysis?.cognitiveWeight ?? 3,
+        priority: analysis?.priority || "should-do",
+        category: analysis?.category || "planning",
+        whyToday: analysis?.reasoning || "",
+        source: "pending-task",
+        pendingTaskId: pendingId,
+      },
+    });
+  }
+
   return { ok: true, pendingId };
 }
 
@@ -111,6 +203,28 @@ async function cmdRejectPendingTask(
   }
   await repos.pendingTasks.updateStatus(pendingId, "rejected");
   return { ok: true, pendingId };
+}
+
+async function cmdCreatePendingTask(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const id = body.id as string | undefined;
+  const userInput = body.userInput as string | undefined;
+  const analysis = body.analysis as Record<string, unknown> | undefined;
+  const status = (body.status as string) ?? "ready";
+  if (!id || !userInput) {
+    throw new Error(
+      "command:create-pending-task requires args.id and args.userInput",
+    );
+  }
+  await repos.pendingTasks.insert({
+    id,
+    source: "home-chat",
+    title: (analysis?.title as string) ?? userInput,
+    status: status as "ready" | "pending" | "analyzing",
+    payload: { userInput, analysis: analysis ?? null },
+  });
+  return { ok: true, id };
 }
 
 async function cmdUpsertCalendarEvent(
@@ -556,11 +670,17 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:toggle-task":
         result = await cmdToggleTask(body);
         break;
+      case "command:skip-task":
+        result = await cmdSkipTask(body);
+        break;
       case "command:confirm-pending-task":
         result = await cmdConfirmPendingTask(body);
         break;
       case "command:reject-pending-task":
         result = await cmdRejectPendingTask(body);
+        break;
+      case "command:create-pending-task":
+        result = await cmdCreatePendingTask(body);
         break;
       case "command:upsert-calendar-event":
         result = await cmdUpsertCalendarEvent(body);

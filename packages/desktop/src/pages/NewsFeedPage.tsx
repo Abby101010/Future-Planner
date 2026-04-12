@@ -1,17 +1,16 @@
 /* ──────────────────────────────────────────────────────────
    NorthStar — News Feed page
-   Curated news and articles related to user's goals.
+   Curated insights and tips related to user's goals.
 
-   Phase 6a: reads goal list + `enableNewsFeed` flag from
-   `view:news-feed`. The briefing itself still comes from the
-   AI endpoint directly — only view-model data is routed
-   through useQuery here.
+   Goal list comes from `view:news-feed`. The briefing is
+   generated on-demand via the `ai:news-briefing` sub-agent.
    ────────────────────────────────────────────────────────── */
 
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Globe, Loader2, RefreshCw } from "lucide-react";
 import { useT } from "../i18n";
 import { useQuery } from "../hooks/useQuery";
+import { fetchNewsBriefing } from "../services/ai";
 import type { NewsBriefing, Goal } from "@northstar/core";
 import "./NewsFeedPage.css";
 
@@ -28,14 +27,39 @@ export default function NewsFeedPage() {
 
   const goals = data?.goals ?? [];
 
-  // News briefing is not wired up in this deployment — the multi-agent
-  // research pipeline that produced it never moved to the cloud backend.
-  // The page still renders (goals list + empty state) so Settings can
-  // toggle the feature without breaking navigation.
-  const [briefing] = useState<NewsBriefing | null>(null);
-  const loading = false;
-  const error: string | null = null;
-  const loadNews = () => {};
+  const [briefing, setBriefing] = useState<NewsBriefing | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadNews = useCallback(async () => {
+    if (goals.length === 0) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchNewsBriefing(
+        goals.map((g) => ({
+          id: g.id,
+          title: g.title,
+          description: g.description,
+          targetDate: g.targetDate,
+          isHabit: g.isHabit,
+        })),
+      );
+      setBriefing(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load insights");
+    } finally {
+      setLoading(false);
+    }
+  }, [goals]);
+
+  // Auto-load on first render when goals are available
+  useEffect(() => {
+    if (goals.length > 0 && !briefing && !loading && !error) {
+      loadNews();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goals.length]);
 
   if (viewLoading && !data) {
     return (
@@ -77,7 +101,7 @@ export default function NewsFeedPage() {
           <button
             className="btn btn-ghost btn-sm"
             onClick={loadNews}
-            disabled={loading}
+            disabled={loading || goals.length === 0}
           >
             <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
           </button>
@@ -93,12 +117,15 @@ export default function NewsFeedPage() {
         {error && (
           <div className="newsfeed-error">
             <p>{error}</p>
+            <button className="btn btn-ghost btn-sm" onClick={loadNews}>
+              <RefreshCw size={14} /> Retry
+            </button>
           </div>
         )}
 
         {goals.length === 0 && !loading && (
           <div className="newsfeed-empty">
-            <p>Add some goals first — your news feed is curated based on what you're working toward.</p>
+            <p>Add some goals first — your insights feed is curated based on what you're working toward.</p>
           </div>
         )}
 
@@ -111,13 +138,7 @@ export default function NewsFeedPage() {
             )}
 
             <div className="newsfeed-articles">
-              {(briefing.articles as Array<{
-                title: string;
-                source: string;
-                url: string;
-                summary: string;
-                relevance: string;
-              }>).map((article, i) => (
+              {briefing.articles.map((article, i) => (
                 <div key={i} className="newsfeed-article card">
                   <div className="newsfeed-article-header">
                     <span className="newsfeed-article-title">{article.title}</span>

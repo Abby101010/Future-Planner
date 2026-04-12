@@ -441,10 +441,6 @@ export default function DashboardPage() {
       });
 
       if (pendingTaskToAnalyze) {
-        // Note: there's no command:create-pending-task yet, so the
-        // analyzed pendingTask only lives in-memory until the user
-        // confirms it. The confirm/reject buttons still hit the real
-        // server commands once the backend knows about the row.
         try {
           const analysis = await analyzeQuickTask(
             pendingTaskToAnalyze.userInput,
@@ -467,6 +463,14 @@ export default function DashboardPage() {
               conflictsWithExisting: analysis.conflicts_with_existing,
             },
           };
+          // Persist the analyzed pending task so the dashboard shows
+          // the confirmation card on refetch.
+          await run("command:create-pending-task", {
+            id: pendingTaskToAnalyze.id,
+            userInput: pendingTaskToAnalyze.userInput,
+            status: pendingTaskToAnalyze.status,
+            analysis: pendingTaskToAnalyze.analysis,
+          });
         } catch {
           pendingTaskToAnalyze = { ...pendingTaskToAnalyze, status: "rejected" };
         }

@@ -32,10 +32,10 @@ function summarizePlanForChat(
   let unlockedBodiesEmitted = 0;
 
   for (const yr of years) {
-    lines.push(`Year: ${yr.label} — ${yr.objective}`);
+    lines.push(`Year: ${yr.label} [id:${yr.id}] — ${yr.objective}`);
     const months = (yr.months || []) as Array<Record<string, unknown>>;
     for (const mo of months) {
-      lines.push(`  ${mo.label}: ${mo.objective}`);
+      lines.push(`  ${mo.label} [id:${mo.id}]: ${mo.objective}`);
       const weeks = (mo.weeks || []) as Array<Record<string, unknown>>;
       for (const w of weeks) {
         const locked = w.locked as boolean;
@@ -125,10 +125,19 @@ export function buildGoalPlanChatRequest(
   const messages: Array<{ role: "user" | "assistant"; content: string }> =
     chatHistory.map((m) => ({
       role: m.role as "user" | "assistant",
-      content: m.content,
+      // Sanitize history: strip JSON envelopes from old messages that
+      // were persisted as raw JSON before the fix.
+      content:
+        m.role === "assistant" ? extractReplyFromText(m.content) : m.content,
     }));
 
-  messages.push({ role: "user", content: userMessage });
+  // chatHistory already contains the current userMessage as its last
+  // entry (the client appends it). Only push a separate message if the
+  // history is empty or doesn't end with the current userMessage.
+  const lastMsg = messages[messages.length - 1];
+  if (!lastMsg || lastMsg.role !== "user" || lastMsg.content !== userMessage) {
+    messages.push({ role: "user", content: userMessage });
+  }
 
   const goalContext = [
     `- Goal: "${goalTitle}"`,
