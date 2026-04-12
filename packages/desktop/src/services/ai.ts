@@ -473,6 +473,7 @@ export async function sendHomeChatMessage(
   calendarEvents?: CalendarEvent[],
   attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>,
   userMessageId?: string,
+  reminders?: Reminder[],
 ): Promise<HomeChatResult> {
   const today = new Date().toISOString().split("T")[0];
   const todayEvents = (calendarEvents || []).filter((e) => {
@@ -507,6 +508,15 @@ export async function sendHomeChatMessage(
     })),
     todayTasks: todayTasks.map((t) => ({ id: t.id, title: t.title, completed: t.completed, skipped: !!t.skipped, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
     todayCalendarEvents: todayEvents,
+    activeReminders: (reminders || []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      reminderTime: r.reminderTime,
+      date: r.date,
+      acknowledged: r.acknowledged,
+      repeat: r.repeat,
+    })),
     attachments,
   };
   return cloudInvoke<HomeChatResult>("ai:home-chat", payload);

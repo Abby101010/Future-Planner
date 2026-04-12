@@ -77,6 +77,7 @@ export interface HomeChatPayload extends EnrichedPayload {
   goals?: LooseRow[];
   todayTasks?: LooseRow[];
   todayCalendarEvents?: LooseRow[];
+  activeReminders?: LooseRow[];
   attachments?: LooseRow[];
 }
 

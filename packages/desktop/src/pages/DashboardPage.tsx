@@ -186,6 +186,7 @@ export default function DashboardPage() {
 
   // Used for AI-context payload and daily-load summary on pending cards.
   const todayFlatTasks: DailyTask[] = data?.todayTasks ?? [];
+  const activeReminders = data?.activeReminders ?? [];
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -298,6 +299,7 @@ export default function DashboardPage() {
         todayEvents,
         attachmentData.length > 0 ? attachmentData : undefined,
         msgId,
+        activeReminders,
       );
 
       // The backend parses the LLM reply, builds fully-populated entities
@@ -549,6 +551,7 @@ export default function DashboardPage() {
     goals,
     todayFlatTasks,
     todayEvents,
+    activeReminders,
     homeChatMessages,
     attachments,
     addHomeChatMessage,

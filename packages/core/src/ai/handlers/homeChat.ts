@@ -189,6 +189,15 @@ export function buildHomeChatRequest(
     endDate: string;
     category: string;
   }>;
+  const activeReminders = (payload.activeReminders ?? []) as Array<{
+    id: string;
+    title: string;
+    description?: string;
+    reminderTime?: string;
+    date?: string;
+    acknowledged: boolean;
+    repeat?: string;
+  }>;
 
   const goalsSummary =
     goals.length > 0
@@ -235,6 +244,19 @@ export function buildHomeChatRequest(
           .join("\n")
       : "No calendar events.";
 
+  const remindersSummary =
+    activeReminders.length > 0
+      ? activeReminders
+          .map((r) => {
+            const time = r.reminderTime ?? r.date ?? "no time set";
+            const repeat = r.repeat && r.repeat !== "none" ? `, repeats ${r.repeat}` : "";
+            const ack = r.acknowledged ? " [acknowledged]" : "";
+            const desc = r.description ? ` — ${r.description}` : "";
+            return `- "${r.title}"${desc} (${time}${repeat})${ack}`;
+          })
+          .join("\n")
+      : "No active reminders.";
+
   const environmentFormatted = payload._environmentContextFormatted ?? "";
   const environmentBlock = environmentFormatted
     ? `\n${environmentFormatted}\n`
@@ -256,7 +278,10 @@ Today's tasks (${completedCount}/${todayTasks.length} done, ${taskCount} pending
 ${tasksSummary}
 
 Today's calendar:
-${calendarSummary}`;
+${calendarSummary}
+
+Active reminders:
+${remindersSummary}`;
 
   const attachments = (payload.attachments ?? []) as Array<{
     type: string;
