@@ -11,9 +11,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev vite",
-    "electron:build:mac": "npm run build && electron-builder --mac",
-    "electron:build:win": "npm run build && electron-builder --win",
-    "electron:build:linux": "npm run build && electron-builder --linux",
+    "electron:build:mac": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run build && electron-builder --mac",
+    "electron:build:win": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run build && electron-builder --win",
+    "electron:build:linux": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run build && electron-builder --linux",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
