@@ -301,7 +301,17 @@ export default function TasksPage() {
   };
 
   // ── Group today's tasks by source ──
-  const allTodayTasks = todayLog?.tasks ?? [];
+  // Deduplicate by task ID — the server may return the same task
+  // twice if auto-generation re-runs or the DB has duplicate rows.
+  const rawTodayTasks = todayLog?.tasks ?? [];
+  const seenIds = new Set<string>();
+  const allTodayTasks: DailyTask[] = [];
+  for (const t of rawTodayTasks) {
+    if (!seenIds.has(t.id)) {
+      seenIds.add(t.id);
+      allTodayTasks.push(t);
+    }
+  }
 
   // Goal-sourced: has goalId or planNodeId
   const goalTasks = allTodayTasks.filter(
@@ -590,7 +600,7 @@ export default function TasksPage() {
               <div className="tasks-list">
                 {pendingGoalTasks.map((task, i) => (
                   <GoalTaskCard
-                    key={task.id}
+                    key={`pending-${task.goalId}-${task.id}-${i}`}
                     task={{
                       id: task.id,
                       title: task.title,

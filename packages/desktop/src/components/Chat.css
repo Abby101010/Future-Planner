@@ -259,3 +259,112 @@
   color: var(--text-primary);
 }
 
+/* ── Pending Goal Card (inline in chat) ── */
+
+.chat-panel-messages .pending-card {
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: fadeIn 0.3s ease forwards;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-sm);
+  margin: var(--space-sm) var(--space-md);
+}
+
+.chat-panel-messages .pending-goal-card {
+  background: rgba(168, 196, 240, 0.06);
+  border-color: rgba(168, 196, 240, 0.15);
+}
+
+.chat-panel-messages .pending-goal-icon {
+  color: var(--neon-blue, #a8c4f0);
+}
+
+.chat-panel-messages .pending-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.chat-panel-messages .pending-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-panel-messages .pending-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.chat-panel-messages .pending-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.chat-panel-messages .pending-card-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chat-panel-messages .pending-card-actions {
+  display: flex;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgba(168, 196, 240, 0.06);
+}
+
+.chat-panel-messages .pending-editable {
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s ease;
+  border-radius: var(--radius-sm);
+}
+
+.chat-panel-messages .pending-editable:hover {
+  background: rgba(168, 196, 240, 0.04);
+}
+
+.chat-panel-messages .pending-edit-icon {
+  opacity: 0;
+  margin-left: 6px;
+  color: var(--text-muted);
+  transition: opacity 0.15s ease;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.chat-panel-messages .pending-editable:hover .pending-edit-icon {
+  opacity: 0.6;
+}
+
+.chat-panel-messages .pending-edit-input {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  width: 100%;
+}
+
+.chat-panel-messages .pending-edit-title {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.chat-panel-messages .pending-edit-desc {
+  resize: none;
+  margin-bottom: var(--space-sm);
+}

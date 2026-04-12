@@ -325,11 +325,9 @@ export async function resolveTasksView(): Promise<TasksView> {
         // includes them (avoids requiring a second round-trip).
         const freshTasks = await repos.dailyTasks.listForDateRange(today, today);
         const freshLogs = await repos.dailyLogs.list(today, today);
-        for (const t of freshTasks) {
-          const arr = tasksByDate.get(t.date) ?? [];
-          arr.push(t);
-          tasksByDate.set(t.date, arr);
-        }
+        // Replace (not append) today's tasks to avoid duplicates when
+        // the initial tasksInRange already contained rows for today.
+        tasksByDate.set(today, freshTasks);
         if (freshLogs.length > 0) {
           const freshLog = hydrateDailyLog(freshLogs[0], tasksByDate.get(today) ?? []);
           hydratedLogs = [freshLog, ...hydratedLogs];

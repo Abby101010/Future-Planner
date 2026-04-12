@@ -29,6 +29,7 @@ import { collectEnvironment } from "../services/environment";
 import { useQuery } from "../hooks/useQuery";
 import { useCommand } from "../hooks/useCommand";
 import { dispatchChatIntent } from "../utils/dispatchChatIntent";
+import { PendingGoalCard } from "../pages/dashboard/PendingCards";
 import type {
   HomeChatMessage,
   Goal,
@@ -87,6 +88,7 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [pendingGoal, setPendingGoal] = useState<Partial<Goal> | null>(null);
   const [attachments, setAttachments] = useState<
     Array<{
       id: string;
@@ -110,10 +112,10 @@ export default function Chat() {
     }
   }, [dashData?.homeChatMessages]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages or pending card
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText]);
+  }, [messages, streamingText, pendingGoal]);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -259,7 +261,7 @@ export default function Chat() {
           if (result.intents && result.intents.length > 0) {
             for (const rawIntent of result.intents) {
               try {
-                await dispatchChatIntent(rawIntent, {
+                const signal = await dispatchChatIntent(rawIntent, {
                   run: runCommand,
                   goals,
                   todayTasks,
@@ -267,6 +269,14 @@ export default function Chat() {
                   activeReminders: reminders,
                   todayDate,
                 });
+                // Goal intents are NOT auto-dispatched — show a
+                // confirmation card so the user can review first.
+                if (signal === "pending-goal") {
+                  const i = rawIntent as { entity?: Partial<Goal> };
+                  if (i.entity) {
+                    setPendingGoal(i.entity);
+                  }
+                }
               } catch (err) {
                 console.warn("[Chat] intent dispatch error:", err);
               }
@@ -379,7 +389,7 @@ export default function Chat() {
                     setMessages([]);
                     await runCommand("command:clear-home-chat" as CommandKind, {});
                   }
-                  setView("dashboard");
+                  setView("tasks");
                 }}
               >
                 General chat <ArrowRight size={12} />
@@ -421,6 +431,29 @@ export default function Chat() {
                 <span>Thinking...</span>
               </div>
             </div>
+          )}
+          {pendingGoal && (
+            <PendingGoalCard
+              goal={pendingGoal}
+              onConfirm={async () => {
+                const goalToCreate = { ...pendingGoal };
+                setPendingGoal(null);
+                try {
+                  await runCommand("command:create-goal" as CommandKind, {
+                    goal: goalToCreate,
+                  });
+                  if (goalToCreate.id) {
+                    setView(`goal-plan-${goalToCreate.id}`);
+                  }
+                } catch (err) {
+                  console.error("[Chat] goal creation failed:", err);
+                }
+              }}
+              onReject={() => setPendingGoal(null)}
+              onUpdate={(updates) =>
+                setPendingGoal((prev) => (prev ? { ...prev, ...updates } : prev))
+              }
+            />
           )}
           <div ref={chatEndRef} />
         </div>

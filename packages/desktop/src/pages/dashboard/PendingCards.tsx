@@ -9,9 +9,11 @@ import {
   AlertTriangle,
   Check,
   XCircle,
+  Target,
+  ArrowRight,
 } from "lucide-react";
 import { useT } from "../../i18n";
-import type { PendingTask, CalendarEvent } from "@northstar/core";
+import type { PendingTask, CalendarEvent, Goal } from "@northstar/core";
 
 export interface DailyLoad {
   currentWeight: number;
@@ -297,6 +299,141 @@ export function PendingEventCard({
       <div className="pending-card-actions">
         <button className="btn btn-primary btn-sm" onClick={onConfirm}>
           <Check size={14} /> {overloadWarnings.length > 0 ? "Add anyway" : "Add to calendar"}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onReject}>
+          <XCircle size={14} /> Discard
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Confirmation card for goals detected in home chat.
+ *  The user must click "Create Goal" before the goal is persisted
+ *  and plan generation begins. */
+export function PendingGoalCard({
+  goal,
+  onConfirm,
+  onReject,
+  onUpdate,
+}: {
+  goal: Partial<Goal>;
+  onConfirm: () => void;
+  onReject: () => void;
+  onUpdate: (updates: Partial<Goal>) => void;
+}) {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState(goal.title ?? "");
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [editDesc, setEditDesc] = useState(goal.description ?? "");
+
+  const goalTypeLabel =
+    goal.goalType === "big"
+      ? "Long-term Goal"
+      : goal.goalType === "repeating"
+        ? "Repeating Goal"
+        : "Everyday Goal";
+
+  const importanceLabel =
+    goal.importance === "critical"
+      ? "Critical"
+      : goal.importance === "high"
+        ? "High"
+        : goal.importance === "medium"
+          ? "Medium"
+          : "Low";
+
+  return (
+    <div className="pending-card pending-goal-card">
+      <div className="pending-card-header">
+        <Target size={14} className="pending-goal-icon" />
+        {editingTitle ? (
+          <input
+            className="input pending-edit-input pending-edit-title"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            onBlur={() => {
+              if (editTitle.trim()) onUpdate({ title: editTitle.trim() });
+              setEditingTitle(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (editTitle.trim()) onUpdate({ title: editTitle.trim() });
+                setEditingTitle(false);
+              }
+              if (e.key === "Escape") setEditingTitle(false);
+            }}
+            autoFocus
+          />
+        ) : (
+          <span
+            className="pending-card-title pending-editable"
+            onClick={() => {
+              setEditTitle(goal.title ?? "");
+              setEditingTitle(true);
+            }}
+            title="Click to edit"
+          >
+            {goal.title}
+            <Pencil size={11} className="pending-edit-icon" />
+          </span>
+        )}
+      </div>
+      {goal.description && (
+        editingDesc ? (
+          <textarea
+            className="input pending-edit-input pending-edit-desc"
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            onBlur={() => {
+              onUpdate({ description: editDesc.trim() });
+              setEditingDesc(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onUpdate({ description: editDesc.trim() });
+                setEditingDesc(false);
+              }
+              if (e.key === "Escape") setEditingDesc(false);
+            }}
+            rows={2}
+            autoFocus
+          />
+        ) : (
+          <p
+            className="pending-card-desc pending-editable"
+            onClick={() => {
+              setEditDesc(goal.description ?? "");
+              setEditingDesc(true);
+            }}
+            title="Click to edit"
+          >
+            {goal.description}
+            <Pencil size={11} className="pending-edit-icon" />
+          </p>
+        )
+      )}
+      <div className="pending-card-meta">
+        <span className="badge badge-accent">{goalTypeLabel}</span>
+        <span className="badge">{importanceLabel} priority</span>
+        {goal.targetDate && (
+          <span className="pending-card-date">
+            <CalendarDays size={12} />{" "}
+            {new Date(goal.targetDate + "T12:00:00").toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+        )}
+        {goal.isHabit && (
+          <span className="badge">Ongoing habit</span>
+        )}
+      </div>
+      <div className="pending-card-actions">
+        <button className="btn btn-primary btn-sm" onClick={onConfirm}>
+          <Check size={14} /> Create Goal <ArrowRight size={12} />
         </button>
         <button className="btn btn-ghost btn-sm" onClick={onReject}>
           <XCircle size={14} /> Discard

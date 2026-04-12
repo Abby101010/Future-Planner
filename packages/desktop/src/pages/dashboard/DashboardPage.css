@@ -1994,6 +1994,15 @@
   color: var(--accent);
 }
 
+.pending-goal-card {
+  background: rgba(168, 196, 240, 0.06);
+  border-color: rgba(168, 196, 240, 0.15);
+}
+
+.pending-goal-icon {
+  color: var(--neon-blue, #a8c4f0);
+}
+
 /* ── Overload Warning ── */
 
 .pending-overload-warning {

@@ -99,7 +99,7 @@ function resolveEventTargets(
 export async function dispatchChatIntent(
   intent: unknown,
   ctx: IntentDispatchContext,
-): Promise<null> {
+): Promise<"pending-goal" | null> {
   const i = intent as Record<string, unknown>;
   if (!i || !i.kind) return null;
 
@@ -113,9 +113,9 @@ export async function dispatchChatIntent(
       break;
     }
     case "goal": {
-      const newGoal = i.entity as Record<string, unknown>;
-      await run(cmd("command:create-goal"), { goal: newGoal });
-      break;
+      // Don't auto-create goals — return a signal so the Chat component
+      // can show a confirmation card and let the user review first.
+      return "pending-goal";
     }
     case "reminder": {
       const reminder = i.entity as Record<string, unknown>;
