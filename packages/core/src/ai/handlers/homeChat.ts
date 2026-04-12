@@ -93,6 +93,70 @@ interface PendingTaskShape {
     order: clean parse, markdown code fence, greedy brace extraction.
     Returns null and logs the raw text if all strategies fail so we can
     debug what the LLM actually returned. */
+interface JsonSpan {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** Scan `text` for all top-level balanced-brace spans. Respects JSON
+ *  string escaping so `{ "a": "}" }` counts as one span. Does not
+ *  validate the contents — callers can try JSON.parse on each. */
+function findBalancedJsonObjects(text: string): JsonSpan[] {
+  const out: JsonSpan[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const start = text.indexOf("{", i);
+    if (start === -1) break;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let end = -1;
+    for (let j = start; j < text.length; j++) {
+      const ch = text[j];
+      if (inString) {
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') inString = false;
+      } else if (ch === '"') {
+        inString = true;
+      } else if (ch === "{") {
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+    if (end === -1) break;
+    out.push({ start, end, text: text.slice(start, end + 1) });
+    i = end + 1;
+  }
+  return out;
+}
+
+/** Remove any valid JSON object literals — including markdown-fenced
+ *  blocks — from the chat reply, leaving the conversational prose.
+ *  Used as a safety net so raw JSON can never leak into the rendered
+ *  message even if the LLM mixes multiple intents with commentary. */
+export function stripJsonBlocks(text: string): string {
+  let out = text.replace(/```(?:json)?\s*\n?[\s\S]*?\n?```/g, "");
+  const spans = findBalancedJsonObjects(out).filter((s) => {
+    try {
+      const parsed = JSON.parse(s.text);
+      return typeof parsed === "object" && parsed !== null;
+    } catch {
+      return false;
+    }
+  });
+  for (let k = spans.length - 1; k >= 0; k--) {
+    out = out.slice(0, spans[k].start) + out.slice(spans[k].end + 1);
+  }
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function tryExtractJson(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
 
@@ -119,22 +183,22 @@ function tryExtractJson(text: string): Record<string, unknown> | null {
     }
   }
 
-  // 3. Greedy brace extraction — first { to last }.
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
+  // 3. Walk every balanced-brace span and return the first one that
+  //    parses as a JSON object. This handles the multi-intent case
+  //    where the LLM emits several JSON blocks interleaved with prose
+  //    — the old "first { to last }" greedy approach would try to
+  //    parse the prose too and fail.
+  for (const span of findBalancedJsonObjects(trimmed)) {
     try {
-      const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      const parsed = JSON.parse(span.text);
       if (typeof parsed === "object" && parsed !== null) {
         return parsed as Record<string, unknown>;
       }
     } catch {
-      /* fall through */
+      /* try next span */
     }
   }
 
-  // Nothing worked. Log a truncated snippet so devs can see what the
-  // LLM actually returned instead of a silent null.
   console.warn(
     "[ai:homeChat:json] failed to extract JSON from LLM response:",
     trimmed.slice(0, 500),
@@ -561,9 +625,19 @@ export async function handleHomeChat(
     response.content[0].type === "text" ? response.content[0].text.trim() : "";
 
   const intent = parseHomeChatIntent(chatText, userInput, payload.todayDate);
-  // If the LLM returned a structured intent, don't echo the raw JSON back
-  // as the chat reply — replace it with a human-readable confirmation.
-  const reply = intent ? defaultReplyForIntent(intent) : chatText;
+  // Always strip JSON from the user-facing reply. When the model
+  // emits prose + structured intent(s), the prose carries real
+  // content (reasoning, suggestions, commentary) that we don't want
+  // to throw away — so prefer the sanitized text over a generic
+  // defaultReplyForIntent confirmation. Only fall back to the
+  // default when stripping leaves nothing but whitespace.
+  const stripped = stripJsonBlocks(chatText);
+  const reply =
+    stripped.length > 0
+      ? stripped
+      : intent
+        ? defaultReplyForIntent(intent)
+        : chatText;
   return { reply, intent };
 }
 

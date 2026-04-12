@@ -15,6 +15,7 @@ import { getClient } from "../ai/client";
 import {
   buildHomeChatRequest,
   parseHomeChatIntent,
+  stripJsonBlocks,
   buildGoalPlanChatRequest,
   parseGoalPlanChatResult,
   extractReplyFromText,
@@ -339,7 +340,11 @@ aiRouter.post(
       await stream.finalMessage();
       const trimmed = fullText.trim();
       const intent = parseHomeChatIntent(trimmed, payload.userInput, payload.todayDate);
-      send("done", { reply: trimmed, intent });
+      // Strip any JSON blocks out of the final reply so the sanitized
+      // text overwrites whatever the client streamed via delta events.
+      const cleaned = stripJsonBlocks(trimmed);
+      const reply = cleaned.length > 0 ? cleaned : trimmed;
+      send("done", { reply, intent });
     } catch (err) {
       send("error", {
         error: err instanceof Error ? err.message : String(err),
