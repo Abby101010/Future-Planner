@@ -552,3 +552,109 @@
   align-items: center;
   gap: var(--space-xs);
 }
+
+/* ── Daily Tasks Proposal Card ── */
+
+.tasks-proposal-card {
+  background: var(--surface-card);
+  border: 1px solid var(--neon-blue);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.proposal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--neon-blue);
+}
+
+.proposal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.proposal-reasoning {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-style: italic;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+}
+
+.proposal-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.proposal-task-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.proposal-task-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.proposal-task-title {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.proposal-task-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.proposal-task-duration {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.proposal-task-weight {
+  font-size: 11px;
+  color: var(--neon-orange);
+  font-weight: 500;
+}
+
+.proposal-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.proposal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+}

@@ -355,6 +355,7 @@ export async function generateAndPersistDailyTasks(opts: {
       id: result.id ?? `log-${date}`,
       notificationBriefing: result.notificationBriefing ?? "",
       adaptiveReasoning: result.adaptiveReasoning ?? "",
+      tasksConfirmed: false,
       milestoneCelebration: result.milestoneCelebration ?? null,
       progress: result.progress ?? null,
       yesterdayRecap: result.yesterdayRecap ?? null,

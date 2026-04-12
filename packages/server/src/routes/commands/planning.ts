@@ -73,6 +73,27 @@ export async function cmdReallocateGoalPlan(
   return { ok: true, result };
 }
 
+/**
+ * Confirm (approve) the AI-proposed daily tasks so the tasks page
+ * switches from the proposal card to the normal task list.
+ */
+export async function cmdConfirmDailyTasks(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const today = (body.date as string) || getEffectiveDate();
+  const existing = await repos.dailyLogs.get(today);
+  const mergedPayload = { ...(existing?.payload ?? {}), tasksConfirmed: true };
+  await repos.dailyLogs.upsert({
+    date: today,
+    mood: existing?.mood,
+    energy: existing?.energy,
+    notes: existing?.notes,
+    reflection: existing?.reflection,
+    payload: mergedPayload,
+  });
+  return { ok: true, date: today };
+}
+
 export async function cmdRegenerateDailyTasks(
   body: Record<string, unknown>,
 ): Promise<unknown> {

@@ -103,6 +103,10 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:dashboard",
     "view:tasks",
   ],
+  "command:confirm-daily-tasks": [
+    "view:dashboard",
+    "view:tasks",
+  ],
   "command:dismiss-nudge": [
     "view:dashboard",
     "view:tasks",

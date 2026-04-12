@@ -43,6 +43,7 @@ export type CommandKind =
   | "command:reallocate-goal-plan"
   | "command:adaptive-reschedule"
   | "command:regenerate-daily-tasks"
+  | "command:confirm-daily-tasks"
   | "command:dismiss-nudge";
 
 export type EventKind =

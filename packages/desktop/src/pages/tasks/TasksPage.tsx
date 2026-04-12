@@ -24,6 +24,8 @@ import {
   Undo2,
   Calendar,
   Clock,
+  Check,
+  Sparkles,
 } from "lucide-react";
 import { useT } from "../../i18n";
 import { shouldAutoReflect, triggerReflection } from "../../services/memory";
@@ -138,6 +140,7 @@ export default function TasksPage() {
   const [deferMoves, setDeferMoves] = useState<
     Array<{ taskId: string; title: string; fromDate: string; toDate: string }>
   >([]);
+  const [confirming, setConfirming] = useState(false);
   const deferCheckedRef = useRef<string | null>(null);
 
   // Derived view-data shortcuts.
@@ -486,7 +489,108 @@ export default function TasksPage() {
           />
         )}
 
-        {/* ── Today's Tasks — grouped by source ── */}
+        {/* ── Daily Tasks Proposal Card ── */}
+        {todayLog?.tasksConfirmed === false && allTodayTasks.length > 0 ? (
+          <section className="tasks-proposal-card animate-slide-up">
+            <div className="proposal-header">
+              <Sparkles size={18} />
+              <h3>Today's Proposed Plan</h3>
+            </div>
+
+            {todayLog?.adaptiveReasoning && (
+              <p className="proposal-reasoning">{todayLog.adaptiveReasoning}</p>
+            )}
+
+            <div className="proposal-task-list">
+              {allTodayTasks.map((task) => {
+                const badge = goalTitleFor(task.goalId);
+                return (
+                  <div key={task.id} className="proposal-task-item">
+                    <div className="proposal-task-info">
+                      <span className="proposal-task-title">{task.title}</span>
+                      {badge && (
+                        <span className="badge badge-source">{badge}</span>
+                      )}
+                    </div>
+                    <div className="proposal-task-meta">
+                      {task.durationMinutes && (
+                        <span className="proposal-task-duration">
+                          <Clock size={11} />
+                          {task.durationMinutes}m
+                        </span>
+                      )}
+                      {task.cognitiveWeight && (
+                        <span className="proposal-task-weight">
+                          ⚡ {task.cognitiveWeight}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="proposal-summary">
+              <span>
+                {allTodayTasks.length} task{allTodayTasks.length === 1 ? "" : "s"}
+                {" · "}
+                {allTodayTasks.reduce((s, t) => s + (t.durationMinutes ?? 0), 0)}m
+                {" · "}
+                ⚡ {allTodayTasks.reduce((s, t) => s + (t.cognitiveWeight ?? 0), 0)} pts
+              </span>
+            </div>
+
+            <div className="proposal-actions">
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={confirming}
+                onClick={async () => {
+                  setConfirming(true);
+                  try {
+                    await run("command:confirm-daily-tasks", {
+                      date: data?.todayDate,
+                    });
+                    refetch();
+                  } finally {
+                    setConfirming(false);
+                  }
+                }}
+              >
+                {confirming ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <Check size={14} />
+                )}
+                Approve Plan
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={refreshing}
+                onClick={async () => {
+                  setRefreshing(true);
+                  try {
+                    await run("command:regenerate-daily-tasks", {
+                      date: data?.todayDate,
+                    });
+                    refetch();
+                  } catch {
+                    refetch();
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+              >
+                {refreshing ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+                Regenerate
+              </button>
+            </div>
+          </section>
+        ) : (
+        /* ── Today's Tasks — grouped by source ── */
         <section className="tasks-section animate-slide-up">
           <div className="tasks-header">
             <h3>{t.dashboard.today}</h3>
@@ -725,6 +829,7 @@ export default function TasksPage() {
             </div>
           )}
         </section>
+        )}
 
         {/* Contextual nudges */}
         <NudgesSection

@@ -68,6 +68,8 @@ export function hydrateDailyLog(
     yesterdayRecap: (p.yesterdayRecap as DailyLog["yesterdayRecap"]) ?? null,
     encouragement: (p.encouragement as string) ?? "",
     mood: (p.mood as DailyLog["mood"]) ?? log.mood ?? undefined,
+    tasksConfirmed: (p.tasksConfirmed as boolean) ?? true,
+    adaptiveReasoning: (p.adaptiveReasoning as string) ?? "",
     createdAt: log.createdAt,
   };
 }

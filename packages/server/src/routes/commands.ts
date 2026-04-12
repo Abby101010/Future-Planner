@@ -36,6 +36,7 @@ import {
   cmdDismissNudge,
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
+  cmdConfirmDailyTasks,
   cmdRegenerateDailyTasks,
   cmdAdaptiveReschedule,
   cmdStartChatStream,
@@ -162,6 +163,9 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:adaptive-reschedule":
         result = await cmdAdaptiveReschedule(body);
+        break;
+      case "command:confirm-daily-tasks":
+        result = await cmdConfirmDailyTasks(body);
         break;
       case "command:regenerate-daily-tasks":
         result = await cmdRegenerateDailyTasks(body);

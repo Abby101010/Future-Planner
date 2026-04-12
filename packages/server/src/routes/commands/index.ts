@@ -25,6 +25,7 @@ export {
 export {
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
+  cmdConfirmDailyTasks,
   cmdRegenerateDailyTasks,
   cmdAdaptiveReschedule,
 } from "./planning";

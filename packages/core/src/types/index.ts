@@ -188,6 +188,14 @@ export interface DailyLog {
   yesterdayRecap: YesterdayRecap | null;
   encouragement: string;
   mood?: MoodEntry;
+  /** Whether the user has confirmed today's AI-proposed task list.
+   *  When false, the tasks page shows a "Daily Plan Proposal" card
+   *  that lets the user approve, regenerate, or discuss before
+   *  committing to the day's plan. */
+  tasksConfirmed?: boolean;
+  /** AI's one-line explanation of why it chose these tasks and this
+   *  cognitive budget. Shown in the proposal card. */
+  adaptiveReasoning?: string;
   createdAt: string;
 }
 
