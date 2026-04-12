@@ -33,10 +33,16 @@ DETECTION RULES:
   over time, the JSON format is:
   {"is_goal": true, "title": "concise goal title", "description": "what the user wants to achieve and any context they gave", "goalType": "big|everyday|repeating", "targetDate": "YYYY-MM-DD or empty if ongoing", "importance": "high|medium|low"}
   RULES for goals:
-  - "big" = long-term projects or ambitions (learn a language, get fit, build an app, study for exams)
+  - "big" = long-term projects, ambitions, fitness goals, learning goals, or anything requiring
+    structured planning with milestones and progression. Even if it involves regular activity
+    (e.g. "get fit", "exercise daily", "go to gym 3x/week"), if the user wants to ACHIEVE
+    something or BUILD a habit, that is a BIG goal — it needs a plan with progression.
   - "everyday" = small daily habits (drink water, read 20 min, stretch)
-  - "repeating" = recurring activities with a schedule (gym 3x/week, weekly meal prep)
+  - "repeating" = FIXED EXTERNAL APPOINTMENTS with a recurring schedule (math class every
+    Tuesday 10am, weekly team meeting, piano lessons Thursday). NOT for fitness/health/learning
+    goals that happen to involve regular activity.
   - If the user says "plan X for me" or "help me with X" where X is a multi-step endeavor, that's a BIG goal.
+  - If the user wants to "get fit", "build muscle", "lose weight", "eat healthier", "build a healthy lifestyle" → always BIG goal.
   - Set targetDate based on context. If none given, leave empty for habits or set a reasonable default (e.g. 3 months out for fitness).
   - Importance: default to "high" if they seem motivated, "medium" otherwise.
 

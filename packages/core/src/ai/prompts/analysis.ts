@@ -23,14 +23,21 @@ and optional extra description/context from the user, classify this goal into on
    Recurring events with a fixed schedule — classes, meetings, regular appointments.
    These go on the calendar and repeat automatically.
    Examples: "Math class every Tuesday 10am", "Weekly team meeting Mondays at 2pm",
-   "Piano lessons every Thursday", "Gym every MWF"
-   SIGNALS: User mentions a day/time pattern, uses words like "every", "weekly", "class",
-   "meeting", mentions specific days of the week.
+   "Piano lessons every Thursday"
+   SIGNALS: User mentions a FIXED EXTERNAL APPOINTMENT with specific day/time,
+   uses words like "class", "lesson", "meeting", "appointment" with a recurring day.
+   NOT for fitness/health/learning goals — those are "big" even if they involve
+   regular activity. "Go to the gym 3x/week" is a BIG goal (needs workout plan,
+   progression, nutrition). "Gym class every Tuesday 6pm" is repeating (fixed appointment).
 
 ═══ CLASSIFICATION PRIORITY ═══
-1. If the user mentions recurring days/times → "repeating"
-2. If it's a quick task or errand → "everyday"
-3. If it requires planning and multiple steps → "big"
+1. If it requires planning, learning, skill development, habit building, or has an
+   aspirational outcome (get fit, learn X, build Y) → "big" — even if it involves
+   regular/recurring activity. The key question: does achieving this require a PLAN
+   with progression and milestones? If yes → "big".
+2. If the user mentions a FIXED EXTERNAL APPOINTMENT with recurring days/times
+   (classes, meetings, lessons with a set schedule) → "repeating"
+3. If it's a quick task or errand → "everyday"
 
 IMPORTANT: The user may provide extra description/context. This is critical information.
 Factor it into classification and task generation.

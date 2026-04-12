@@ -38,10 +38,13 @@ CALENDAR EVENTS — has a specific date AND time:
 GOALS — user wants to achieve something over time, plan a project, build a habit:
   {"is_goal": true, "title": "...", "description": "...", "goalType": "big|everyday|repeating", "targetDate": "YYYY-MM-DD or empty", "importance": "high|medium|low"}
   Rules:
-  - "big" = long-term projects (learn a language, get fit, build an app)
+  - "big" = long-term projects, fitness goals, learning goals, or anything needing structured
+    planning with progression (learn a language, get fit, build an app, build a healthy lifestyle)
   - "everyday" = small daily habits (drink water, read 20 min)
-  - "repeating" = recurring activities with schedule (gym 3x/week)
+  - "repeating" = FIXED EXTERNAL APPOINTMENTS (math class Tue 10am, weekly team meeting).
+    NOT for fitness/health/learning goals that involve regular activity.
   - "plan X for me" or "help me with X" where X is multi-step → big goal
+  - "get fit", "build muscle", "healthy lifestyle", "lose weight" → always big goal
   - Default importance: "high" if motivated, "medium" otherwise
 
 REMINDERS — user wants to be notified at a specific time ("remind me", "don't forget"):
