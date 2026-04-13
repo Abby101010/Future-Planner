@@ -1,0 +1,188 @@
+/* Login page — Frosted glass card on dreamy gradient backdrop */
+
+.login {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  position: relative;
+  overflow-y: auto;
+}
+
+/* Ambient glow behind the card */
+.login::before {
+  content: '';
+  position: absolute;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(
+    circle,
+    rgba(168, 196, 240, 0.12) 0%,
+    rgba(255, 179, 108, 0.06) 50%,
+    transparent 70%
+  );
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-xl) var(--space-xl) var(--space-lg);
+  text-align: center;
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.login-title {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-xl);
+}
+
+/* ── Form ── */
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.login-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding-left: 2px;
+}
+
+.login-field .input {
+  padding: 11px 14px;
+}
+
+/* ── Error banner ── */
+
+.login-error {
+  background: var(--red-soft);
+  border: 1px solid rgba(224, 144, 144, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--red);
+  text-align: left;
+}
+
+/* ── Primary CTA ── */
+
+.login-cta {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+}
+
+.login-cta:disabled {
+  opacity: 0.6;
+}
+
+/* ── Spinner inside button ── */
+
+.login-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+/* ── Divider ── */
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: var(--space-sm) 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(168, 196, 240, 0.15);
+}
+
+/* ── Google button ── */
+
+.login-google {
+  width: 100%;
+  padding: 11px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+}
+
+.login-google svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* ── Mode toggle ── */
+
+.login-toggle {
+  margin-top: var(--space-lg);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.login-toggle button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-family);
+}
+
+.login-toggle button:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* ── Success message (post sign-up) ── */
+
+.login-success {
+  background: var(--green-soft);
+  border: 1px solid rgba(125, 216, 168, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--green);
+  text-align: left;
+}

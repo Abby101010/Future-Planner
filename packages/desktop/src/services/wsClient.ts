@@ -20,7 +20,7 @@
 
 import type { Envelope, EventKind, QueryKind } from "@northstar/core";
 import { PROTOCOL_VERSION } from "@northstar/core";
-import { getAuthToken } from "./auth";
+import { getAuthTokenSync } from "./auth";
 import { createLogger } from "../utils/logger";
 
 const log = createLogger("ws");
@@ -68,7 +68,7 @@ function wsUrl(): string {
     throw new Error("wsClient: VITE_CLOUD_API_URL is not set");
   }
   const wsBase = httpBase.replace(/^http/, "ws");
-  const token = encodeURIComponent(getAuthToken());
+  const token = encodeURIComponent(getAuthTokenSync() ?? "");
   return `${wsBase}/ws?token=${token}`;
 }
 
@@ -104,7 +104,7 @@ class WsClient {
       return;
     }
 
-    this.tokenAtConnect = getAuthToken();
+    this.tokenAtConnect = getAuthTokenSync();
     log.debug("connecting", url);
 
     let socket: WebSocket;
@@ -240,7 +240,7 @@ class WsClient {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       // If the token rotated since we opened, bounce the socket.
-      if (getAuthToken() !== this.tokenAtConnect) {
+      if (getAuthTokenSync() !== this.tokenAtConnect) {
         log.info("token rotated, reconnecting");
         this.reconnect();
         return;

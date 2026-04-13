@@ -1,39 +1,28 @@
 /* ──────────────────────────────────────────────────────────
    NorthStar — In-App Calendar Page
 
-   • Monthly calendar view with events
-   • Create / edit / delete events
+   • Monthly calendar view with tasks (unified model)
+   • Create / edit / delete tasks
    • Mark vacation days
-   • Optional device calendar sync (macOS Calendar.app etc.)
-
-   Phase 6a: reads events + goals + deviceIntegrations + vacation
-   mode from `view:calendar` (date-range scoped to the visible
-   month ± 1). Event CRUD goes through
-   `command:upsert-calendar-event` / `command:delete-calendar-event`.
-   Device-integration mutations are out of the command taxonomy for
-   this phase — they remain on the store with a TODO for phase 7.
+   • Recurring task support
    ────────────────────────────────────────────────────────── */
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Plus,
   Calendar,
   Palmtree,
-  Monitor,
   Loader2,
   AlertTriangle,
   RefreshCw,
 } from "lucide-react";
-import { listDeviceCalendars, importDeviceCalendarEvents } from "../../services/ai";
-import { entitiesRepo } from "../../repositories";
-import type { CalendarEvent, DeviceIntegrations, Goal } from "@northstar/core";
+import type { DailyTask, Goal } from "@northstar/core";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
-import DeviceCalendarPanel from "./DeviceCalendarPanel";
 import CalendarDayDetail from "./CalendarDayDetail";
-import CalendarEventFormModal from "./CalendarEventFormModal";
+import CalendarTaskFormModal from "./CalendarEventFormModal";
 import { toDateStr } from "../../utils/dateFormat";
 import "./CalendarPage.css";
 
@@ -46,9 +35,8 @@ interface CalendarVacationMode {
 interface CalendarView {
   rangeStart: string;
   rangeEnd: string;
-  events: CalendarEvent[];
+  tasks: DailyTask[];
   goals: Goal[];
-  deviceIntegrations: DeviceIntegrations | null;
   vacationMode: CalendarVacationMode;
 }
 
@@ -64,56 +52,35 @@ function getDaysInMonth(year: number, month: number): Date[] {
   return days;
 }
 
-
 const CATEGORY_COLORS: Record<string, string> = {
-  work: "#ef4444",
-  personal: "#8b5cf6",
-  health: "#22c55e",
-  social: "#f59e0b",
-  travel: "#06b6d4",
-  focus: "#3b82f6",
-  other: "#6b7280",
+  learning: "#3b82f6",
+  building: "#ef4444",
+  networking: "#f59e0b",
+  reflection: "#8b5cf6",
+  planning: "#22c55e",
 };
 
 // ── Main Component ──────────────────────────────────────
 
 export default function CalendarPage() {
-  // Device-integration mutations don't have a command slug yet. We
-  // write them to local React state only — the reads still come from
-  // `view:calendar.deviceIntegrations` on refetch. Follow-up: add
-  // command:update-device-integrations to persist these toggles.
-  const updateIntegration = (
-    _kind: "calendar" | "reminders",
-    _patch: Record<string, unknown>,
-  ): void => {};
-
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [showEventForm, setShowEventForm] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-  const [showIntegrations, setShowIntegrations] = useState(false);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
 
-  // Event form state
+  // Task form state
   const [formTitle, setFormTitle] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formStartTime, setFormStartTime] = useState("09:00");
   const [formEndTime, setFormEndTime] = useState("10:00");
   const [formIsAllDay, setFormIsAllDay] = useState(false);
-  const [formCategory, setFormCategory] = useState<CalendarEvent["category"]>("personal");
+  const [formCategory, setFormCategory] = useState<string>("planning");
   const [formIsVacation, setFormIsVacation] = useState(false);
   const [formNotes, setFormNotes] = useState("");
 
-  // Device integration state (local UI)
-  const [availableDeviceCalendars, setAvailableDeviceCalendars] = useState<string[]>([]);
-  const [loadingDeviceCals, setLoadingDeviceCals] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState("");
-
   // ── View query ────────────────────────────────────────
-  // Include a month of padding on each side so the grid never shows
-  // a day with missing event data during month transitions.
   const rangeStart = useMemo(
     () => toDateStr(new Date(viewYear, viewMonth - 1, 1)),
     [viewYear, viewMonth],
@@ -128,8 +95,7 @@ export default function CalendarPage() {
   );
   const { run, running } = useCommand();
 
-  const calendarEvents = data?.events ?? [];
-  const deviceIntegrations = data?.deviceIntegrations ?? null;
+  const calendarTasks = data?.tasks ?? [];
 
   // ── Calendar grid ─────────────────────────────────────
 
@@ -167,196 +133,103 @@ export default function CalendarPage() {
     setViewMonth(today.getMonth());
   };
 
-  // Get events for a specific date
-  const getEventsForDate = useCallback(
+  // Get tasks for a specific date
+  const getTasksForDate = useCallback(
     (dateStr: string) => {
-      return calendarEvents.filter((e) => {
-        const eventDate = e.startDate.split("T")[0];
-        return eventDate === dateStr;
-      });
+      return calendarTasks.filter((t) => t.date === dateStr);
     },
-    [calendarEvents]
+    [calendarTasks]
   );
 
-  // ── Event CRUD ────────────────────────────────────────
+  // ── Task CRUD ────────────────────────────────────────
 
-  const openNewEvent = (dateStr?: string) => {
-    setEditingEvent(null);
+  const openNewTask = (dateStr?: string) => {
+    setEditingTask(null);
     setFormTitle("");
     setFormDate(dateStr || toDateStr(today));
     setFormStartTime("09:00");
     setFormEndTime("10:00");
     setFormIsAllDay(false);
-    setFormCategory("personal");
+    setFormCategory("planning");
     setFormIsVacation(false);
     setFormNotes("");
-    setShowEventForm(true);
+    setShowTaskForm(true);
   };
 
-  const openEditEvent = (event: CalendarEvent) => {
-    setEditingEvent(event);
-    setFormTitle(event.title);
-    setFormDate(event.startDate.split("T")[0]);
-    if (!event.isAllDay) {
-      const start = new Date(event.startDate);
-      const end = new Date(event.endDate);
-      setFormStartTime(
-        `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`
-      );
-      setFormEndTime(
-        `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`
-      );
-    }
-    setFormIsAllDay(event.isAllDay);
-    setFormCategory(event.category);
-    setFormIsVacation(event.isVacation);
-    setFormNotes(event.notes || "");
-    setShowEventForm(true);
+  const openEditTask = (task: DailyTask) => {
+    setEditingTask(task);
+    setFormTitle(task.title);
+    setFormDate(task.date || "");
+    setFormStartTime(task.scheduledTime || "09:00");
+    setFormEndTime(task.scheduledEndTime || "10:00");
+    setFormIsAllDay(task.isAllDay ?? !task.scheduledTime);
+    setFormCategory(task.category || "planning");
+    setFormIsVacation(task.isVacation ?? false);
+    setFormNotes(task.notes || "");
+    setShowTaskForm(true);
   };
 
-  const handleSaveEvent = async () => {
+  const handleSaveTask = async () => {
     if (!formTitle.trim() || !formDate) return;
 
-    const startDate = formIsAllDay
-      ? `${formDate}T00:00:00`
-      : `${formDate}T${formStartTime}:00`;
-    const endDate = formIsAllDay
-      ? `${formDate}T23:59:59`
-      : `${formDate}T${formEndTime}:00`;
-
-    const startMs = new Date(startDate).getTime();
-    const endMs = new Date(endDate).getTime();
+    const startMs = formIsAllDay
+      ? 0
+      : new Date(`2000-01-01T${formStartTime}:00`).getTime();
+    const endMs = formIsAllDay
+      ? 0
+      : new Date(`2000-01-01T${formEndTime}:00`).getTime();
     const durationMinutes = formIsAllDay
       ? 960
       : Math.max(1, Math.round((endMs - startMs) / 60000));
 
-    if (editingEvent) {
-      const updated: CalendarEvent = {
-        ...editingEvent,
-        title: formTitle.trim(),
-        startDate,
-        endDate,
-        isAllDay: formIsAllDay,
-        durationMinutes,
-        category: formCategory,
-        isVacation: formIsVacation,
-        notes: formNotes.trim() || undefined,
-      };
-      await run("command:upsert-calendar-event", { event: updated });
-    } else {
-      // Client still needs a fresh id for the row — entitiesRepo.newEvent
-      // fills in defaulted fields server-side and returns a fully-typed
-      // CalendarEvent that we immediately upsert via the command.
-      const newEvent = await entitiesRepo.newEvent({
-        title: formTitle.trim(),
-        startDate,
-        endDate,
-        isAllDay: formIsAllDay,
-        durationMinutes,
-        category: formCategory,
-        isVacation: formIsVacation,
-        source: "manual",
-        notes: formNotes.trim() || undefined,
+    const payload: Record<string, unknown> = {
+      description: "",
+      durationMinutes,
+      priority: "should-do",
+      category: formCategory,
+      isAllDay: formIsAllDay,
+      isVacation: formIsVacation,
+      notes: formNotes.trim() || undefined,
+      source: "calendar",
+    };
+    if (!formIsAllDay) {
+      payload.scheduledTime = formStartTime;
+      payload.scheduledEndTime = formEndTime;
+    }
+
+    if (editingTask) {
+      // Virtual recurring instances can't be edited directly — skip if id contains `::`
+      const taskId = editingTask.id.includes("::") ? editingTask.id.split("::")[0] : editingTask.id;
+      await run("command:update-task", {
+        taskId,
+        patch: {
+          title: formTitle.trim(),
+          date: formDate,
+          ...payload,
+        },
       });
-      await run("command:upsert-calendar-event", { event: newEvent });
+    } else {
+      await run("command:create-task", {
+        date: formDate,
+        title: formTitle.trim(),
+        payload,
+      });
     }
 
-    setShowEventForm(false);
-    setEditingEvent(null);
+    setShowTaskForm(false);
+    setEditingTask(null);
+    refetch();
   };
 
-  const handleDeleteEvent = async (id: string) => {
-    await run("command:delete-calendar-event", { eventId: id });
-    if (editingEvent?.id === id) {
-      setShowEventForm(false);
-      setEditingEvent(null);
+  const handleDeleteTask = async (id: string) => {
+    const taskId = id.includes("::") ? id.split("::")[0] : id;
+    await run("command:delete-task", { taskId });
+    if (editingTask?.id === id) {
+      setShowTaskForm(false);
+      setEditingTask(null);
     }
+    refetch();
   };
-
-  // ── Device Integration (no command slug yet — see note above) ─
-
-  const handleListDeviceCalendars = useCallback(async () => {
-    setLoadingDeviceCals(true);
-    try {
-      const result = await listDeviceCalendars();
-      if (result.ok) {
-        setAvailableDeviceCalendars(result.calendars);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoadingDeviceCals(false);
-    }
-  }, []);
-
-  const handleToggleDeviceCalendar = (calName: string) => {
-    const current = deviceIntegrations?.calendar.selectedCalendars ?? [];
-    const updated = current.includes(calName)
-      ? current.filter((c) => c !== calName)
-      : [...current, calName];
-    updateIntegration("calendar", { selectedCalendars: updated });
-  };
-
-  const handleEnableDeviceCalendar = (enabled: boolean) => {
-    updateIntegration("calendar", { enabled });
-    if (enabled && availableDeviceCalendars.length === 0) {
-      handleListDeviceCalendars();
-    }
-  };
-
-  const handleSyncNow = useCallback(async () => {
-    if (!deviceIntegrations?.calendar.enabled) return;
-    setSyncing(true);
-    setSyncMessage("");
-    try {
-      const startDate = toDateStr(new Date());
-      const end = new Date();
-      end.setDate(end.getDate() + 90);
-      const endDate = toDateStr(end);
-
-      const result = await importDeviceCalendarEvents(
-        startDate,
-        endDate,
-        deviceIntegrations.calendar.selectedCalendars
-      );
-      if (result.ok && result.events.length > 0) {
-        // Convert device events to CalendarEvent format (backend-assigned IDs)
-        const imported: CalendarEvent[] = await Promise.all(
-          result.events.map((de) =>
-            entitiesRepo.newEvent({
-              title: (de.title as string) || "Untitled",
-              startDate: (de.startDate as string) || "",
-              endDate: (de.endDate as string) || "",
-              isAllDay: (de.isAllDay as boolean) || false,
-              durationMinutes: (de.durationMinutes as number) || 60,
-              category: "other",
-              isVacation:
-                (de.isAllDay as boolean) &&
-                ["vacation", "holiday", "pto", "off", "leave", "trip", "travel"].some(
-                  (kw) => ((de.title as string) || "").toLowerCase().includes(kw),
-                ),
-              source: "device-calendar",
-              sourceCalendar: (de.calendar as string) || "",
-            }),
-          ),
-        );
-
-        // Push each imported event through the upsert command so the
-        // server keeps the canonical list and emits invalidations.
-        for (const ev of imported) {
-          await run("command:upsert-calendar-event", { event: ev });
-        }
-        updateIntegration("calendar", { lastSynced: new Date().toISOString() });
-        setSyncMessage(`Imported ${imported.length} events`);
-      } else {
-        setSyncMessage("No events found to import");
-      }
-    } catch {
-      setSyncMessage("Sync failed — check calendar permissions");
-    } finally {
-      setSyncing(false);
-    }
-  }, [deviceIntegrations, run]);
 
   // ── Render ────────────────────────────────────────────
 
@@ -394,16 +267,9 @@ export default function CalendarPage() {
 
   if (!data) return null;
 
-  const selectedDateEvents = selectedDate ? getEventsForDate(selectedDate) : [];
+  const selectedDateTasks = selectedDate ? getTasksForDate(selectedDate) : [];
   const todayStr = toDateStr(today);
-
-  // Fall back to an empty DeviceIntegrations shape for subcomponents that
-  // expect a fully populated object — the legacy store guarantees this.
-  const safeDeviceIntegrations: DeviceIntegrations =
-    deviceIntegrations ?? {
-      calendar: { enabled: false, selectedCalendars: [] },
-      reminders: { enabled: false, selectedLists: [] },
-    };
+  const vacationTasks = calendarTasks.filter((t) => t.isVacation);
 
   return (
     <div className="calendar-page">
@@ -415,44 +281,22 @@ export default function CalendarPage() {
             <div>
               <h2>Calendar</h2>
               <p className="cal-subtitle">
-                {calendarEvents.length} event{calendarEvents.length !== 1 ? "s" : ""} ·
-                {calendarEvents.filter((e) => e.isVacation).length} vacation day{calendarEvents.filter((e) => e.isVacation).length !== 1 ? "s" : ""}
+                {calendarTasks.length} task{calendarTasks.length !== 1 ? "s" : ""} ·
+                {vacationTasks.length} vacation day{vacationTasks.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
           <div className="cal-header-actions">
             <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setShowIntegrations(!showIntegrations)}
-            >
-              <Monitor size={14} />
-              Device Sync
-            </button>
-            <button
               className="btn btn-primary btn-sm"
-              onClick={() => openNewEvent()}
+              onClick={() => openNewTask()}
               disabled={running}
             >
               <Plus size={14} />
-              Add Event
+              Add Task
             </button>
           </div>
         </header>
-
-        {/* Device Integrations Panel */}
-        {showIntegrations && (
-          <DeviceCalendarPanel
-            deviceIntegrations={safeDeviceIntegrations}
-            availableDeviceCalendars={availableDeviceCalendars}
-            loadingDeviceCals={loadingDeviceCals}
-            syncing={syncing}
-            syncMessage={syncMessage}
-            onEnable={handleEnableDeviceCalendar}
-            onList={handleListDeviceCalendars}
-            onToggle={handleToggleDeviceCalendar}
-            onSyncNow={handleSyncNow}
-          />
-        )}
 
         {/* Calendar + day-detail split: calendar shrinks when a date is picked */}
         <div className={`cal-split ${selectedDate ? "cal-split-open" : ""}`}>
@@ -487,10 +331,10 @@ export default function CalendarPage() {
             {/* Day cells */}
             {daysInMonth.map((date) => {
               const dateStr = toDateStr(date);
-              const dayEvents = getEventsForDate(dateStr);
+              const dayTasks = getTasksForDate(dateStr);
               const isToday = dateStr === todayStr;
               const isSelected = dateStr === selectedDate;
-              const hasVacation = dayEvents.some((e) => e.isVacation);
+              const hasVacation = dayTasks.some((t) => t.isVacation);
               const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
               return (
@@ -508,20 +352,20 @@ export default function CalendarPage() {
                   onClick={() =>
                     setSelectedDate((prev) => (prev === dateStr ? null : dateStr))
                   }
-                  onDoubleClick={() => openNewEvent(dateStr)}
+                  onDoubleClick={() => openNewTask(dateStr)}
                 >
                   <span className="cal-cell-day">{date.getDate()}</span>
-                  {dayEvents.length > 0 && (
+                  {dayTasks.length > 0 && (
                     <div className="cal-cell-dots">
-                      {dayEvents.slice(0, 3).map((e) => (
+                      {dayTasks.slice(0, 3).map((t) => (
                         <span
-                          key={e.id}
+                          key={t.id}
                           className="cal-cell-dot"
-                          style={{ backgroundColor: CATEGORY_COLORS[e.category] }}
+                          style={{ backgroundColor: CATEGORY_COLORS[t.category] || "#6b7280" }}
                         />
                       ))}
-                      {dayEvents.length > 3 && (
-                        <span className="cal-cell-more">+{dayEvents.length - 3}</span>
+                      {dayTasks.length > 3 && (
+                        <span className="cal-cell-more">+{dayTasks.length - 3}</span>
                       )}
                     </div>
                   )}
@@ -538,19 +382,23 @@ export default function CalendarPage() {
         {selectedDate && (
           <CalendarDayDetail
             selectedDate={selectedDate}
-            selectedDateEvents={selectedDateEvents}
-            onAddEvent={openNewEvent}
-            onEditEvent={openEditEvent}
-            onDeleteEvent={handleDeleteEvent}
+            tasks={selectedDateTasks}
+            onAddTask={openNewTask}
+            onEditTask={openEditTask}
+            onDeleteTask={handleDeleteTask}
+            onToggleTask={async (id) => {
+              await run("command:toggle-task", { taskId: id });
+              refetch();
+            }}
             onClose={() => setSelectedDate(null)}
           />
         )}
         </div>
 
-        {/* Event Form Modal */}
-        {showEventForm && (
-          <CalendarEventFormModal
-            editingEvent={editingEvent}
+        {/* Task Form Modal */}
+        {showTaskForm && (
+          <CalendarTaskFormModal
+            editingTask={editingTask}
             formTitle={formTitle}
             formDate={formDate}
             formStartTime={formStartTime}
@@ -567,8 +415,8 @@ export default function CalendarPage() {
             setFormCategory={setFormCategory}
             setFormIsVacation={setFormIsVacation}
             setFormNotes={setFormNotes}
-            onClose={() => setShowEventForm(false)}
-            onSave={handleSaveEvent}
+            onClose={() => setShowTaskForm(false)}
+            onSave={handleSaveTask}
           />
         )}
       </div>

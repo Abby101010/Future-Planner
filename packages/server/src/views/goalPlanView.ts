@@ -15,7 +15,7 @@
 
 import * as repos from "../repositories";
 import type {
-  CalendarEvent,
+  DailyTask,
   Goal,
   GoalPlan,
   GoalPlanMessage,
@@ -45,9 +45,9 @@ export interface GoalPlanView {
   /** True when there are overdue tasks AND the user hasn't dismissed
    *  the reschedule banner yet. */
   needsRescheduling: boolean;
-  /** Calendar events over the plan's date range — GoalPlanPage passes
+  /** Scheduled tasks over the plan's date range — GoalPlanPage passes
    *  these into the reallocate flow. Empty array when no plan exists. */
-  calendarEvents: CalendarEvent[];
+  scheduledTasks: DailyTask[];
   /** Pace mismatch for this specific goal (null if on track). */
   paceMismatch: PaceMismatch | null;
 }
@@ -122,7 +122,7 @@ export async function resolveGoalPlanView(
       progress: { total: 0, completed: 0, percent: 0 },
       overdueTaskCount: 0,
       needsRescheduling: false,
-      calendarEvents: [],
+      scheduledTasks: [],
       paceMismatch: null,
     };
   }
@@ -145,7 +145,7 @@ export async function resolveGoalPlanView(
   const needsRescheduling =
     overdueTaskCount > 0 && !goal.rescheduleBannerDismissed;
 
-  // Calendar events: widest range we can cheaply pull — from today
+  // Scheduled tasks: widest range we can cheaply pull — from today
   // through the goal's target date (or 90d out if no target date).
   let rangeEnd = goal.targetDate || "";
   if (!rangeEnd) {
@@ -153,10 +153,11 @@ export async function resolveGoalPlanView(
     d.setDate(d.getDate() + 90);
     rangeEnd = d.toISOString().split("T")[0];
   }
-  const calendarEvents = await repos.calendar.listForRange(
-    `${today}T00:00:00`,
-    `${rangeEnd}T23:59:59`,
-  );
+  const taskRecords = await repos.dailyTasks.listForDateRange(today, rangeEnd);
+  const { flattenDailyTask } = await import("./_mappers");
+  const scheduledTasks: DailyTask[] = taskRecords
+    .filter((r) => (r.payload as Record<string, unknown>).scheduledTime)
+    .map((r) => flattenDailyTask(r, r.date));
 
   // Pace mismatch detection for this goal — use the reconstructed plan
   // (same data the UI displays), not the inline goal.plan which may lag.
@@ -195,7 +196,7 @@ export async function resolveGoalPlanView(
     progress,
     overdueTaskCount,
     needsRescheduling,
-    calendarEvents,
+    scheduledTasks,
     paceMismatch,
   };
 }

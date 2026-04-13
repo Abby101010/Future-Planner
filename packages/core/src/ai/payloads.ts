@@ -4,9 +4,9 @@
  * with `as`. These interfaces give us autocomplete, catch misspelled
  * keys, and document what each handler actually reads off the payload.
  *
- * Nested domain objects (goal, breakdown, logs, calendar events) are
- * still loose (`unknown` or `Record<string, unknown>[]`) — fully modeling
- * them belongs to a separate domain-types pass.
+ * Nested domain objects (goal, breakdown, logs) are still loose (`unknown`
+ * or `Record<string, unknown>[]`) — fully modeling them belongs to a
+ * separate domain-types pass.
  */
 
 /** Context fields injected by the multi-agent coordinator. Optional on
@@ -23,10 +23,6 @@ export interface EnrichedPayload {
 
 type LooseRow = Record<string, unknown>;
 type ChatMessage = { role: string; content: string };
-
-export interface DeviceIntegrations {
-  calendar?: { enabled: boolean; selectedCalendars: string[] };
-}
 
 export interface ClassifyGoalPayload extends EnrichedPayload {
   title: string;
@@ -76,7 +72,6 @@ export interface HomeChatPayload extends EnrichedPayload {
   chatHistory?: ChatMessage[];
   goals?: LooseRow[];
   todayTasks?: LooseRow[];
-  todayCalendarEvents?: LooseRow[];
   activeReminders?: LooseRow[];
   attachments?: LooseRow[];
   /** Caller-supplied effective "today" (6 AM boundary + timezone). When
@@ -101,12 +96,10 @@ export interface UnifiedChatPayload extends EnrichedPayload {
     visibleTasks?: LooseRow[];
     weeklyReviewDue?: boolean;
     activeGoals?: LooseRow[];
-    todayCalendarEvents?: LooseRow[];
     activeReminders?: LooseRow[];
   };
   goals?: LooseRow[];
   todayTasks?: LooseRow[];
-  todayCalendarEvents?: LooseRow[];
   activeReminders?: LooseRow[];
   attachments?: LooseRow[];
   todayDate?: string;
@@ -123,16 +116,12 @@ export interface GoalBreakdownPayload extends EnrichedPayload {
   goal?: unknown;
   targetDate?: string;
   dailyHours?: number;
-  inAppEvents?: unknown[];
-  deviceIntegrations?: DeviceIntegrations;
 }
 
 export interface ReallocatePayload extends EnrichedPayload {
   breakdown?: unknown;
   reason?: string;
   changes?: Record<string, unknown>;
-  inAppEvents?: unknown[];
-  deviceIntegrations?: DeviceIntegrations;
 }
 
 export interface DailyTasksPayload extends EnrichedPayload {
@@ -141,11 +130,8 @@ export interface DailyTasksPayload extends EnrichedPayload {
   pastLogs?: LooseRow[];
   date: string;
   heatmap?: unknown;
-  inAppEvents?: unknown[];
-  deviceIntegrations?: DeviceIntegrations;
   goalPlanSummaries?: LooseRow[];
   confirmedQuickTasks?: LooseRow[];
-  todayCalendarEvents?: LooseRow[];
   everydayGoals?: LooseRow[];
   repeatingGoals?: LooseRow[];
   isVacationDay?: boolean;
@@ -164,7 +150,6 @@ export interface AnalyzeQuickTaskPayload extends EnrichedPayload {
   userInput: string;
   existingTasks?: LooseRow[];
   goals?: LooseRow[];
-  todayCalendarEvents?: LooseRow[];
 }
 
 /** Mapping from RequestType → payload interface. Used by the router to

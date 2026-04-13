@@ -27,24 +27,28 @@ export async function handleDailyTasks(
   payload: DailyTasksPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const { date, heatmap, deviceIntegrations } = payload;
+  const { date, heatmap } = payload;
   const breakdown = payload.breakdown ?? payload.roadmap;
   const pastLogs = payload.pastLogs ?? [];
-  const inAppEvents = payload.inAppEvents ?? [];
 
   let todayFreeMinutes = 120;
+  let scheduledTasksBlock = "";
   try {
-    const schedule = await getScheduleContext(
-      date,
-      date,
-      inAppEvents as any,
-      deviceIntegrations,
-    );
+    const schedule = await getScheduleContext(date, date);
     if (schedule.days.length > 0) {
       todayFreeMinutes = Math.min(schedule.days[0].freeMinutes, 240);
+      // Build scheduled tasks block from schedule context
+      const dayEvents = schedule.days[0].events;
+      if (dayEvents.length > 0) {
+        const lines = dayEvents.map(
+          (e) =>
+            `  - "${e.title}" (${e.startTime || "all-day"} – ${e.endTime || "all-day"}, ${e.durationMinutes}min)`,
+        );
+        scheduledTasksBlock = `\nSCHEDULED TASKS TODAY (fixed time blocks — schedule around these):\n${lines.join("\n")}`;
+      }
     }
   } catch {
-    // no calendar data
+    // no schedule data
   }
 
   const yesterday =
@@ -149,15 +153,6 @@ CAPACITY PROFILE (computed from user's behavioral history):
     priority: string;
     category: string;
   }>;
-  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
-    title: string;
-    startDate: string;
-    endDate: string;
-    durationMinutes: number;
-    category: string;
-    isAllDay: boolean;
-    recurring?: { frequency: string };
-  }>;
   const everydayGoals = (payload.everydayGoals ?? []) as Array<{
     title: string;
     description: string;
@@ -245,16 +240,6 @@ CAPACITY PROFILE (computed from user's behavioral history):
     quickTasksBlock = `\nCONFIRMED QUICK TASKS (user added today via chat — MUST include these):\n${lines.join("\n")}`;
   }
 
-  // Build calendar events block
-  let calendarBlock = "";
-  if (todayCalendarEvents.length > 0) {
-    const lines = todayCalendarEvents.map(
-      (e) =>
-        `  - "${e.title}" (${e.startDate} – ${e.endDate}, ${e.durationMinutes}min, ${e.category}${e.recurring ? `, recurring: ${e.recurring.frequency}` : ""})`,
-    );
-    calendarBlock = `\nCALENDAR EVENTS TODAY (account for these — reduce free time accordingly):\n${lines.join("\n")}`;
-  }
-
   // Build everyday goals block
   let everydayBlock = "";
   if (everydayGoals.length > 0) {
@@ -340,7 +325,7 @@ MONTHLY CONTEXT (${currentMonth}):
           content: `Today is ${date}. I have ${todayFreeMinutes} minutes available for goal work.
 ${environmentBlock}${monthlyContextBlock}${vacationBlock}${schedulingBlock}${capacityBlock}
   recommended_task_count: ${recommendedCount}
-${calendarBlock}
+${scheduledTasksBlock}
 ${repeatingBlock}
 ${remindersBlock}
 ${goalPlanTasksBlock}
@@ -356,7 +341,7 @@ IMPORTANT REMINDERS:
 - If there are EVERYDAY TASKS, slot them into gaps — don't let them hang unfinished.
 - REPEATING EVENTS are non-negotiable time blocks. Include them and schedule around them.${isVacationDay ? "\n- VACATION DAY: Only light everyday tasks and mandatory repeating events. No big goal work." : ""}
 - If there are GOAL PLAN TASKS, select from DIFFERENT goals — rotate across all active goals.
-- If the user has calendar events, schedule tasks around them (not during them).
+- If there are SCHEDULED TASKS (fixed time blocks), schedule other tasks around them (not during them).
 - Sequence: momentum task first → hardest task → moderate → satisfying close.
 
 CURRENT GOAL BREAKDOWN (general plan context):

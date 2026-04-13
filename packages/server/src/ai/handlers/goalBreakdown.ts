@@ -15,29 +15,26 @@ export async function handleGoalBreakdown(
   payload: GoalBreakdownPayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const { goal, deviceIntegrations } = payload;
+  const { goal } = payload;
   const targetDate = payload.targetDate ?? "";
   const dailyHours = payload.dailyHours ?? 2;
-  const inAppEvents = payload.inAppEvents ?? [];
 
   const today = new Date();
   const endDate = new Date(today);
   endDate.setDate(endDate.getDate() + 90);
 
   let scheduleInfo =
-    "No calendar events found. User has not added any events to their calendar yet.";
+    "No scheduled tasks found. User has not added any time-blocked tasks yet.";
   try {
     const schedule = await getScheduleContext(
       today.toISOString().split("T")[0],
       endDate.toISOString().split("T")[0],
-      inAppEvents as any,
-      deviceIntegrations,
     );
     if (schedule.days.some((d) => d.events.length > 0)) {
       scheduleInfo = summarizeScheduleForAI(schedule);
     }
   } catch {
-    console.warn("Calendar schedule build failed");
+    console.warn("Schedule build failed");
   }
 
   const handlerKind = "goalBreakdown";

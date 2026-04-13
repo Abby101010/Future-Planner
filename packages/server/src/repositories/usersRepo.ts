@@ -15,11 +15,13 @@
  */
 
 import type {
-  DeviceIntegrations,
   TimeBlock,
   UserProfile,
   UserSettings,
 } from "@northstar/core";
+
+/** Lightweight placeholder — device integrations feature removed. */
+type DeviceIntegrations = Record<string, unknown>;
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";

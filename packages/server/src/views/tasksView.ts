@@ -13,7 +13,6 @@
 import * as repos from "../repositories";
 import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
 import type {
-  CalendarEvent,
   ContextualNudge,
   DailyLog,
   DailyTask,
@@ -69,7 +68,6 @@ export interface TasksView {
   bigGoalProgress: BigGoalProgress[];
   activeReminders: Reminder[];
   todayReminders: Reminder[];
-  todayEvents: CalendarEvent[];
   recentNudges: ContextualNudge[];
   vacationMode: TasksVacationMode;
   totalIncompleteTasks: number;
@@ -273,7 +271,6 @@ export async function resolveTasksView(): Promise<TasksView> {
     tasksInRange,
     heatmapData,
     activeReminders,
-    todayEvents,
     nudges,
     vacationState,
     userProfile,
@@ -283,7 +280,6 @@ export async function resolveTasksView(): Promise<TasksView> {
     repos.dailyTasks.listForDateRange(rangeStart, today),
     repos.heatmap.listRange(rangeStart, today),
     repos.reminders.listActive(),
-    repos.calendar.listForRange(`${today}T00:00:00`, `${today}T23:59:59`),
     repos.nudges.list(true),
     repos.vacationMode.get(),
     repos.users.get(),
@@ -316,7 +312,6 @@ export async function resolveTasksView(): Promise<TasksView> {
         await generateAndPersistDailyTasks({
           date: today,
           goals,
-          calendarEvents: todayEvents,
           pastLogs: hydratedLogs.slice(0, 14),
           heatmapData,
           activeReminders,
@@ -447,7 +442,6 @@ export async function resolveTasksView(): Promise<TasksView> {
     bigGoalProgress: computeBigGoalProgress(goals),
     activeReminders,
     todayReminders,
-    todayEvents,
     recentNudges: nudges.map(nudgeToContextual),
     vacationMode,
     totalIncompleteTasks,

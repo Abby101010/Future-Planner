@@ -17,7 +17,6 @@ import type {
   ChatSession,
   MonthlyContext,
   Goal,
-  CalendarEvent,
   DailyLog,
   UserProfile,
   DailyTask,
@@ -161,15 +160,6 @@ export const entitiesRepo = {
     );
     if (!r.ok || !r.goal) throw new Error(r.error || "newGoal failed");
     return r.goal;
-  },
-  async newEvent(input: Partial<CalendarEvent>): Promise<CalendarEvent> {
-    const r = await invoke<{
-      ok: boolean;
-      event?: CalendarEvent;
-      error?: string;
-    }>("entities:new-event", input);
-    if (!r.ok || !r.event) throw new Error(r.error || "newEvent failed");
-    return r.event;
   },
   async newUser(input: Partial<UserProfile>): Promise<UserProfile> {
     const r = await invoke<{

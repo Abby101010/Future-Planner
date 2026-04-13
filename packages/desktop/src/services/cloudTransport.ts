@@ -161,7 +161,7 @@ export async function cloudInvoke<T>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
+        Authorization: `Bearer ${await getAuthToken()}`,
         "X-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       body: JSON.stringify(payload ?? {}),

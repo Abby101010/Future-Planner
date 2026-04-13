@@ -327,6 +327,33 @@ const zh: Translations = {
     commonMistakes: "常见错误",
     bestPractices: "最佳实践",
   },
+  // ── 认证 ──
+  auth: {
+    title: "NorthStar",
+    signInSubtitle: "登录以继续",
+    signUpSubtitle: "创建你的账户",
+    email: "邮箱",
+    emailPlaceholder: "you@example.com",
+    password: "密码",
+    passwordPlaceholder: "你的密码",
+    confirmPassword: "确认密码",
+    confirmPasswordPlaceholder: "再次输入密码",
+    signIn: "登录",
+    createAccount: "创建账户",
+    or: "或",
+    continueWithGoogle: "使用 Google 登录",
+    noAccount: "还没有账户？",
+    hasAccount: "已有账户？",
+    signUpLink: "注册",
+    signInLink: "登录",
+    signUpSuccess: "请查看邮件确认账户，然后登录。",
+    errorEmpty: "请输入邮箱和密码。",
+    errorPasswordMismatch: "两次输入的密码不一致。",
+    errorGeneric: "出了点问题，请重试。",
+    errorTimeout: "登录时间过长，请重试。",
+    signOut: "退出登录",
+    signedInAs: "已登录为",
+  },
 } as const;
 
 export default zh;

@@ -1,35 +1,41 @@
-import { Plus, Clock, Palmtree, Trash2, Monitor, X } from "lucide-react";
-import type { CalendarEvent } from "@northstar/core";
-import { formatTime } from "../../utils/dateFormat";
+import { Plus, Clock, Palmtree, Trash2, X, CheckCircle2, Circle } from "lucide-react";
+import type { DailyTask } from "@northstar/core";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  work: "#ef4444",
-  personal: "#8b5cf6",
-  health: "#22c55e",
-  social: "#f59e0b",
-  travel: "#06b6d4",
-  focus: "#3b82f6",
-  other: "#6b7280",
+  learning: "#3b82f6",
+  building: "#ef4444",
+  networking: "#f59e0b",
+  reflection: "#8b5cf6",
+  planning: "#22c55e",
 };
-
 
 interface Props {
   selectedDate: string;
-  selectedDateEvents: CalendarEvent[];
-  onAddEvent: (date: string) => void;
-  onEditEvent: (event: CalendarEvent) => void;
-  onDeleteEvent: (id: string) => void;
+  tasks: DailyTask[];
+  onAddTask: (date: string) => void;
+  onEditTask: (task: DailyTask) => void;
+  onDeleteTask: (id: string) => void;
+  onToggleTask: (id: string) => void;
   onClose?: () => void;
 }
 
 export default function CalendarDayDetail({
   selectedDate,
-  selectedDateEvents,
-  onAddEvent,
-  onEditEvent,
-  onDeleteEvent,
+  tasks,
+  onAddTask,
+  onEditTask,
+  onDeleteTask,
+  onToggleTask,
   onClose,
 }: Props) {
+  // Sort: scheduled-time tasks first (by time), then all-day / unscheduled
+  const sorted = [...tasks].sort((a, b) => {
+    if (a.scheduledTime && b.scheduledTime) return a.scheduledTime.localeCompare(b.scheduledTime);
+    if (a.scheduledTime) return -1;
+    if (b.scheduledTime) return 1;
+    return 0;
+  });
+
   return (
     <div className="cal-day-detail card animate-slide-up">
       <div className="cal-day-detail-header">
@@ -44,10 +50,10 @@ export default function CalendarDayDetail({
         <div className="cal-day-detail-actions">
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => onAddEvent(selectedDate)}
+            onClick={() => onAddTask(selectedDate)}
           >
             <Plus size={14} />
-            Add Event
+            Add Task
           </button>
           {onClose && (
             <button
@@ -62,31 +68,42 @@ export default function CalendarDayDetail({
         </div>
       </div>
 
-      {selectedDateEvents.length === 0 ? (
+      {sorted.length === 0 ? (
         <p className="cal-day-empty">
-          No events. Double-click a date or press Add to create one.
+          No tasks. Double-click a date or press Add to create one.
         </p>
       ) : (
         <div className="cal-day-events">
-          {selectedDateEvents
-            .sort((a, b) => a.startDate.localeCompare(b.startDate))
-            .map((event) => (
+          {sorted.map((task) => (
               <div
-                key={event.id}
-                className={`cal-event ${event.isVacation ? "cal-event-vacation" : ""}`}
-                style={{ borderLeftColor: CATEGORY_COLORS[event.category] }}
+                key={task.id}
+                className={`cal-event ${task.isVacation ? "cal-event-vacation" : ""} ${task.completed ? "cal-event-completed" : ""}`}
+                style={{ borderLeftColor: CATEGORY_COLORS[task.category] || "#6b7280" }}
               >
                 <div className="cal-event-main">
-                  <div className="cal-event-title">{event.title}</div>
+                  <div className="cal-event-title-row">
+                    <button
+                      className="btn btn-ghost btn-xs cal-event-check"
+                      onClick={() => onToggleTask(task.id)}
+                      title={task.completed ? "Mark incomplete" : "Mark complete"}
+                    >
+                      {task.completed
+                        ? <CheckCircle2 size={16} className="cal-event-done" />
+                        : <Circle size={16} />}
+                    </button>
+                    <span className={`cal-event-title ${task.completed ? "cal-event-title-done" : ""}`}>
+                      {task.title}
+                    </span>
+                  </div>
                   <div className="cal-event-time">
-                    {event.isAllDay ? (
+                    {task.isAllDay || !task.scheduledTime ? (
                       "All day"
                     ) : (
                       <>
                         <Clock size={12} />
-                        {formatTime(event.startDate)} – {formatTime(event.endDate)}
+                        {task.scheduledTime} – {task.scheduledEndTime || ""}
                         <span className="cal-event-duration">
-                          ({event.durationMinutes}m)
+                          ({task.durationMinutes}m)
                         </span>
                       </>
                     )}
@@ -94,38 +111,36 @@ export default function CalendarDayDetail({
                   <div className="cal-event-meta">
                     <span
                       className="cal-event-category"
-                      style={{ backgroundColor: CATEGORY_COLORS[event.category] + "22", color: CATEGORY_COLORS[event.category] }}
+                      style={{
+                        backgroundColor: (CATEGORY_COLORS[task.category] || "#6b7280") + "22",
+                        color: CATEGORY_COLORS[task.category] || "#6b7280",
+                      }}
                     >
-                      {event.category}
+                      {task.category}
                     </span>
-                    {event.isVacation && (
+                    <span className="cal-event-priority">{task.priority}</span>
+                    {task.isVacation && (
                       <span className="cal-event-vac-badge">
                         <Palmtree size={11} />
                         Vacation
                       </span>
                     )}
-                    {event.source !== "manual" && (
-                      <span className="cal-event-source">
-                        <Monitor size={11} />
-                        {event.sourceCalendar || event.source}
-                      </span>
-                    )}
                   </div>
-                  {event.notes && (
-                    <p className="cal-event-notes">{event.notes}</p>
+                  {task.notes && (
+                    <p className="cal-event-notes">{task.notes}</p>
                   )}
                 </div>
                 <div className="cal-event-actions">
                   <button
                     className="btn btn-ghost btn-xs"
-                    onClick={() => onEditEvent(event)}
+                    onClick={() => onEditTask(task)}
                     title="Edit"
                   >
                     ✏️
                   </button>
                   <button
                     className="btn btn-ghost btn-xs"
-                    onClick={() => onDeleteEvent(event.id)}
+                    onClick={() => onDeleteTask(task.id)}
                     title="Delete"
                   >
                     <Trash2 size={13} />

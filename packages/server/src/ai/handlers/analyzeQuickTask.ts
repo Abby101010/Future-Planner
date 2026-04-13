@@ -26,14 +26,6 @@ export async function handleAnalyzeQuickTask(
     title: string;
     scope: string;
   }>;
-  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
-    title: string;
-    startDate: string;
-    endDate: string;
-    durationMinutes: number;
-    category: string;
-  }>;
-
   const today = new Date().toISOString().split("T")[0];
 
   const existingTasksSummary =
@@ -61,24 +53,24 @@ export async function handleAnalyzeQuickTask(
       ? goals.map((g) => `  - ${g.title} (${g.scope})`).join("\n")
       : "  No goals set.";
 
-  const calendarSummary =
-    todayCalendarEvents.length > 0
-      ? todayCalendarEvents
-          .map(
-            (e) =>
-              `  - "${e.title}" (${e.startDate} – ${e.endDate}, ${e.durationMinutes}min, ${e.category})`,
-          )
-          .join("\n")
-      : "  No calendar events today.";
-
   let todayFreeMinutes = 120;
+  let scheduledTasksSummary = "  No scheduled tasks today.";
   try {
-    const schedule = await getScheduleContext(today, today, [], undefined);
+    const schedule = await getScheduleContext(today, today);
     if (schedule.days.length > 0) {
       todayFreeMinutes = Math.min(schedule.days[0].freeMinutes, 240);
+      const dayEvents = schedule.days[0].events;
+      if (dayEvents.length > 0) {
+        scheduledTasksSummary = dayEvents
+          .map(
+            (e) =>
+              `  - "${e.title}" (${e.startTime || "all-day"} – ${e.endTime || "all-day"}, ${e.durationMinutes}min)`,
+          )
+          .join("\n");
+      }
     }
   } catch {
-    /* no calendar data */
+    /* no schedule data */
   }
 
   const remainingFreeMinutes = Math.max(0, todayFreeMinutes - totalMinutes);
@@ -124,8 +116,8 @@ ${existingTasksSummary}
   Total task time so far: ${totalMinutes}min
   Remaining free time: ~${remainingFreeMinutes}min
 
-CALENDAR EVENTS TODAY:
-${calendarSummary}
+SCHEDULED TASKS TODAY:
+${scheduledTasksSummary}
 
 USER'S GOALS:
 ${goalsSummary}

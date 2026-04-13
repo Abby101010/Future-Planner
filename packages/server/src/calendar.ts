@@ -1,11 +1,12 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Calendar integration
+   NorthStar — Schedule context builder
 
-   Server-side schedule builder. The macOS device-calendar
-   integration (osascript shell-out) was removed in phase 2a
-   because it cannot run on Linux Fly. Only in-app events
-   feed the schedule here.
+   Reads scheduled tasks (those with a scheduledTime in payload)
+   from the daily_tasks table and builds a day-by-day free/busy
+   summary consumed by the AI handlers.
    ────────────────────────────────────────────────────────── */
+
+import * as repos from "./repositories";
 
 // ── Shared interfaces ───────────────────────────────────
 
@@ -13,11 +14,10 @@ export interface DaySchedule {
   date: string;
   events: Array<{
     title: string;
-    startDate: string;
-    endDate: string;
+    startTime: string;
+    endTime: string;
     isAllDay: boolean;
     durationMinutes: number;
-    source: string;
   }>;
   busyMinutes: number;
   freeMinutes: number;
@@ -39,95 +39,67 @@ const VACATION_KEYWORDS = [
   "假期", "休假", "旅行", "出差",
 ];
 
-// ── Schedule builder (in-app events only) ───────────────
-
-interface InAppEvent {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate: string;
-  isAllDay: boolean;
-  durationMinutes: number;
-  isVacation: boolean;
-  source: string;
-}
+// ── Schedule builder ────────────────────────────────────
 
 /**
- * Build a schedule context for the AI.
- *
- * @param startDate  YYYY-MM-DD
- * @param endDate    YYYY-MM-DD
- * @param inAppEvents  Events from the NorthStar in-app calendar
- * @param _deviceIntegrations  Reserved: device integration was removed server-side in phase 2a
+ * Build a schedule context for the AI by reading scheduled tasks from the DB.
  */
 export async function getScheduleContext(
   startDate: string,
   endDate: string,
-  inAppEvents?: InAppEvent[],
-  _deviceIntegrations?: { calendar?: { enabled: boolean; selectedCalendars: string[] } }
 ): Promise<ScheduleContext> {
-  // Merge events from all sources
-  const allEvents: Array<{
-    title: string;
-    startDate: string;
-    endDate: string;
-    isAllDay: boolean;
-    durationMinutes: number;
-    isVacation: boolean;
-    source: string;
-  }> = [];
-
-  // 1. In-app events
-  if (inAppEvents) {
-    for (const e of inAppEvents) {
-      const eStart = e.startDate.split("T")[0];
-      if (eStart >= startDate && eStart <= endDate) {
-        allEvents.push({
-          title: e.title,
-          startDate: e.startDate,
-          endDate: e.endDate,
-          isAllDay: e.isAllDay,
-          durationMinutes: e.durationMinutes,
-          isVacation: e.isVacation,
-          source: "northstar",
-        });
-      }
-    }
-  }
+  const taskRecords = await repos.dailyTasks.listForDateRange(startDate, endDate);
 
   // Build day-by-day schedule
   const start = new Date(startDate);
   const end = new Date(endDate);
   const days: DaySchedule[] = [];
 
+  // Index tasks by date
+  const tasksByDate = new Map<string, typeof taskRecords>();
+  for (const t of taskRecords) {
+    const arr = tasksByDate.get(t.date) ?? [];
+    arr.push(t);
+    tasksByDate.set(t.date, arr);
+  }
+
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const dateStr = d.toISOString().split("T")[0];
     const dayOfWeek = d.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-    const dayEvents = allEvents.filter((e) => {
-      const eventDate = new Date(e.startDate).toISOString().split("T")[0];
-      return eventDate === dateStr;
-    });
+    const dayTasks = tasksByDate.get(dateStr) ?? [];
+    // Only count tasks with scheduledTime as "calendar blocks"
+    const scheduledTasks = dayTasks.filter(
+      (t) => (t.payload as Record<string, unknown>).scheduledTime,
+    );
 
-    const busyMinutes = dayEvents.reduce((sum, e) => sum + e.durationMinutes, 0);
+    const busyMinutes = scheduledTasks.reduce(
+      (sum, t) => sum + ((t.payload as Record<string, unknown>).durationMinutes as number ?? 30),
+      0,
+    );
     const freeMinutes = Math.max(0, WAKING_HOURS_MINUTES - busyMinutes);
 
-    const isVacation = dayEvents.some((e) => e.isVacation) ||
-      dayEvents.some(
-        (e) => e.isAllDay && VACATION_KEYWORDS.some((kw) => e.title.toLowerCase().includes(kw))
+    const isVacation =
+      dayTasks.some((t) => (t.payload as Record<string, unknown>).isVacation) ||
+      dayTasks.some(
+        (t) =>
+          (t.payload as Record<string, unknown>).isAllDay &&
+          VACATION_KEYWORDS.some((kw) => t.title.toLowerCase().includes(kw)),
       );
 
     days.push({
       date: dateStr,
-      events: dayEvents.map((e) => ({
-        title: e.title,
-        startDate: e.startDate,
-        endDate: e.endDate,
-        isAllDay: e.isAllDay,
-        durationMinutes: e.durationMinutes,
-        source: e.source,
-      })),
+      events: scheduledTasks.map((t) => {
+        const p = t.payload as Record<string, unknown>;
+        return {
+          title: t.title,
+          startTime: (p.scheduledTime as string) ?? "",
+          endTime: (p.scheduledEndTime as string) ?? "",
+          isAllDay: (p.isAllDay as boolean) ?? false,
+          durationMinutes: (p.durationMinutes as number) ?? 30,
+        };
+      }),
       busyMinutes,
       freeMinutes,
       isVacation,
@@ -144,9 +116,10 @@ export async function getScheduleContext(
     if (day.isVacation) {
       if (!vacStart) {
         vacStart = day.date;
-        vacLabel = day.events.find((e) =>
-          e.isAllDay && VACATION_KEYWORDS.some((kw) => e.title.toLowerCase().includes(kw))
-        )?.title || "Time off";
+        vacLabel =
+          day.events.find((e) =>
+            e.isAllDay && VACATION_KEYWORDS.some((kw) => e.title.toLowerCase().includes(kw)),
+          )?.title || "Time off";
       }
     } else if (vacStart) {
       const prevDay = days[days.indexOf(day) - 1];
@@ -200,7 +173,7 @@ export function summarizeScheduleForAI(ctx: ScheduleContext): string {
     if (d.isWeekend) tags.push("weekend");
     if (d.isVacation) tags.push("VACATION");
     const eventCount = d.events.length;
-    lines.push(`  ${d.date}: ${d.freeMinutes}min free${tags.length ? ` [${tags.join(", ")}]` : ""}${eventCount > 0 ? ` (${eventCount} events)` : ""}`);
+    lines.push(`  ${d.date}: ${d.freeMinutes}min free${tags.length ? ` [${tags.join(", ")}]` : ""}${eventCount > 0 ? ` (${eventCount} scheduled tasks)` : ""}`);
   }
 
   return lines.join("\n");

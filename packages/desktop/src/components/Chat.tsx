@@ -34,7 +34,6 @@ import type {
   HomeChatMessage,
   Goal,
   DailyTask,
-  CalendarEvent,
   Reminder,
   CommandKind,
 } from "@northstar/core";
@@ -58,7 +57,6 @@ interface DashboardView {
   activeGoals: Goal[];
   todayTasks: DailyTask[];
   todayDate: string;
-  todayEvents: CalendarEvent[];
   activeReminders: Reminder[];
 }
 
@@ -173,7 +171,6 @@ export default function Chat() {
 
     const goals = dashData?.activeGoals ?? [];
     const todayTasks = dashData?.todayTasks ?? [];
-    const todayEvents = dashData?.todayEvents ?? [];
     const reminders = dashData?.activeReminders ?? [];
     const todayDate = dashData?.todayDate ?? new Date().toISOString().split("T")[0];
 
@@ -202,13 +199,6 @@ export default function Chat() {
         skipped: !!t.skipped,
         cognitiveWeight: t.cognitiveWeight,
         durationMinutes: t.durationMinutes,
-      })),
-      todayCalendarEvents: todayEvents.map((e) => ({
-        id: e.id,
-        title: e.title,
-        startDate: e.startDate,
-        endDate: e.endDate,
-        category: e.category,
       })),
       activeReminders: reminders.map((r) => ({
         id: r.id,
@@ -265,7 +255,6 @@ export default function Chat() {
                   run: runCommand,
                   goals,
                   todayTasks,
-                  todayEvents,
                   activeReminders: reminders,
                   todayDate,
                 });

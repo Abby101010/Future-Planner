@@ -657,6 +657,30 @@ function buildBehavioralInsights(memory: MemoryStore): string[] {
     );
   }
 
+  // Category-level completion rates — helps the AI know which types of
+  // tasks the user follows through on vs. avoids.
+  const catCompleted = new Map<string, number>();
+  const catTotal = new Map<string, number>();
+  for (const s of memory.signals) {
+    if (!["task_completed", "task_completed_early", "task_skipped", "task_snoozed"].includes(s.type))
+      continue;
+    const catMatch = s.value?.match(/category:\s*(\w+)/i) ?? s.context?.match(/category:\s*(\w+)/i);
+    if (!catMatch) continue;
+    const cat = catMatch[1];
+    catTotal.set(cat, (catTotal.get(cat) || 0) + 1);
+    if (s.type === "task_completed" || s.type === "task_completed_early") {
+      catCompleted.set(cat, (catCompleted.get(cat) || 0) + 1);
+    }
+  }
+  for (const [cat, total] of catTotal) {
+    if (total < 5) continue;
+    const rate = Math.round(((catCompleted.get(cat) || 0) / total) * 100);
+    if (rate >= 80)
+      insights.push(`"${cat}" tasks: ${rate}% completion rate — user's strongest category`);
+    else if (rate <= 40)
+      insights.push(`"${cat}" tasks: only ${rate}% completion rate — consider restructuring or reducing these`);
+  }
+
   return insights;
 }
 

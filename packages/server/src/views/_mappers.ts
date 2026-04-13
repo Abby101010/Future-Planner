@@ -14,8 +14,9 @@ import type { DailyLogRecord } from "../repositories/dailyLogsRepo";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import type { NudgeRecord } from "../repositories/nudgesRepo";
 
-export function flattenDailyTask(r: DailyTaskRecord): DailyTask {
+export function flattenDailyTask(r: DailyTaskRecord, date?: string): DailyTask {
   const p = r.payload || {};
+  const recurring = p.recurring as DailyTask["recurring"] | undefined;
   return {
     id: r.id,
     title: r.title,
@@ -35,6 +36,15 @@ export function flattenDailyTask(r: DailyTaskRecord): DailyTask {
     skipped: p.skipped as boolean | undefined,
     goalId: r.goalId ?? null,
     planNodeId: r.planNodeId ?? null,
+    // Calendar-unified fields
+    date: date ?? r.date,
+    scheduledTime: p.scheduledTime as string | undefined,
+    scheduledEndTime: p.scheduledEndTime as string | undefined,
+    isAllDay: p.isAllDay as boolean | undefined,
+    isVacation: p.isVacation as boolean | undefined,
+    recurring,
+    notes: p.notes as string | undefined,
+    color: p.color as string | undefined,
   };
 }
 
@@ -47,7 +57,7 @@ export function hydrateDailyLog(
     id: (p.id as string) ?? `log-${log.date}`,
     userId: (p.userId as string) ?? "",
     date: log.date,
-    tasks: taskRecords.map(flattenDailyTask),
+    tasks: taskRecords.map((r) => flattenDailyTask(r)),
     heatmapEntry: (p.heatmapEntry as DailyLog["heatmapEntry"]) ?? {
       date: log.date,
       completionLevel: 0,

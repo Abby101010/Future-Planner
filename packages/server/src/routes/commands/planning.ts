@@ -91,6 +91,49 @@ export async function cmdConfirmDailyTasks(
     reflection: existing?.reflection,
     payload: mergedPayload,
   });
+
+  // Generate and persist behavioral nudges based on today's tasks.
+  // Best-effort — failures here don't affect the confirmation.
+  try {
+    const { generateNudges } = await import("../../reflection");
+    const userId = getCurrentUserId();
+    const todayTasks = await repos.dailyTasks.listForDate(today);
+    const nudgeTasks = todayTasks.map((t) => {
+      const pl = t.payload as Record<string, unknown>;
+      return {
+        id: t.id,
+        title: t.title,
+        category: (pl.category as string) ?? "planning",
+        durationMinutes: (pl.durationMinutes as number) ?? 30,
+        completed: t.completed,
+        completedAt: t.completedAt ?? undefined,
+        startedAt: (pl.startedAt as string) ?? undefined,
+        actualMinutes: (pl.actualMinutes as number) ?? undefined,
+        snoozedCount: (pl.snoozedCount as number) ?? undefined,
+        skipped: (pl.skipped as boolean) ?? false,
+        priority: (pl.priority as string) ?? "should-do",
+      };
+    });
+    const nudges = await generateNudges(userId, nudgeTasks);
+    for (const nudge of nudges.slice(0, 3)) {
+      try {
+        await repos.nudges.insert({
+          id: nudge.id,
+          kind: nudge.type,
+          title: nudge.message.slice(0, 120),
+          body: nudge.message,
+          priority: Math.round(nudge.priority * 5),
+          context: nudge.context,
+          actions: nudge.actions ?? [],
+        });
+      } catch {
+        // deduplication conflict — nudge already exists
+      }
+    }
+  } catch (err) {
+    console.warn("[confirm-daily-tasks] nudge generation failed:", err);
+  }
+
   return { ok: true, date: today };
 }
 
@@ -111,14 +154,13 @@ export async function cmdRegenerateDailyTasks(
     }
   }
 
-  const [goals, logs, tasks, heatmapData, activeReminders, todayEvents] =
+  const [goals, logs, tasks, heatmapData, activeReminders] =
     await Promise.all([
       repos.goals.list(),
       repos.dailyLogs.list(rangeStart, today),
       repos.dailyTasks.listForDateRange(rangeStart, today),
       repos.heatmap.listRange(rangeStart, today),
       repos.reminders.listActive(),
-      repos.calendar.listForRange(`${today}T00:00:00`, `${today}T23:59:59`),
     ]);
 
   const tasksByDate = new Map<string, typeof tasks>();
@@ -146,7 +188,6 @@ export async function cmdRegenerateDailyTasks(
   await generateAndPersistDailyTasks({
     date: today,
     goals,
-    calendarEvents: todayEvents,
     pastLogs: pastLogs as any,
     heatmapData,
     activeReminders,

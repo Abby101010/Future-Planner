@@ -303,13 +303,6 @@ export function buildHomeChatRequest(
     cognitiveWeight?: number;
     durationMinutes?: number;
   }>;
-  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<{
-    id?: string;
-    title: string;
-    startDate: string;
-    endDate: string;
-    category: string;
-  }>;
   const activeReminders = (payload.activeReminders ?? []) as Array<{
     id: string;
     title: string;
@@ -358,16 +351,6 @@ export function buildHomeChatRequest(
   const completedCount = todayTasks.filter((t) => t.completed).length;
   const taskCount = todayTasks.filter((t) => !t.completed).length;
 
-  const calendarSummary =
-    todayCalendarEvents.length > 0
-      ? todayCalendarEvents
-          .map((e) => {
-            const idTag = e.id ? ` [eventId:${e.id}]` : "";
-            return `- ${e.title} (${e.startDate}, ${e.category})${idTag}`;
-          })
-          .join("\n")
-      : "No calendar events.";
-
   const remindersSummary =
     activeReminders.length > 0
       ? activeReminders
@@ -400,9 +383,6 @@ Today's tasks (${completedCount}/${todayTasks.length} done, ${taskCount} pending
   Time committed: ${totalMinutes}/180 minutes used
   Active tasks: ${taskCount}/5 slots used
 ${tasksSummary}
-
-Today's calendar:
-${calendarSummary}
 
 Active reminders:
 ${remindersSummary}`;

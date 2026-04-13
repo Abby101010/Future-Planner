@@ -3,7 +3,7 @@ export type {
   TaskStateInput,
   GoalSummary,
   CandidateTask,
-  CalendarEventSummary,
+  ScheduledTaskSummary,
   DailyLogSummary,
   GatekeeperResult,
   TriagedTask,

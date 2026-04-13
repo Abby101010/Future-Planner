@@ -157,17 +157,6 @@ function buildTasksContext(
   return { summary, totalWeight, totalMinutes, completedCount, taskCount };
 }
 
-function buildCalendarContext(
-  events: Array<Record<string, unknown>>,
-): string {
-  if (events.length === 0) return "No calendar events.";
-  return events
-    .map((e) => {
-      const idTag = e.id ? ` [eventId:${e.id}]` : "";
-      return `- ${e.title} (${e.startDate}, ${e.category})${idTag}`;
-    })
-    .join("\n");
-}
 
 function buildRemindersContext(
   reminders: Array<Record<string, unknown>>,
@@ -200,7 +189,6 @@ export function buildUnifiedChatRequest(
   const chatHistory = payload.chatHistory ?? [];
   const goals = (payload.goals ?? []) as Array<Record<string, unknown>>;
   const todayTasks = (payload.todayTasks ?? []) as Array<Record<string, unknown>>;
-  const todayCalendarEvents = (payload.todayCalendarEvents ?? []) as Array<Record<string, unknown>>;
   const activeReminders = (payload.activeReminders ?? []) as Array<Record<string, unknown>>;
 
   const mode = context?.currentPage === "goal-plan" ? "plan-edit" as const : "general" as const;
@@ -213,7 +201,6 @@ export function buildUnifiedChatRequest(
   // Build context block
   const goalsSummary = buildGoalsContext(goals);
   const tasksCtx = buildTasksContext(todayTasks);
-  const calendarSummary = buildCalendarContext(todayCalendarEvents);
   const remindersSummary = buildRemindersContext(activeReminders);
 
   const environmentBlock = payload._environmentContextFormatted
@@ -232,9 +219,6 @@ Today's tasks (${tasksCtx.completedCount}/${todayTasks.length} done, ${tasksCtx.
   Time committed: ${tasksCtx.totalMinutes}/180 minutes used
   Active tasks: ${tasksCtx.taskCount}/5 slots used
 ${tasksCtx.summary}
-
-Today's calendar:
-${calendarSummary}
 
 Active reminders:
 ${remindersSummary}`;

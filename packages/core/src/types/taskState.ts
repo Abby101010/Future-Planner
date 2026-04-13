@@ -30,7 +30,7 @@ export interface TaskState {
 export interface TaskStateInput {
   date: string;
   goals: GoalSummary[];
-  calendarEvents: CalendarEventSummary[];
+  scheduledTasks: ScheduledTaskSummary[];
   pastLogs: DailyLogSummary[];
   memoryContext: string;
   capacityBudget: number;
@@ -62,11 +62,13 @@ export interface CandidateTask {
   planNodeId: string | null;
 }
 
-export interface CalendarEventSummary {
+export interface ScheduledTaskSummary {
   id: string;
   title: string;
-  startDate: string;
-  endDate: string;
+  date: string;
+  scheduledTime?: string;
+  scheduledEndTime?: string;
+  durationMinutes: number;
   category: string;
   isAllDay: boolean;
 }

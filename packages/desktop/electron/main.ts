@@ -12,7 +12,7 @@
    No IPC handlers are registered here anymore.
    ────────────────────────────────────────────────────────── */
 
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, session, shell, ipcMain } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { initAutoUpdater } from "./auto-updater";
@@ -37,9 +37,39 @@ process.env.VITE_PUBLIC = app.isPackaged
   ? process.env.DIST
   : path.join(process.env.DIST, "../public");
 
+// ── Deep-link protocol for OAuth callback ──
+const PROTOCOL = "northstar";
+if (process.defaultApp) {
+  // Dev mode: register with the full path so the OS can re-launch
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
+      path.resolve(process.argv[1]),
+    ]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+// Single-instance lock — if a second instance launches (e.g. from a deep
+// link on Windows/Linux), forward the URL to the existing instance.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
+
 let mainWindow: BrowserWindow | null = null;
 
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+
+/** Forward a deep-link URL to the renderer. */
+function handleDeepLink(url: string): void {
+  if (!url.startsWith(`${PROTOCOL}://`)) return;
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    mainWindow.webContents.send("auth:deep-link", url);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -82,6 +112,23 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+// macOS: deep links arrive via open-url
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
+// Windows / Linux: deep links arrive via second-instance
+app.on("second-instance", (_event, commandLine) => {
+  const url = commandLine.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+  if (url) handleDeepLink(url);
+});
+
+// IPC: let the renderer open URLs in the system browser (for OAuth)
+ipcMain.handle("auth:open-external", (_event, url: string) => {
+  shell.openExternal(url);
 });
 
 app.whenReady().then(async () => {

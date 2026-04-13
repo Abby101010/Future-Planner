@@ -31,7 +31,7 @@ import type {
   Goal,
   GoalPlan,
   GoalPlanMessage,
-  CalendarEvent,
+  DailyTask,
 } from "@northstar/core";
 import { computeMilestoneProgress } from "../../lib/goalPlanHelpers";
 import "./GoalPlanPage.css";
@@ -50,7 +50,7 @@ interface GoalPlanViewModel {
   progress: GoalPlanProgress;
   overdueTaskCount: number;
   needsRescheduling: boolean;
-  calendarEvents: CalendarEvent[];
+  scheduledTasks: DailyTask[];
   paceMismatch: import("@northstar/core").PaceMismatch | null;
 }
 

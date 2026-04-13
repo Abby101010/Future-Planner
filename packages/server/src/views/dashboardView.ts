@@ -1,22 +1,15 @@
 /* NorthStar server — dashboard view resolver
  *
  * Narrow per-page aggregate for DashboardPage. Composes goals, today's
- * daily log + tasks, today's calendar events, pending tasks, chat
- * messages, active nudges, vacation mode, and the current monthly
- * context into ONE serialization-ready object the client can render
- * without any post-processing.
- *
- * Computed server-side (zero client logic):
- *   - todayDate, greetingName
- *   - completed/total task counts and streak for the today summary
- *   - active goals filter (status !== "archived")
- *   - currentMonthContext selection by month key
+ * daily log + tasks, pending tasks, chat messages, active nudges,
+ * vacation mode, and the current monthly context into ONE
+ * serialization-ready object the client can render without any
+ * post-processing.
  */
 
 import * as repos from "../repositories";
 import { getEffectiveDate, getEffectiveMonthKey } from "../dateUtils";
 import type {
-  CalendarEvent,
   ContextualNudge,
   DailyTask,
   Goal,
@@ -43,7 +36,6 @@ export interface DashboardDailyLoad {
   currentWeight: number;
   currentMinutes: number;
   activeTaskCount: number;
-  todayEventCount: number;
 }
 
 export interface DashboardView {
@@ -52,11 +44,10 @@ export interface DashboardView {
   todaySummary: DashboardTodaySummary;
   activeGoals: Goal[];
   todayTasks: DailyTask[];
-  todayEvents: CalendarEvent[];
   pendingTasks: PendingTask[];
   /** Subset of pendingTasks still in an actionable state. */
   activePendingTasks: PendingTask[];
-  /** Aggregate overload signals derived from todayTasks + todayEvents. */
+  /** Aggregate overload signals derived from todayTasks. */
   dailyLoad: DashboardDailyLoad;
   homeChatMessages: HomeChatMessage[];
   activeReminders: Reminder[];
@@ -75,7 +66,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
   const [
     goals,
     todayTaskRecords,
-    todayEvents,
     pendingRecords,
     homeMessages,
     activeReminders,
@@ -86,7 +76,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
   ] = await Promise.all([
     repos.goals.list(),
     repos.dailyTasks.listForDate(today),
-    repos.calendar.listForRange(`${today}T00:00:00`, `${today}T23:59:59`),
     repos.pendingTasks.list(),
     repos.chat.listHomeMessages(200),
     repos.reminders.listActive(),
@@ -98,12 +87,9 @@ export async function resolveDashboardView(): Promise<DashboardView> {
 
   const greetingName = user?.name?.trim() || "";
 
-  const todayTasks: DailyTask[] = todayTaskRecords.map(flattenDailyTask);
+  const todayTasks: DailyTask[] = todayTaskRecords.map((r) => flattenDailyTask(r));
   const recentNudges: ContextualNudge[] = nudgeRecords.map(nudgeToContextual);
 
-  // Pending tasks in the DB are stored as PendingTaskRecord (source, title,
-  // status, payload). We rehydrate a best-effort @northstar/core PendingTask
-  // from the payload so the client type-checks without new transforms.
   const pendingTasks: PendingTask[] = pendingRecords.map((p) => {
     const pl = p.payload;
     return {
@@ -125,14 +111,11 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     currentWeight: todayTasks.reduce((sum, t) => sum + (t.cognitiveWeight ?? 3), 0),
     currentMinutes: todayTasks.reduce((sum, t) => sum + (t.durationMinutes ?? 30), 0),
     activeTaskCount: todayTasks.filter((t) => !t.completed).length,
-    todayEventCount: todayEvents.length,
   };
 
   const completedTasks = todayTasks.filter((t) => t.completed).length;
   const totalTasks = todayTasks.length;
 
-  // Current streak is stashed on the daily_log payload by the existing
-  // reflection pipeline. Prefer today's log, fall back to 0.
   const todayLog = await repos.dailyLogs.get(today);
   const streak =
     (todayLog?.payload?.heatmapEntry as { currentStreak?: number } | undefined)
@@ -156,7 +139,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     todaySummary: { completedTasks, totalTasks, streak },
     activeGoals,
     todayTasks,
-    todayEvents,
     pendingTasks,
     activePendingTasks,
     dailyLoad,

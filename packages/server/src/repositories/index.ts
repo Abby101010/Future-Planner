@@ -20,7 +20,6 @@ export * as pendingTasks from "./pendingTasksRepo";
 export * as heatmap from "./heatmapRepo";
 export * as chat from "./chatRepo";
 export * as monthlyContext from "./monthlyContextRepo";
-export * as calendar from "./calendarRepo";
 export * as reminders from "./remindersRepo";
 export * as nudges from "./nudgesRepo";
 export * as vacationMode from "./vacationModeRepo";

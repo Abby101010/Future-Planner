@@ -325,6 +325,33 @@ const en = {
     commonMistakes: "Common mistakes to avoid",
     bestPractices: "Best practices",
   },
+  // ── Auth ──
+  auth: {
+    title: "NorthStar",
+    signInSubtitle: "Sign in to continue",
+    signUpSubtitle: "Create your account",
+    email: "Email",
+    emailPlaceholder: "you@example.com",
+    password: "Password",
+    passwordPlaceholder: "Your password",
+    confirmPassword: "Confirm password",
+    confirmPasswordPlaceholder: "Re-enter your password",
+    signIn: "Sign In",
+    createAccount: "Create Account",
+    or: "or",
+    continueWithGoogle: "Continue with Google",
+    noAccount: "Don't have an account?",
+    hasAccount: "Already have an account?",
+    signUpLink: "Sign up",
+    signInLink: "Sign in",
+    signUpSuccess: "Check your email to confirm your account, then sign in.",
+    errorEmpty: "Please enter your email and password.",
+    errorPasswordMismatch: "Passwords don't match.",
+    errorGeneric: "Something went wrong. Please try again.",
+    errorTimeout: "Sign-in is taking too long. Please try again.",
+    signOut: "Sign Out",
+    signedInAs: "Signed in as",
+  },
 } as const;
 
 // Recursive type that allows any string values in other locales

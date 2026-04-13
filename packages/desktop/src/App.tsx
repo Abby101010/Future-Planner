@@ -6,6 +6,8 @@ import { useEffect } from "react";
 import useStore from "./store/useStore";
 import { wsClient } from "./services/wsClient";
 import { I18nProvider } from "./i18n";
+import { AuthProvider } from "./contexts/AuthContext";
+import AuthGuard from "./components/AuthGuard";
 import { useQuery } from "./hooks/useQuery";
 import Sidebar from "./components/Sidebar";
 import Chat from "./components/Chat";
@@ -32,7 +34,23 @@ interface OnboardingBootView {
   onboardingComplete: boolean;
 }
 
+/**
+ * Outer shell: wraps everything in AuthProvider → AuthGuard.
+ * Hooks that require an auth token live in AppShell (only mounts
+ * after AuthGuard confirms a valid session).
+ */
 function App() {
+  return (
+    <AuthProvider>
+      <AuthGuard>
+        <AppShell />
+      </AuthGuard>
+    </AuthProvider>
+  );
+}
+
+/** Inner shell — only mounts when a valid auth session exists. */
+function AppShell() {
   const currentView = useStore((s) => s.currentView);
   const setView = useStore((s) => s.setView);
   const language = useStore((s) => s.language);
@@ -55,6 +73,8 @@ function App() {
   // Phase 5b: single top-level WebSocket subscription. Individual hooks
   // (useQuery, useWsEvent, useAiStream) register listeners against this
   // shared connection; here we just manage its lifecycle.
+  // Safe to connect unconditionally — AuthGuard guarantees a session exists
+  // and the cached token is populated by the time this component mounts.
   useEffect(() => {
     wsClient.connect();
     return () => {

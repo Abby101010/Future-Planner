@@ -1,20 +1,17 @@
 /* NorthStar server — auth middleware
  *
- * Phase 1: Hardcoded single-user mode. Reads DEV_USER_ID from env and
- * sets req.userId to it on every request. Still requires an Authorization
- * header (any value) so the client-side code is already sending one by the
- * time we swap to real auth.
- *
- * Phase 2: Replace the body with JWT verification against Supabase Auth
- * (or Clerk, or whatever). The req.userId contract stays identical, so
- * every route keeps working unchanged.
+ * Validates Supabase JWTs on every request and resolves a userId from the
+ * token's `sub` claim. Falls back to DEV_USER_ID for local development.
  *
  * THE ONLY PLACE THE USER ID IS DECIDED. If you find yourself hardcoding
- * "sophie" anywhere else, stop and put it here instead.
+ * a userId anywhere else, stop and put it here instead.
  */
 
 import type { Request, Response, NextFunction } from "express";
+import { createPublicKey } from "crypto";
+import jwt from "jsonwebtoken";
 import { runWithUserId } from "./requestContext";
+import { query } from "../db/pool";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -38,39 +35,139 @@ export function extractBearerToken(headerValue: string | undefined | null): stri
   return token.length > 0 ? token : null;
 }
 
+// ── ES256 JWKS public key cache ─────────────────────────
+
+let cachedEs256Pem: string | null = null;
+
+/**
+ * Fetch the ES256 public key from Supabase's JWKS endpoint and cache it
+ * as a PEM string. Called lazily on the first ES256 token we see.
+ */
+async function getEs256PublicKey(): Promise<string | null> {
+  if (cachedEs256Pem) return cachedEs256Pem;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!supabaseUrl) {
+    console.error("[auth] SUPABASE_URL not set — cannot fetch JWKS for ES256 verification");
+    return null;
+  }
+
+  try {
+    const jwksUrl = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
+    const res = await fetch(jwksUrl);
+    if (!res.ok) throw new Error(`JWKS fetch returned ${res.status}`);
+
+    const { keys } = (await res.json()) as { keys: Array<Record<string, unknown>> };
+    const es256Key = keys.find((k) => k.alg === "ES256");
+    if (!es256Key) throw new Error("No ES256 key found in JWKS");
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const publicKey = createPublicKey({ key: es256Key as any, format: "jwk" });
+    cachedEs256Pem = publicKey.export({ type: "spki", format: "pem" }) as string;
+    return cachedEs256Pem;
+  } catch (err) {
+    console.error("[auth] Failed to fetch JWKS:", (err as Error).message);
+    return null;
+  }
+}
+
 /**
  * Validate a bearer token and resolve a userId.
  *
- * Phase 1: single-user mode — any non-empty token is accepted and the
- * userId comes from DEV_USER_ID. Phase 2 will replace this body with
- * real JWT verification; the return contract stays the same so the
- * WS upgrade handler and the Express middleware can keep sharing it.
+ * - If DEV_USER_ID is set (local dev), bypasses JWT verification and
+ *   returns that userId directly.
+ * - Otherwise, reads the JWT header to determine the signing algorithm:
+ *   - HS256 → verifies with SUPABASE_JWT_SECRET (anon / service-role keys)
+ *   - ES256 → verifies with Supabase JWKS public key (user access tokens)
+ * - Extracts `sub` as the userId and requires `role === 'authenticated'`.
  *
- * Returns `null` when the token is missing/invalid OR when auth is not
- * configured — callers should translate that to a 401 response.
+ * Returns `null` when the token is missing/invalid — callers should
+ * translate that to a 401 response.
  */
 export async function validateBearerToken(
   token: string | null | undefined,
 ): Promise<{ userId: string } | null> {
   if (!token) return null;
 
+  // Dev bypass: when DEV_USER_ID is set, any token is accepted.
   const devUserId = process.env.DEV_USER_ID;
   if (devUserId) {
-    // Phase 1: the token value is ignored; presence is enough.
     return { userId: devUserId };
   }
 
-  // Phase 2 placeholder — real JWT verification will go here. Until
-  // then, an unset DEV_USER_ID is a hard failure so we don't silently
-  // grant access.
-  return null;
+  // Decode the JWT header to determine the signing algorithm.
+  let alg: string;
+  try {
+    const headerJson = Buffer.from(token.split(".")[0], "base64url").toString();
+    alg = (JSON.parse(headerJson) as { alg?: string }).alg ?? "HS256";
+  } catch {
+    console.error("[auth] Failed to decode JWT header");
+    return null;
+  }
+
+  let decoded: { sub?: string; exp?: number; role?: string };
+
+  try {
+    if (alg === "ES256") {
+      const pem = await getEs256PublicKey();
+      if (!pem) {
+        console.error("[auth] No ES256 public key available — cannot verify token");
+        return null;
+      }
+      decoded = jwt.verify(token, pem, { algorithms: ["ES256"] }) as typeof decoded;
+    } else {
+      const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+      if (!jwtSecret) {
+        console.error("[auth] SUPABASE_JWT_SECRET not set — cannot verify HS256 token");
+        return null;
+      }
+      decoded = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as typeof decoded;
+    }
+  } catch (err) {
+    console.error("[auth] JWT verify failed:", (err as Error).message);
+    return null;
+  }
+
+  if (!decoded.sub) {
+    console.error("[auth] JWT missing sub claim");
+    return null;
+  }
+  if (decoded.role !== "authenticated") {
+    console.error("[auth] JWT role is", decoded.role, "expected authenticated");
+    return null;
+  }
+
+  return { userId: decoded.sub };
 }
 
-export function authMiddleware(
+// ── User auto-creation ──────────────────────────────────
+
+/** Set of userIds we've already ensured exist this process lifetime. */
+const knownUsers = new Set<string>();
+
+/**
+ * Ensure a row exists in the `users` table for this userId.
+ * Uses ON CONFLICT DO NOTHING so it's safe to call on every request.
+ * Cached in a Set to avoid hitting the DB after the first request.
+ */
+async function ensureUserExists(userId: string): Promise<void> {
+  if (knownUsers.has(userId)) return;
+
+  await query(
+    `INSERT INTO users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+    [userId],
+  );
+
+  knownUsers.add(userId);
+}
+
+// ── Express middleware ───────────────────────────────────
+
+export async function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   const header = req.header("authorization") || req.header("Authorization");
   const token = extractBearerToken(header);
   if (!token) {
@@ -78,25 +175,24 @@ export function authMiddleware(
     return;
   }
 
-  const devUserId = process.env.DEV_USER_ID;
-  if (devUserId) {
-    // Phase 1: single-user mode. The token value is ignored; the middleware
-    // only requires that SOMETHING is sent so the client code path is
-    // already exercising the auth-header flow.
-    req.userId = devUserId;
-    // Run the rest of the request inside an AsyncLocalStorage context so
-    // deeply-nested code (memory loaders, AI handlers) can read userId
-    // without it being threaded through every function signature.
-    runWithUserId(devUserId, () => next());
+  const auth = await validateBearerToken(token);
+  if (!auth) {
+    res.status(401).json({ ok: false, error: "invalid or expired token" });
     return;
   }
 
-  // Phase 2 placeholder — when DEV_USER_ID is unset, real JWT verification
-  // would happen here. For now this is a hard error to prevent silent
-  // "everyone is the same user" bugs in a supposedly-multi-user build.
-  res.status(501).json({
-    ok: false,
-    error:
-      "auth not configured: set DEV_USER_ID (phase 1) or implement JWT verification (phase 2)",
-  });
+  req.userId = auth.userId;
+
+  // Ensure the user has a row in the users table (first sign-up creates it).
+  try {
+    await ensureUserExists(auth.userId);
+  } catch (err) {
+    console.error("[auth] ensureUserExists failed:", err);
+    // Non-fatal: the user row may already exist or will be created by onboarding.
+  }
+
+  // Run the rest of the request inside an AsyncLocalStorage context so
+  // deeply-nested code (repositories, AI handlers) can read userId
+  // without it being threaded through every function signature.
+  runWithUserId(auth.userId, () => next());
 }

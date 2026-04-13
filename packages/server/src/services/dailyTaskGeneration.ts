@@ -13,7 +13,7 @@ import { getEffectiveDate } from "../dateUtils";
 import { needsCoordination } from "../agents/router";
 import { coordinateRequest } from "../agents/coordinator";
 import { COGNITIVE_BUDGET } from "@northstar/core";
-import type { Goal, CalendarEvent, DailyLog, HeatmapEntry, Reminder, TaskStateInput, GoalSummary, CalendarEventSummary, DailyLogSummary } from "@northstar/core";
+import type { Goal, DailyLog, HeatmapEntry, Reminder, TaskStateInput, GoalSummary, ScheduledTaskSummary, DailyLogSummary } from "@northstar/core";
 
 interface GeneratedResult {
   id?: string;
@@ -180,14 +180,12 @@ function buildGoalPlanSummaries(goals: Goal[], date: string) {
 export async function generateAndPersistDailyTasks(opts: {
   date?: string;
   goals?: Goal[];
-  calendarEvents?: CalendarEvent[];
   pastLogs?: DailyLog[];
   heatmapData?: HeatmapEntry[];
   activeReminders?: Reminder[];
 }): Promise<GeneratedResult> {
   const date = opts.date ?? getEffectiveDate();
   const goals = opts.goals ?? [];
-  const calendarEvents = opts.calendarEvents ?? [];
   const pastLogs = opts.pastLogs ?? [];
 
   const todayReminders = opts.activeReminders
@@ -223,16 +221,6 @@ export async function generateAndPersistDailyTasks(opts: {
       frequency: g.repeatSchedule!.frequency,
     }));
 
-  const todayCalendarEvents = calendarEvents.map((e) => ({
-    title: e.title,
-    startDate: e.startDate,
-    endDate: e.endDate,
-    durationMinutes: e.durationMinutes,
-    category: e.category,
-    isAllDay: e.isAllDay,
-    recurring: e.recurring,
-  }));
-
   const userId = getCurrentUserId();
   const memory = await loadMemory(userId);
   const memoryContext = buildMemoryContext(memory, "daily");
@@ -241,11 +229,9 @@ export async function generateAndPersistDailyTasks(opts: {
     date,
     pastLogs,
     heatmap: opts.heatmapData ?? [],
-    inAppEvents: calendarEvents,
     goalPlanSummaries,
     everydayGoals,
     repeatingGoals,
-    todayCalendarEvents,
     todayReminders,
     goals: activeGoals.map((g) => ({
       title: g.title,
@@ -284,14 +270,23 @@ export async function generateAndPersistDailyTasks(opts: {
       })),
     }));
 
-    const calendarSummaries: CalendarEventSummary[] = calendarEvents.map((e) => ({
-      id: e.id,
-      title: e.title,
-      startDate: e.startDate,
-      endDate: e.endDate,
-      category: e.category ?? "",
-      isAllDay: e.isAllDay ?? false,
-    }));
+    // Build scheduled task summaries from DB (tasks with scheduledTime)
+    const scheduledTaskRecords = await repos.dailyTasks.listForDate(date);
+    const scheduledTasks: ScheduledTaskSummary[] = scheduledTaskRecords
+      .filter((t) => (t.payload as Record<string, unknown>).scheduledTime)
+      .map((t) => {
+        const p = t.payload as Record<string, unknown>;
+        return {
+          id: t.id,
+          title: t.title,
+          date: t.date,
+          scheduledTime: p.scheduledTime as string | undefined,
+          scheduledEndTime: p.scheduledEndTime as string | undefined,
+          durationMinutes: (p.durationMinutes as number) ?? 30,
+          category: (p.category as string) ?? "",
+          isAllDay: (p.isAllDay as boolean) ?? false,
+        };
+      });
 
     const logSummaries: DailyLogSummary[] = pastLogs.slice(0, 7).map((l) => ({
       date: l.date,
@@ -312,7 +307,7 @@ export async function generateAndPersistDailyTasks(opts: {
     const taskStateInput: TaskStateInput = {
       date,
       goals: goalSummaries,
-      calendarEvents: calendarSummaries,
+      scheduledTasks,
       pastLogs: logSummaries,
       memoryContext,
       capacityBudget: COGNITIVE_BUDGET.MAX_DAILY_WEIGHT,

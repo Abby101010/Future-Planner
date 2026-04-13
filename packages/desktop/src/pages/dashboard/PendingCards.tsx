@@ -13,7 +13,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useT } from "../../i18n";
-import type { PendingTask, CalendarEvent, Goal } from "@northstar/core";
+import type { PendingTask, Goal } from "@northstar/core";
 
 export interface DailyLoad {
   currentWeight: number;
@@ -198,110 +198,6 @@ export function PendingTaskCard({
         </button>
         <button className="btn btn-ghost btn-sm" onClick={onReject}>
           <XCircle size={14} /> {t.home.rejectTask}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export function PendingEventCard({
-  event,
-  dailyLoad,
-  onConfirm,
-  onReject,
-  onUpdate,
-}: {
-  event: CalendarEvent;
-  dailyLoad: DailyLoad;
-  onConfirm: () => void;
-  onReject: () => void;
-  onUpdate: (updates: Partial<CalendarEvent>) => void;
-}) {
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editTitle, setEditTitle] = useState(event.title);
-
-  const isForToday =
-    event.startDate.split("T")[0] === new Date().toISOString().split("T")[0];
-  const overloadWarnings = isForToday
-    ? getOverloadWarnings(dailyLoad, 0, event.durationMinutes)
-    : [];
-
-  const startDate = new Date(event.startDate);
-  const dateStr = startDate.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  const timeStr = event.isAllDay
-    ? "All day"
-    : startDate.toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-
-  return (
-    <div className="pending-card pending-event-card">
-      <div className="pending-card-header">
-        <Calendar size={14} className="pending-event-icon" />
-        {editingTitle ? (
-          <input
-            className="input pending-edit-input pending-edit-title"
-            value={editTitle}
-            onChange={(e) => setEditTitle(e.target.value)}
-            onBlur={() => {
-              if (editTitle.trim()) onUpdate({ title: editTitle.trim() });
-              setEditingTitle(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                if (editTitle.trim()) onUpdate({ title: editTitle.trim() });
-                setEditingTitle(false);
-              }
-              if (e.key === "Escape") setEditingTitle(false);
-            }}
-            autoFocus
-          />
-        ) : (
-          <span
-            className="pending-card-title pending-editable"
-            onClick={() => {
-              setEditTitle(event.title);
-              setEditingTitle(true);
-            }}
-            title="Click to edit"
-          >
-            {event.title}
-            <Pencil size={11} className="pending-edit-icon" />
-          </span>
-        )}
-      </div>
-      <div className="pending-card-meta">
-        <span className="badge badge-accent">{event.category}</span>
-        <span className="pending-card-date">
-          <CalendarDays size={12} /> {dateStr}
-        </span>
-        <span className="pending-card-duration">
-          <Clock size={12} /> {timeStr}
-          {!event.isAllDay && ` · ${event.durationMinutes}m`}
-        </span>
-      </div>
-      {event.notes && <p className="pending-card-desc">{event.notes}</p>}
-      {overloadWarnings.length > 0 && (
-        <div className="pending-overload-warning">
-          <AlertTriangle size={13} />
-          <div>
-            {overloadWarnings.map((w, i) => (
-              <p key={i}>{w}</p>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="pending-card-actions">
-        <button className="btn btn-primary btn-sm" onClick={onConfirm}>
-          <Check size={14} /> {overloadWarnings.length > 0 ? "Add anyway" : "Add to calendar"}
-        </button>
-        <button className="btn btn-ghost btn-sm" onClick={onReject}>
-          <XCircle size={14} /> Discard
         </button>
       </div>
     </div>

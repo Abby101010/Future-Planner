@@ -1,5 +1,4 @@
 import type {
-  CalendarEvent,
   CommandKind,
   DailyTask,
   Goal,
@@ -12,7 +11,6 @@ export interface IntentDispatchContext {
   run: RunFn;
   goals: Goal[];
   todayTasks: DailyTask[];
-  todayEvents: CalendarEvent[];
   activeReminders: Reminder[];
   todayDate: string;
   setView?: (view: string) => void;
@@ -72,30 +70,6 @@ function resolveReminderTargets(
   return candidates;
 }
 
-function eventMatchesTerm(e: CalendarEvent, term: string): boolean {
-  const t = term.toLowerCase();
-  if (t === "all" || t === "today" || t === "everything") return true;
-  return (e.title || "").toLowerCase().includes(t);
-}
-
-function resolveEventTargets(
-  all: CalendarEvent[],
-  eventId: string | undefined,
-  match: string | undefined,
-  isDeleteAll: boolean,
-): CalendarEvent[] {
-  if (eventId) {
-    const found = all.find((e) => e.id === eventId);
-    return found ? [found] : [];
-  }
-  const terms = splitMatchTerms(match);
-  if (isDeleteAll && (terms.length === 0 || terms.includes("all") || terms.includes("today"))) {
-    return [...all];
-  }
-  if (terms.length === 0) return [];
-  return all.filter((e) => terms.some((term) => eventMatchesTerm(e, term)));
-}
-
 export async function dispatchChatIntent(
   intent: unknown,
   ctx: IntentDispatchContext,
@@ -103,13 +77,19 @@ export async function dispatchChatIntent(
   const i = intent as Record<string, unknown>;
   if (!i || !i.kind) return null;
 
-  const { run, goals, todayTasks, todayEvents, activeReminders, todayDate } = ctx;
+  const { run, goals, todayTasks, activeReminders, todayDate } = ctx;
   const cmd = (kind: string) => kind as CommandKind;
 
   switch (i.kind) {
     case "event": {
-      const event = i.entity as CalendarEvent;
-      await run(cmd("command:upsert-calendar-event"), { event });
+      // Calendar events are now tasks with scheduledTime — create as a pending task
+      const entity = i.entity as Record<string, unknown>;
+      const pt = {
+        id: (entity.id as string) ?? crypto.randomUUID(),
+        userInput: (entity.title as string) ?? "Scheduled event",
+        status: "analyzing" as const,
+      };
+      await run(cmd("command:create-pending-task"), pt);
       break;
     }
     case "goal": {
@@ -224,30 +204,7 @@ export async function dispatchChatIntent(
       break;
     }
     case "manage-event": {
-      const resolved = resolveEventTargets(
-        todayEvents,
-        i.eventId as string | undefined,
-        i.match as string | undefined,
-        i.action === "delete_all",
-      );
-      if (i.action === "delete" || i.action === "delete_all") {
-        for (const target of resolved) {
-          await run(cmd("command:delete-calendar-event"), { eventId: target.id });
-        }
-      } else if (i.action === "edit" || i.action === "reschedule") {
-        const patch = i.patch as Record<string, unknown> | undefined;
-        for (const target of resolved) {
-          await run(cmd("command:upsert-calendar-event"), {
-            event: {
-              ...target,
-              title: patch?.title ?? target.title,
-              startDate: patch?.startDate ?? target.startDate,
-              endDate: patch?.endDate ?? target.endDate,
-              category: (patch?.category ?? target.category) as CalendarEvent["category"],
-            },
-          });
-        }
-      }
+      // Calendar events are now unified as tasks — no-op for legacy intents
       break;
     }
     case "research": {

@@ -34,16 +34,14 @@ import type {
   WeekPlan,
   DayPlan,
   ClarifiedGoal,
-  CalendarEvent,
-  DeviceIntegrations,
+  DailyTask,
 } from "@northstar/core";
 import "./GoalBreakdownPage.css";
 
 // MUST match packages/server/src/views/goalBreakdownView.ts
 interface GoalBreakdownViewModel {
   goalBreakdown: GoalBreakdown | null;
-  calendarEvents: CalendarEvent[];
-  deviceIntegrations: DeviceIntegrations | null;
+  scheduledTasks: DailyTask[];
 }
 
 export default function GoalBreakdownPage() {
@@ -54,8 +52,7 @@ export default function GoalBreakdownPage() {
     useCommand();
 
   const goalBreakdown = data?.goalBreakdown ?? null;
-  const calendarEvents = data?.calendarEvents ?? [];
-  const deviceIntegrations = data?.deviceIntegrations;
+  const scheduledTasks = data?.scheduledTasks ?? [];
 
   const [activeYear, setActiveYear] = useState<number | null>(null);
   const [activeMonth, setActiveMonth] = useState<string | null>(null);
@@ -99,9 +96,7 @@ export default function GoalBreakdownPage() {
           goal: clarified,
           targetDate,
           dailyHours,
-          inAppEvents: calendarEvents,
-          deviceIntegrations,
-        },
+                  },
       });
       setShowNewGoal(false);
       // View will refetch via view:invalidate; auto-expand first year
@@ -110,7 +105,7 @@ export default function GoalBreakdownPage() {
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Failed to generate plan");
     }
-  }, [goalText, targetDate, dailyHours, calendarEvents, deviceIntegrations, runCommand, refetch]);
+  }, [goalText, targetDate, dailyHours, runCommand, refetch]);
 
   // Reallocate
   const handleReallocate = useCallback(async () => {
@@ -121,9 +116,7 @@ export default function GoalBreakdownPage() {
         payload: {
           breakdown: goalBreakdown,
           reason: reallocateReason,
-          inAppEvents: calendarEvents,
-          deviceIntegrations,
-        },
+                  },
       });
       setShowReallocate(false);
       setReallocateReason("");
@@ -131,7 +124,7 @@ export default function GoalBreakdownPage() {
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Failed to reallocate");
     }
-  }, [goalBreakdown, reallocateReason, calendarEvents, deviceIntegrations, runCommand, refetch]);
+  }, [goalBreakdown, reallocateReason, runCommand, refetch]);
 
   // -- RENDER --
 
@@ -315,16 +308,15 @@ export default function GoalBreakdownPage() {
 
               {/* Calendar status */}
               <div className="gb-calendar-status">
-                {calendarEvents.length > 0 ? (
+                {scheduledTasks.length > 0 ? (
                   <span className="gb-cal-ok">
                     <CheckCircle2 size={14} />
-                    {calendarEvents.length} event{calendarEvents.length !== 1 ? "s" : ""} in your calendar
-                    {deviceIntegrations?.calendar?.enabled && " (+ device sync)"}
+                    {scheduledTasks.length} scheduled task{scheduledTasks.length !== 1 ? "s" : ""} on your calendar
                   </span>
                 ) : (
                   <span className="gb-cal-denied">
                     <AlertTriangle size={14} />
-                    No events in calendar — add events for a smarter plan
+                    No scheduled tasks — add time-blocked tasks for a smarter plan
                   </span>
                 )}
                 <button className="btn btn-ghost btn-sm" onClick={() => setView("calendar")}>

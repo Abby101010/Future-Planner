@@ -220,6 +220,24 @@ export interface DailyTask {
   goalId?: string | null;
   /** Source GoalPlanTask.id when this task was picked from a plan. */
   planNodeId?: string | null;
+  // ── Calendar-unified fields (optional) ──
+  /** Date this task is scheduled for (YYYY-MM-DD, populated by calendar view). */
+  date?: string;
+  /** Scheduled start time, e.g. "14:30". When set, the task appears at a
+   *  specific time slot on the calendar. When absent, it's an all-day item. */
+  scheduledTime?: string;
+  /** Scheduled end time, e.g. "15:30". */
+  scheduledEndTime?: string;
+  /** True when the task has no specific time. */
+  isAllDay?: boolean;
+  /** Marks this task as a vacation / time-off day. */
+  isVacation?: boolean;
+  /** Recurrence pattern. Task shows on matching future dates. */
+  recurring?: { frequency: "daily" | "weekly" | "monthly"; until?: string };
+  /** Free-form notes. */
+  notes?: string;
+  /** Optional color override for calendar display. */
+  color?: string;
 }
 
 export interface HeatmapEntry {
@@ -323,70 +341,6 @@ export interface PaceCheck {
   closing: string;
 }
 
-// ── In-App Calendar ─────────────────────────────────────
-
-/** A single event/block created by the user in the NorthStar calendar */
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  startDate: string; // ISO string
-  endDate: string;   // ISO string
-  isAllDay: boolean;
-  durationMinutes: number;
-  category: "work" | "personal" | "health" | "social" | "travel" | "focus" | "other";
-  isVacation: boolean;
-  /** Which source created this event */
-  source: "manual" | "device-calendar" | "device-reminders";
-  /** Name of the originating calendar (e.g. "Work", "Personal") */
-  sourceCalendar?: string;
-  color?: string;
-  notes?: string;
-  recurring?: {
-    frequency: "daily" | "weekly" | "monthly";
-    until?: string;
-  };
-}
-
-/** Which device integrations the user has opted in to */
-export interface DeviceIntegrations {
-  /** macOS/iOS Calendar.app */
-  calendar: {
-    enabled: boolean;
-    /** e.g. ["Work", "Personal"] — only import from these */
-    selectedCalendars: string[];
-    /** When we last synced */
-    lastSynced?: string;
-  };
-  /** macOS Reminders — future */
-  reminders: {
-    enabled: boolean;
-    selectedLists: string[];
-    lastSynced?: string;
-  };
-  // extensible: add screenTime, healthKit, etc. later
-}
-
-// Calendar schedule summary (used by AI)
-export interface CalendarSchedule {
-  days: Array<{
-    date: string;
-    busyMinutes: number;
-    freeMinutes: number;
-    isVacation: boolean;
-    isWeekend: boolean;
-    events: Array<{
-      title: string;
-      startDate: string;
-      endDate: string;
-      isAllDay: boolean;
-      durationMinutes: number;
-    }>;
-  }>;
-  vacationPeriods: Array<{ start: string; end: string; label: string }>;
-  averageFreeMinutesWeekday: number;
-  averageFreeMinutesWeekend: number;
-}
-
 // ── Monthly Life Context ───────────────────────────────
 
 /** User-described context for a given month that influences AI workload decisions */
@@ -409,6 +363,7 @@ export interface MonthlyContext {
 
 // App State
 export type AppView =
+  | "login"
   | "welcome"
   | "onboarding"
   | "dashboard"
@@ -429,8 +384,6 @@ export interface AppState {
   roadmap: Roadmap | null;
   goalBreakdown: GoalBreakdown | null;
   goals: Goal[];
-  calendarEvents: CalendarEvent[];
-  deviceIntegrations: DeviceIntegrations;
   monthlyContexts: MonthlyContext[];
   dailyLogs: DailyLog[];
   conversations: ConversationMessage[];

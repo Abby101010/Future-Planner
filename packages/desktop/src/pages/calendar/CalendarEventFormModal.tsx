@@ -1,24 +1,22 @@
 import { X, Palmtree } from "lucide-react";
-import type { CalendarEvent } from "@northstar/core";
+import type { DailyTask } from "@northstar/core";
 
-const CATEGORY_OPTIONS: Array<{ value: CalendarEvent["category"]; label: string }> = [
-  { value: "work", label: "Work" },
-  { value: "personal", label: "Personal" },
-  { value: "health", label: "Health & Fitness" },
-  { value: "social", label: "Social" },
-  { value: "travel", label: "Travel" },
-  { value: "focus", label: "Focus Time" },
-  { value: "other", label: "Other" },
+const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "learning", label: "Learning" },
+  { value: "building", label: "Building" },
+  { value: "networking", label: "Networking" },
+  { value: "reflection", label: "Reflection" },
+  { value: "planning", label: "Planning" },
 ];
 
 interface Props {
-  editingEvent: CalendarEvent | null;
+  editingTask: DailyTask | null;
   formTitle: string;
   formDate: string;
   formStartTime: string;
   formEndTime: string;
   formIsAllDay: boolean;
-  formCategory: CalendarEvent["category"];
+  formCategory: string;
   formIsVacation: boolean;
   formNotes: string;
   setFormTitle: (v: string) => void;
@@ -26,15 +24,15 @@ interface Props {
   setFormStartTime: (v: string) => void;
   setFormEndTime: (v: string) => void;
   setFormIsAllDay: (v: boolean) => void;
-  setFormCategory: (v: CalendarEvent["category"]) => void;
+  setFormCategory: (v: string) => void;
   setFormIsVacation: (v: boolean) => void;
   setFormNotes: (v: string) => void;
   onClose: () => void;
   onSave: () => void;
 }
 
-export default function CalendarEventFormModal({
-  editingEvent,
+export default function CalendarTaskFormModal({
+  editingTask,
   formTitle,
   formDate,
   formStartTime,
@@ -61,7 +59,7 @@ export default function CalendarEventFormModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="cal-modal-header">
-          <h3>{editingEvent ? "Edit Event" : "New Event"}</h3>
+          <h3>{editingTask ? "Edit Task" : "New Task"}</h3>
           <button className="btn btn-ghost btn-xs" onClick={onClose}>
             <X size={16} />
           </button>
@@ -73,7 +71,7 @@ export default function CalendarEventFormModal({
             <input
               type="text"
               className="input"
-              placeholder="Meeting, Gym, Vacation..."
+              placeholder="Study, Gym, Vacation..."
               value={formTitle}
               onChange={(e) => setFormTitle(e.target.value)}
               autoFocus
@@ -95,9 +93,7 @@ export default function CalendarEventFormModal({
               <select
                 className="input"
                 value={formCategory}
-                onChange={(e) =>
-                  setFormCategory(e.target.value as CalendarEvent["category"])
-                }
+                onChange={(e) => setFormCategory(e.target.value)}
               >
                 {CATEGORY_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -115,7 +111,7 @@ export default function CalendarEventFormModal({
                 checked={formIsAllDay}
                 onChange={(e) => setFormIsAllDay(e.target.checked)}
               />
-              <span>All-day event</span>
+              <span>All-day task</span>
             </label>
             <label className="cal-form-check">
               <input
@@ -172,7 +168,7 @@ export default function CalendarEventFormModal({
             onClick={onSave}
             disabled={!formTitle.trim() || !formDate}
           >
-            {editingEvent ? "Save Changes" : "Add Event"}
+            {editingTask ? "Save Changes" : "Add Task"}
           </button>
         </div>
       </div>

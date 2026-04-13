@@ -25,7 +25,9 @@ import {
   Loader2,
   AlertTriangle,
   RefreshCw,
+  LogOut,
 } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
 import useStore from "../../store/useStore";
 import { useT, LANGUAGE_OPTIONS } from "../../i18n";
 import type { Language } from "../../i18n";
@@ -58,6 +60,7 @@ interface SettingsView {
 
 export default function SettingsPage() {
   const setView = useStore((s) => s.setView);
+  const { user: authUser, signOut } = useAuth();
   const t = useT();
   const { data, loading, error, refetch } =
     useQuery<SettingsView>("view:settings");
@@ -628,6 +631,23 @@ export default function SettingsPage() {
               ))}
             </select>
           </div>
+        </section>
+
+        {/* Account / Sign Out */}
+        <section className="settings-section card animate-fade-in">
+          <div className="settings-section-header">
+            <LogOut size={18} />
+            <h3>Account</h3>
+          </div>
+          {authUser?.email && (
+            <p className="settings-desc">
+              {t.auth.signedInAs} <strong>{authUser.email}</strong>
+            </p>
+          )}
+          <button className="btn btn-secondary settings-reset-btn" onClick={signOut}>
+            <LogOut size={14} />
+            {t.auth.signOut}
+          </button>
         </section>
 
         {/* Reset */}

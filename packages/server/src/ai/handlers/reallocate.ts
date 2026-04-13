@@ -15,27 +15,23 @@ export async function handleReallocate(
   payload: ReallocatePayload,
   memoryContext: string,
 ): Promise<unknown> {
-  const { deviceIntegrations } = payload;
   const currentBreakdown = payload.breakdown;
   const reason = payload.reason ?? "Schedule changed";
   const changes = payload.changes ?? {};
-  const inAppEvents = payload.inAppEvents ?? [];
 
   const today = new Date();
   const endDate = new Date(today);
   endDate.setDate(endDate.getDate() + 90);
 
-  let scheduleInfo = "No calendar events available.";
+  let scheduleInfo = "No scheduled tasks available.";
   try {
     const schedule = await getScheduleContext(
       today.toISOString().split("T")[0],
       endDate.toISOString().split("T")[0],
-      inAppEvents as any,
-      deviceIntegrations,
     );
     scheduleInfo = summarizeScheduleForAI(schedule);
   } catch {
-    console.warn("Calendar schedule build failed");
+    console.warn("Schedule build failed");
   }
 
   const handlerKind = "reallocate";

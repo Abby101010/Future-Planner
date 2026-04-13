@@ -26,20 +26,17 @@ import { SCHEDULER_SYSTEM } from "./prompts/scheduler";
 
 // ── Helpers ────────────────────────────────────────────────
 
-/** Build Tier 1 calendar blocks from input events. */
+/** Build Tier 1 calendar blocks from scheduled tasks (those with a time slot). */
 function buildCalendarBlocks(input: TaskStateInput): ScheduleBlock[] {
-  return input.calendarEvents.map((e) => {
-    const start = new Date(e.startDate);
-    const end = new Date(e.endDate);
-    const duration = Math.round((end.getTime() - start.getTime()) / 60000);
-    return {
-      startTime: e.startDate,
-      endTime: e.endDate,
-      label: e.title,
+  return input.scheduledTasks
+    .filter((t) => t.scheduledTime)
+    .map((t) => ({
+      startTime: t.scheduledTime ?? "",
+      endTime: t.scheduledEndTime ?? "",
+      label: t.title,
       tier: "calendar" as const,
-      durationMinutes: duration > 0 ? duration : 60,
-    };
-  });
+      durationMinutes: t.durationMinutes > 0 ? t.durationMinutes : 60,
+    }));
 }
 
 /** Build Tier 2 goal blocks from filtered tasks (deep-work windows). */

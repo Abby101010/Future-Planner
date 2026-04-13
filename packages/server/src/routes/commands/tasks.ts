@@ -4,6 +4,33 @@
 
 import { repos } from "./_helpers";
 import { runBudgetCheck } from "../../agents/gatekeeper";
+import {
+  recordTaskCompleted,
+  recordTaskSkipped,
+  recordTaskUncompleted,
+} from "../../services/signalRecorder";
+
+export async function cmdCreateTask(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const id = (body.id as string | undefined) ?? crypto.randomUUID();
+  const date = body.date as string | undefined;
+  const title = body.title as string | undefined;
+  if (!date || !title) {
+    throw new Error("command:create-task requires args.date and args.title");
+  }
+  const payload = (body.payload as Record<string, unknown> | undefined) ?? {};
+  const existing = await repos.dailyTasks.listForDate(date);
+  await repos.dailyTasks.insert({
+    id,
+    date,
+    title,
+    completed: false,
+    orderIndex: existing.length,
+    payload,
+  });
+  return { ok: true, taskId: id };
+}
 
 export async function cmdToggleTask(
   body: Record<string, unknown>,
@@ -26,6 +53,17 @@ export async function cmdToggleTask(
         });
       } catch (err) {
         console.warn("[toggle-task] failed to sync plan node:", err);
+      }
+    }
+    // Record behavioral signal for capacity profiling
+    if (task) {
+      const pl = task.payload as Record<string, unknown>;
+      const category = (pl?.category as string) ?? "planning";
+      const duration = (pl?.durationMinutes as number) ?? undefined;
+      if (next) {
+        recordTaskCompleted(task.title, category, duration);
+      } else {
+        recordTaskUncompleted(task.title);
       }
     }
     return { ok: true, taskId, completed: next };
@@ -60,6 +98,12 @@ export async function cmdSkipTask(
   await repos.dailyTasks.update(taskId, {
     payload: { skipped: isSkipped },
   });
+  // Record behavioral signal when user skips a task
+  if (isSkipped) {
+    const pl = task.payload as Record<string, unknown>;
+    const category = (pl?.category as string) ?? "planning";
+    recordTaskSkipped(task.title, category);
+  }
   return { ok: true, taskId, skipped: isSkipped };
 }
 
@@ -102,6 +146,14 @@ export async function cmdUpdateTask(
     "whyToday",
     "progressContribution",
     "isMomentumTask",
+    // Calendar-unified fields
+    "scheduledTime",
+    "scheduledEndTime",
+    "isAllDay",
+    "isVacation",
+    "recurring",
+    "notes",
+    "color",
   ];
   const payloadPatch: Record<string, unknown> = {};
   for (const k of payloadKeys) {

@@ -7,6 +7,7 @@ export { invalidate, runAI } from "./_helpers";
 export { cmdCreateGoal, cmdUpdateGoal, cmdDeleteGoal, cmdConfirmGoalPlan } from "./goals";
 
 export {
+  cmdCreateTask,
   cmdToggleTask,
   cmdSkipTask,
   cmdDeleteTask,
@@ -33,8 +34,6 @@ export {
 export { cmdStartChatStream, cmdSendChatMessage, cmdClearHomeChat } from "./chat";
 
 export {
-  cmdUpsertCalendarEvent,
-  cmdDeleteCalendarEvent,
   cmdUpsertReminder,
   cmdAcknowledgeReminder,
   cmdDeleteReminder,

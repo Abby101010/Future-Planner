@@ -66,7 +66,7 @@ export async function fetchEnvelope<T>(
       method,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getAuthToken()}`,
+        Authorization: `Bearer ${await getAuthToken()}`,
         "X-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
@@ -169,7 +169,7 @@ export async function postSseStream<TDone = unknown>(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      Authorization: `Bearer ${getAuthToken()}`,
+      Authorization: `Bearer ${await getAuthToken()}`,
     },
     body: JSON.stringify(body ?? {}),
   });

@@ -10,10 +10,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "electron:dev": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev vite",
-    "electron:build:mac": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run build && electron-builder --mac",
-    "electron:build:win": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run build && electron-builder --win",
-    "electron:build:linux": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run build && electron-builder --linux",
+    "electron:dev": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev VITE_SUPABASE_URL=https://fgrufbpmvvbhkrefwulk.supabase.co VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw vite",
+    "electron:build:mac": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev VITE_SUPABASE_URL=https://fgrufbpmvvbhkrefwulk.supabase.co VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw npm run build && electron-builder --mac",
+    "electron:build:win": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev VITE_SUPABASE_URL=https://fgrufbpmvvbhkrefwulk.supabase.co VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw npm run build && electron-builder --win",
+    "electron:build:linux": "VITE_CLOUD_API_URL=https://northstar-api.fly.dev VITE_SUPABASE_URL=https://fgrufbpmvvbhkrefwulk.supabase.co VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw npm run build && electron-builder --linux",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -21,6 +21,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@northstar/core": "*",
+    "@supabase/supabase-js": "^2.103.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.1",
     "electron-updater": "^6.8.3",
@@ -59,6 +60,10 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "protocols": {
+      "name": "NorthStar Auth",
+      "schemes": ["northstar"]
+    },
     "icon": "build/icon.icns",
     "publish": [
       {

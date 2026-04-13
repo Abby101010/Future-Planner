@@ -9,13 +9,10 @@
 import type {
   ConversationMessage,
   GoalBreakdown,
-  CalendarEvent,
-  DeviceIntegrations,
   DailyLog,
   HeatmapEntry,
   RecoveryResponse,
   PaceCheck,
-  CalendarSchedule,
   GoalImportance,
   GoalScope,
   GoalType,
@@ -77,8 +74,8 @@ export async function generateDailyTasks(
   pastLogs: DailyLog[],
   heatmap: HeatmapEntry[],
   date: string,
-  calendarEvents?: CalendarEvent[],
-  deviceIntegrations?: DeviceIntegrations,
+  _unused1?: unknown,
+  _unused2?: unknown,
   goals?: Goal[],
   confirmedQuickTasks?: DailyTask[],
   vacationMode?: { active: boolean; startDate: string; endDate: string } | null,
@@ -88,158 +85,11 @@ export async function generateDailyTasks(
   const isVacationDay = vacationMode?.active &&
     date >= vacationMode.startDate && date <= vacationMode.endDate;
 
-  // Build a summary of all goal plans for the AI to select from.
-  // Plan generators produce day labels in multiple shapes: ISO date
-  // ("2026-04-11"), short "Jan 6", full weekday "Monday", abbreviated
-  // "Mon", or prefixed "Mon Jan 6". Match leniently against all of them
-  // so tasks scheduled for today actually surface.
-  const d = new Date(date);
-  const todayWeekdayLong = d.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-  const todayWeekdayShort = d.toLocaleDateString("en-US", { weekday: "short" }).toLowerCase();
-  const todayMonthDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase();
-  const todayMonthDayPadded = todayMonthDay.replace(/\s(\d)$/, " 0$1");
-
-  /** Try to extract a date range from a week label like "Jan 6 – Jan 12". */
-  const parseWeekRange = (weekLabel: string): [string, string] | null => {
-    const m = weekLabel.match(
-      /([A-Za-z]+)\s+(\d{1,2})\s*[–\-]\s*([A-Za-z]+)\s+(\d{1,2})/,
-    );
-    if (!m) return null;
-    const yr = d.getFullYear();
-    const parse = (mon: string, dy: string): string | null => {
-      for (const y of [yr, yr + 1]) {
-        const dt = new Date(`${mon} ${dy}, ${y}`);
-        if (!isNaN(dt.getTime())) return dt.toISOString().split("T")[0];
-      }
-      return null;
-    };
-    const s = parse(m[1], m[2]);
-    const e = parse(m[3], m[4]);
-    return s && e ? [s, e] : null;
-  };
-
-  const dayMatchesToday = (rawLabel: string, weekLabel?: string): boolean => {
-    const label = rawLabel.toLowerCase().trim();
-    if (!label) return false;
-    // Exact ISO date match — always unambiguous
-    if (label === date || label.includes(date)) return true;
-    // Month+day match (e.g. "Jan 6", "Apr 11") — unambiguous within a year
-    if (label === todayMonthDay || label === todayMonthDayPadded) return true;
-    if (label.includes(todayMonthDay) || label.includes(todayMonthDayPadded)) return true;
-
-    // Weekday-only labels are AMBIGUOUS — use parent week range to disambiguate
-    const isWeekdayMatch =
-      label === todayWeekdayLong ||
-      label === todayWeekdayShort ||
-      label.startsWith(`${todayWeekdayShort} `);
-    if (isWeekdayMatch) {
-      if (weekLabel) {
-        const range = parseWeekRange(weekLabel);
-        if (range) return date >= range[0] && date <= range[1];
-      }
-      return false; // Can't determine week — weekday names are ambiguous, skip
-    }
-    return false;
-  };
-
-  const goalPlanSummaries = (goals || [])
-    .filter((g) => g.goalType === "big" || (!g.goalType && g.scope === "big"))
-    .map((g) => {
-      const todayTasks: Array<{
-        goalId: string;
-        planNodeId: string;
-        title: string;
-        description: string;
-        durationMinutes: number;
-        priority: string;
-        category: string;
-      }> = [];
-      if (g.plan && Array.isArray(g.plan.years)) {
-        for (const year of g.plan.years) {
-          for (const month of year.months) {
-            for (const week of month.weeks) {
-              if (week.locked) continue;
-              for (const day of week.days) {
-                if (!dayMatchesToday(day.label, week.label)) continue;
-                for (const t of day.tasks) {
-                  if (t.completed) continue;
-                  todayTasks.push({
-                    goalId: g.id,
-                    planNodeId: t.id,
-                    title: t.title,
-                    description: t.description,
-                    durationMinutes: t.durationMinutes,
-                    priority: t.priority,
-                    category: t.category,
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-      return {
-        goalId: g.id,
-        goalTitle: g.title,
-        scope: g.scope,
-        goalType: g.goalType || "big",
-        status: g.status,
-        todayTasks,
-      };
-    })
-    .filter((g) => g.todayTasks.length > 0);
-
-  // Everyday goals — pending tasks to slot into the day
-  const everydayGoals = (goals || [])
-    .filter((g) => (g.goalType === "everyday" || (!g.goalType && g.scope === "small")) && g.status !== "completed" && g.status !== "archived")
-    .map((g) => ({
-      title: g.title,
-      description: g.description,
-      suggestedTimeSlot: g.suggestedTimeSlot || null,
-      tasks: (g.flatPlan?.flatMap((s) => s.tasks) || [])
-        .filter((t) => !t.completed)
-        .map((t) => ({ title: t.title, description: t.description, durationMinutes: t.durationMinutes, priority: t.priority, category: t.category })),
-    }))
-    .filter((g) => g.tasks.length > 0);
-
-  // Repeating goals — fixed time blocks for today
-  const todayDow = new Date(date).getDay();
-  const repeatingGoals = (goals || [])
-    .filter((g) => g.goalType === "repeating" && g.status !== "archived" && g.repeatSchedule)
-    .filter((g) => g.repeatSchedule!.daysOfWeek.includes(todayDow))
-    .map((g) => ({
-      title: g.title,
-      timeOfDay: g.repeatSchedule!.timeOfDay || null,
-      durationMinutes: g.repeatSchedule!.durationMinutes,
-      frequency: g.repeatSchedule!.frequency,
-    }));
-
-  // Recurring calendar events for today
-  const todayEvents = (calendarEvents || []).filter((e) => {
-    const eventDate = e.startDate.split("T")[0];
-    if (eventDate === date) return true;
-    if (e.recurring) return true;
-    return false;
-  }).map((e) => ({
-    title: e.title,
-    startDate: e.startDate,
-    endDate: e.endDate,
-    durationMinutes: e.durationMinutes,
-    category: e.category,
-    isAllDay: e.isAllDay,
-    recurring: e.recurring,
-  }));
-
   return aiRequest<DailyLog>("daily-tasks", {
     breakdown,
     pastLogs,
     heatmap,
     date,
-    inAppEvents: calendarEvents || [],
-    deviceIntegrations,
-    goalPlanSummaries,
-    everydayGoals,
-    repeatingGoals,
     isVacationDay: !!isVacationDay,
     confirmedQuickTasks: (confirmedQuickTasks || []).map((t) => ({
       title: t.title,
@@ -249,9 +99,7 @@ export async function generateDailyTasks(
       priority: t.priority,
       category: t.category,
     })),
-    todayCalendarEvents: todayEvents,
     weeklyAvailability: weeklyAvailability || [],
-    // Pass goals for scheduling context evaluation
     goals: (goals || []).map((g) => ({
       title: g.title,
       goalType: g.goalType,
@@ -287,41 +135,11 @@ export async function paceCheck(
 export async function getCalendarSchedule(
   startDate: string,
   endDate: string,
-  calendarEvents?: CalendarEvent[],
-  deviceIntegrations?: DeviceIntegrations
-): Promise<{ ok: boolean; data?: CalendarSchedule; summary?: string; error?: string }> {
-  const payload = {
-    startDate,
-    endDate,
-    inAppEvents: calendarEvents || [],
-    deviceIntegrations,
-  };
-  return cloudInvoke<{ ok: boolean; data?: CalendarSchedule; summary?: string; error?: string }>(
+): Promise<{ ok: boolean; data?: unknown; summary?: string; error?: string }> {
+  return cloudInvoke<{ ok: boolean; data?: unknown; summary?: string; error?: string }>(
     "calendar:schedule",
-    payload,
+    { startDate, endDate },
   );
-}
-
-/** List available device calendars (macOS Calendar.app).
- *  Phase 13: the Electron IPC bridge is gone. Device-calendar access
- *  will move to a Google/Apple calendar OAuth flow in a later phase —
- *  for now return an empty list so the UI doesn't crash. */
-export async function listDeviceCalendars(): Promise<{ ok: boolean; calendars: string[] }> {
-  return { ok: false, calendars: [] };
-}
-
-/** Import events from device calendar for a date range.
- *  See listDeviceCalendars — stubbed until cloud calendar OAuth lands. */
-export async function importDeviceCalendarEvents(
-  _startDate: string,
-  _endDate: string,
-  _selectedCalendars: string[],
-): Promise<{ ok: boolean; events: Array<Record<string, unknown>>; error?: string }> {
-  return {
-    ok: false,
-    events: [],
-    error: "device calendar integration is temporarily unavailable",
-  };
 }
 
 // ── Goal System AI functions ─────────────────────────────
@@ -414,14 +232,11 @@ export async function generateGoalPlan(
 export async function reallocateGoalPlan(
   plan: GoalPlan,
   reason: string,
-  calendarEvents?: CalendarEvent[]
 ): Promise<GoalPlan> {
   const result = await aiRequest<Record<string, unknown>>("reallocate", {
     breakdown: plan,
     reason,
-    inAppEvents: calendarEvents || [],
   });
-  // The reallocate handler returns the updated plan structure
   return (result as unknown) as GoalPlan;
 }
 
@@ -432,7 +247,6 @@ export async function analyzeQuickTask(
   userInput: string,
   existingTasks: DailyTask[],
   goals: Goal[],
-  calendarEvents?: CalendarEvent[]
 ): Promise<{
   title: string;
   description: string;
@@ -444,19 +258,6 @@ export async function analyzeQuickTask(
   reasoning: string;
   conflicts_with_existing: string[];
 }> {
-  const today = new Date().toISOString().split("T")[0];
-  // Gather today's calendar events for conflict detection
-  const todayEvents = (calendarEvents || []).filter((e) => {
-    const eventDate = e.startDate.split("T")[0];
-    return eventDate === today || !!e.recurring;
-  }).map((e) => ({
-    title: e.title,
-    startDate: e.startDate,
-    endDate: e.endDate,
-    durationMinutes: e.durationMinutes,
-    category: e.category,
-  }));
-
   return aiRequest<{
     title: string;
     description: string;
@@ -476,7 +277,6 @@ export async function analyzeQuickTask(
       priority: t.priority,
     })),
     goals: goals.map((g) => ({ title: g.title, scope: g.scope })),
-    todayCalendarEvents: todayEvents,
   });
 }
 
@@ -486,31 +286,13 @@ export async function sendHomeChatMessage(
   chatHistory: Array<{ role: string; content: string }>,
   goals: Goal[],
   todayTasks: DailyTask[],
-  calendarEvents?: CalendarEvent[],
+  _unused?: unknown,
   attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>,
   userMessageId?: string,
   reminders?: Reminder[],
 ): Promise<HomeChatResult> {
-  const today = new Date().toISOString().split("T")[0];
-  const todayEvents = (calendarEvents || []).filter((e) => {
-    const eventDate = e.startDate.split("T")[0];
-    return eventDate === today || !!e.recurring;
-  }).map((e) => ({
-    id: e.id,
-    title: e.title,
-    startDate: e.startDate,
-    endDate: e.endDate,
-    category: e.category,
-  }));
-
-  // Home chat is a one-shot cloud call. Server is responsible for
-  // hydrating plan-visibility fields from the stored goal — phase 2a
-  // removed the client-side summarizePlan walk that used to precompute
-  // subtaskCount / visibleSubtaskCount here.
   const payload = {
     userInput,
-    // Server also reads `query` to persist the user message — keep both
-    // field names so the AI handler and the persistence layer agree.
     query: userInput,
     userMessageId,
     chatHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
@@ -524,7 +306,6 @@ export async function sendHomeChatMessage(
       planConfirmed: g.planConfirmed,
     })),
     todayTasks: todayTasks.map((t) => ({ id: t.id, title: t.title, completed: t.completed, skipped: !!t.skipped, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
-    todayCalendarEvents: todayEvents,
     activeReminders: (reminders || []).map((r) => ({
       id: r.id,
       title: r.title,
@@ -554,7 +335,7 @@ export async function streamHomeChatMessage(
   chatHistory: Array<{ role: string; content: string }>,
   goals: Goal[],
   todayTasks: DailyTask[],
-  calendarEvents?: CalendarEvent[],
+  _unused?: unknown,
   attachments?: Array<{ type: string; name: string; base64: string; mediaType: string }>,
   userMessageId?: string,
   reminders?: Reminder[],
@@ -564,18 +345,6 @@ export async function streamHomeChatMessage(
     onError?: (msg: string) => void;
   },
 ): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
-  const todayEvents = (calendarEvents || []).filter((e) => {
-    const eventDate = e.startDate.split("T")[0];
-    return eventDate === today || !!e.recurring;
-  }).map((e) => ({
-    id: e.id,
-    title: e.title,
-    startDate: e.startDate,
-    endDate: e.endDate,
-    category: e.category,
-  }));
-
   const payload: Record<string, unknown> = {
     userInput,
     query: userInput,
@@ -591,7 +360,6 @@ export async function streamHomeChatMessage(
       planConfirmed: g.planConfirmed,
     })),
     todayTasks: todayTasks.map((t) => ({ id: t.id, title: t.title, completed: t.completed, skipped: !!t.skipped, cognitiveWeight: t.cognitiveWeight, durationMinutes: t.durationMinutes })),
-    todayCalendarEvents: todayEvents,
     activeReminders: (reminders || []).map((r) => ({
       id: r.id,
       title: r.title,
@@ -623,7 +391,7 @@ export async function streamHomeChatMessage(
 // fully populated by the backend (server-assigned IDs, defaults applied);
 // the renderer only dispatches the entity to the existing store setters.
 export type HomeChatIntent =
-  | { kind: "event"; entity: CalendarEvent }
+  | { kind: "event"; entity: Record<string, unknown> }
   | {
       kind: "goal";
       entity: Goal;

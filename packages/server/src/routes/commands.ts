@@ -23,6 +23,7 @@ import {
   cmdUpdateGoal,
   cmdDeleteGoal,
   cmdConfirmGoalPlan,
+  cmdCreateTask,
   cmdToggleTask,
   cmdSkipTask,
   cmdDeleteTask,
@@ -42,8 +43,6 @@ import {
   cmdStartChatStream,
   cmdSendChatMessage,
   cmdClearHomeChat,
-  cmdUpsertCalendarEvent,
-  cmdDeleteCalendarEvent,
   cmdUpsertReminder,
   cmdAcknowledgeReminder,
   cmdDeleteReminder,
@@ -80,6 +79,9 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:delete-goal":
         result = await cmdDeleteGoal(body);
         break;
+      case "command:create-task":
+        result = await cmdCreateTask(body);
+        break;
       case "command:toggle-task":
         result = await cmdToggleTask(body);
         break;
@@ -103,12 +105,6 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:create-pending-task":
         result = await cmdCreatePendingTask(body);
-        break;
-      case "command:upsert-calendar-event":
-        result = await cmdUpsertCalendarEvent(body);
-        break;
-      case "command:delete-calendar-event":
-        result = await cmdDeleteCalendarEvent(body);
         break;
       case "command:upsert-reminder":
         result = await cmdUpsertReminder(body);

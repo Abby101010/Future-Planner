@@ -22,7 +22,6 @@ import useStore from "../../store/useStore";
 import { useT } from "../../i18n";
 import type {
   PendingTask,
-  CalendarEvent,
   ContextualNudge,
   Goal,
   HomeChatMessage,
@@ -30,7 +29,7 @@ import type {
   Reminder,
   DailyTask,
 } from "@northstar/core";
-import { PendingTaskCard, PendingEventCard } from "./PendingCards";
+import { PendingTaskCard } from "./PendingCards";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
 import "./DashboardPage.css";
@@ -61,7 +60,6 @@ interface DashboardView {
   todaySummary: DashboardTodaySummary;
   activeGoals: Goal[];
   todayTasks: DailyTask[];
-  todayEvents: CalendarEvent[];
   pendingTasks: PendingTask[];
   activePendingTasks: PendingTask[];
   dailyLoad: DashboardDailyLoad;
@@ -81,7 +79,7 @@ export default function DashboardPage() {
   const { run } = useCommand();
 
   const [monthNudgeDismissed, setMonthNudgeDismissed] = useState(false);
-  const [pendingEvent, setPendingEvent] = useState<CalendarEvent | null>(null);
+  const [pendingEvent, setPendingEvent] = useState<Record<string, unknown> | null>(null);
 
   const needsMonthlyContext = !!data?.needsMonthlyContext && !monthNudgeDismissed;
   const currentMonthLabel = new Date().toLocaleDateString(undefined, { month: "long" });
@@ -201,29 +199,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── Upcoming Events ── */}
-        {data.todayEvents.length > 0 && (
-          <div className="home-events-section">
-            <div className="home-section-header">
-              <Clock size={16} />
-              <span>Today's Events</span>
-            </div>
-            {data.todayEvents.slice(0, 3).map((event) => (
-              <div key={event.id} className="home-event-row">
-                <span className="home-event-time">
-                  {event.isAllDay
-                    ? "All day"
-                    : new Date(event.startDate).toLocaleTimeString(undefined, {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                </span>
-                <span className="home-event-title">{event.title}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* ── New month nudge ── */}
         {needsMonthlyContext && (
           <div className="home-month-nudge">
@@ -243,21 +218,6 @@ export default function DashboardPage() {
               &times;
             </button>
           </div>
-        )}
-
-        {/* ── Pending Event ── */}
-        {pendingEvent && (
-          <PendingEventCard
-            event={pendingEvent}
-            dailyLoad={dailyLoad}
-            onConfirm={async () => {
-              await run("command:upsert-calendar-event", { event: pendingEvent });
-              setPendingEvent(null);
-              refetch();
-            }}
-            onReject={() => setPendingEvent(null)}
-            onUpdate={(updates) => setPendingEvent({ ...pendingEvent, ...updates })}
-          />
         )}
 
         {/* ── Pending Tasks ── */}

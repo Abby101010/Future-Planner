@@ -1,32 +1,8 @@
 /**
- * Calendar event and reminder command handlers.
+ * Reminder command handlers.
  */
 
 import { repos } from "./_helpers";
-
-export async function cmdUpsertCalendarEvent(
-  body: Record<string, unknown>,
-): Promise<unknown> {
-  const event = body.event as Parameters<typeof repos.calendar.upsert>[0];
-  if (!event || typeof event !== "object" || !(event as { id?: string }).id) {
-    throw new Error(
-      "command:upsert-calendar-event requires args.event with an id",
-    );
-  }
-  await repos.calendar.upsert(event);
-  return { ok: true, eventId: event.id };
-}
-
-export async function cmdDeleteCalendarEvent(
-  body: Record<string, unknown>,
-): Promise<unknown> {
-  const eventId = body.eventId as string | undefined;
-  if (!eventId) {
-    throw new Error("command:delete-calendar-event requires args.eventId");
-  }
-  await repos.calendar.remove(eventId);
-  return { ok: true, eventId };
-}
 
 export async function cmdUpsertReminder(
   body: Record<string, unknown>,

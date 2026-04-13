@@ -42,7 +42,6 @@ import PaceBanner from "./PaceBanner";
 import AgentProgress from "../goals/AgentProgress";
 import "./PaceBanner.css";
 import type {
-  CalendarEvent,
   ContextualNudge,
   DailyLog,
   DailyTask,
@@ -89,7 +88,6 @@ interface TasksView {
   bigGoalProgress: TasksBigGoalProgress[];
   activeReminders: Reminder[];
   todayReminders: Reminder[];
-  todayEvents: CalendarEvent[];
   recentNudges: ContextualNudge[];
   vacationMode: TasksVacationMode;
   totalIncompleteTasks: number;
@@ -146,7 +144,7 @@ export default function TasksPage() {
   // Derived view-data shortcuts.
   const goals: Goal[] = data?.goals ?? [];
   const heatmapData = data?.heatmapData ?? [];
-  const calendarEvents = data?.todayEvents ?? [];
+  // Calendar events are now unified as tasks — no separate events list.
   const vacationMode = data?.vacationMode ?? null;
   const reminders = data?.todayReminders ?? [];
   const bigGoalProgressRows = (data?.bigGoalProgress ?? []).map((r) => ({
@@ -745,52 +743,6 @@ export default function TasksPage() {
                     index={i}
                   />
                 ))}
-              </div>
-            </>
-          )}
-
-          {/* Raw calendar events — shown when no AI-generated calendar tasks exist yet */}
-          {calendarTasks.length === 0 && calendarEvents.length > 0 && (
-            <>
-              <div className="tasks-source-divider">
-                <span>📅 From Calendar</span>
-              </div>
-              <div className="tasks-list">
-                {calendarEvents.map((evt) => {
-                  const startTime = new Date(evt.startDate).toLocaleTimeString(
-                    undefined,
-                    { hour: "numeric", minute: "2-digit" },
-                  );
-                  const endTime = new Date(evt.endDate).toLocaleTimeString(
-                    undefined,
-                    { hour: "numeric", minute: "2-digit" },
-                  );
-                  return (
-                    <div key={evt.id} className="task-card calendar-event-card">
-                      <div className="task-content">
-                        <div className="task-title-row">
-                          <Calendar size={13} />
-                          <span className="task-title">{evt.title}</span>
-                          {evt.category && (
-                            <span className="badge badge-source">{evt.category}</span>
-                          )}
-                        </div>
-                        <div className="task-meta">
-                          <span className="task-duration">
-                            <Clock size={11} />
-                            {evt.isAllDay ? "All day" : `${startTime} – ${endTime}`}
-                          </span>
-                          {evt.durationMinutes && !evt.isAllDay && (
-                            <>
-                              <span className="task-meta-sep" />
-                              <span className="task-meta-label">{evt.durationMinutes}m</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </>
           )}
