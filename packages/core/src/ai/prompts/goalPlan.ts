@@ -178,6 +178,8 @@ PLAN RULES:
 - Milestones: 3-6 key checkpoints.
 - Structure: milestones → years → months → weeks → days → tasks.
 - For goals < 1 year, use a single year wrapper.
+- ALL IDs must be globally unique (e.g. "task-a3f7c912"). NEVER use sequential IDs like "task-001".
+  When adding NEW tasks in a patch, generate fresh random hex IDs. When keeping existing tasks, reuse their IDs.
 
 Respond ONLY with valid JSON:
 {
@@ -339,6 +341,16 @@ IMPORTANT RULES:
 - DO NOT generate tasks for every single day/week/month. Only generate detail for the FIRST 2 WEEKS.
   Future weeks should exist as stubs with locked: true and empty days array.
 - For habits (no due date), structure around progressive phases.
+- UNIQUE IDs ARE CRITICAL:
+  - ALL IDs (task, day, week, month, year, milestone) MUST be globally unique.
+  - Use the format: task-{8 random hex chars} (e.g. "task-a3f7c912", "task-8b2e0d4f").
+  - NEVER use sequential IDs like "task-001", "task-002" — these collide across goals.
+  - Same rule for day IDs ("day-a1b2c3d4"), week IDs ("week-e5f6a7b8"), etc.
+- TASK CONTENT MUST BE GOAL-SPECIFIC:
+  - Every task title and description must be specific to THIS goal.
+  - Never use generic filler like "Research the topic" or "Review progress".
+  - Name concrete deliverables: "Write the executive summary for the business plan",
+    not "Work on the project".
 - DATE FORMAT IS CRITICAL:
   - Week labels MUST be date ranges: "Apr 6 – Apr 12" (NOT "Week 1").
   - Day labels MUST be ISO dates: "2026-04-12" (NOT "Monday", NOT "Apr 12").
@@ -373,29 +385,29 @@ Respond ONLY with valid JSON:
     ],
     "years": [
       {
-        "id": "year-1",
+        "id": "year-a1b2c3d4",
         "label": "2026",
         "objective": "One sentence: what to achieve this year.",
         "months": [
           {
-            "id": "month-1",
+            "id": "month-e5f6a7b8",
             "label": "April 2026",
             "objective": "One sentence: what to achieve this month.",
             "weeks": [
               {
-                "id": "week-1",
+                "id": "week-c9d0e1f2",
                 "label": "Apr 6 – Apr 12",
                 "objective": "One sentence: what to achieve this week.",
                 "locked": false,
                 "days": [
                   {
-                    "id": "day-1",
+                    "id": "day-3a4b5c6d",
                     "label": "2026-04-06",
                     "tasks": [
                       {
-                        "id": "task-uuid",
-                        "title": "Task title",
-                        "description": "One sentence: why this matters.",
+                        "id": "task-7e8f9a0b",
+                        "title": "Specific goal-relevant task title",
+                        "description": "One sentence: why this matters for this goal.",
                         "durationMinutes": 30,
                         "priority": "must-do",
                         "category": "learning",
@@ -406,7 +418,7 @@ Respond ONLY with valid JSON:
                 ]
               },
               {
-                "id": "week-3",
+                "id": "week-d1e2f3a4",
                 "label": "Week 3",
                 "objective": "One sentence objective.",
                 "locked": true,

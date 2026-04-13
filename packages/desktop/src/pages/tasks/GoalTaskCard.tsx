@@ -36,7 +36,7 @@ export default function GoalTaskCard({ task, goalTitle, onToggle }: Props) {
           {task.dueDate && (
             <span className="task-duration">
               {t.common.due}{" "}
-              {new Date(task.dueDate).toLocaleDateString(getDateLocale(lang), {
+              {new Date(task.dueDate + "T00:00:00").toLocaleDateString(getDateLocale(lang), {
                 month: "short",
                 day: "numeric",
               })}

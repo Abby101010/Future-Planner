@@ -227,6 +227,36 @@ export async function toggleCompleted(id: string): Promise<boolean | null> {
   return nextCompleted;
 }
 
+/** Find incomplete, un-skipped tasks from dates before `today` that
+ *  haven't been snoozed past a future reminder time. These are
+ *  candidates for the reschedule confirmation card. Limited to the
+ *  last 14 days to avoid surfacing ancient tasks. */
+export async function listPendingReschedule(
+  today: string,
+): Promise<DailyTaskRecord[]> {
+  const userId = requireUserId();
+  const rows = await query<DailyTaskRow>(
+    `select * from daily_tasks
+      where user_id = $1
+        and log_date < $2
+        and log_date >= ($2::date - interval '14 days')
+        and completed = false
+      order by log_date desc, order_index asc`,
+    [userId, today],
+  );
+  return rows
+    .map(rowToTask)
+    .filter((t) => {
+      const pl = t.payload;
+      // Skip tasks already marked skipped or dismissed from reschedule
+      if (pl.skipped) return false;
+      if (pl.rescheduleDismissed) return false;
+      // Skip tasks snoozed to a future reminder
+      if (typeof pl.rescheduleSnoozeUntil === "string" && pl.rescheduleSnoozeUntil > today) return false;
+      return true;
+    });
+}
+
 // Re-export canonical "delete" name since it's a reserved word.
 export { remove as delete_ };
 export type { DailyTask };

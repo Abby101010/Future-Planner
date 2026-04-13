@@ -98,6 +98,11 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:dashboard",
     "view:tasks",
   ],
+  "command:adjust-all-overloaded-plans": [
+    "view:goal-plan",
+    "view:dashboard",
+    "view:tasks",
+  ],
   "command:regenerate-daily-tasks": [
     "view:dashboard",
     "view:tasks",
@@ -107,6 +112,26 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:dashboard",
     "view:tasks",
     "view:calendar",
+  ],
+  "command:generate-bonus-task": [
+    "view:dashboard",
+    "view:tasks",
+  ],
+  "command:accept-task-proposal": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+  ],
+  "command:reschedule-task": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+  ],
+  "command:snooze-reschedule": [
+    "view:tasks",
+  ],
+  "command:dismiss-reschedule": [
+    "view:tasks",
   ],
   "command:dismiss-nudge": [
     "view:dashboard",

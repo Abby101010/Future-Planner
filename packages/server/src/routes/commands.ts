@@ -35,11 +35,17 @@ import {
   cmdDeferOverflow,
   cmdUndoDefer,
   cmdDismissNudge,
+  cmdRescheduleTask,
+  cmdSnoozeReschedule,
+  cmdDismissReschedule,
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
   cmdConfirmDailyTasks,
   cmdRegenerateDailyTasks,
   cmdAdaptiveReschedule,
+  cmdAdjustAllOverloadedPlans,
+  cmdGenerateBonusTask,
+  cmdAcceptTaskProposal,
   cmdStartChatStream,
   cmdSendChatMessage,
   cmdClearHomeChat,
@@ -160,11 +166,29 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:adaptive-reschedule":
         result = await cmdAdaptiveReschedule(body);
         break;
+      case "command:adjust-all-overloaded-plans":
+        result = await cmdAdjustAllOverloadedPlans(body);
+        break;
       case "command:confirm-daily-tasks":
         result = await cmdConfirmDailyTasks(body);
         break;
       case "command:regenerate-daily-tasks":
         result = await cmdRegenerateDailyTasks(body);
+        break;
+      case "command:generate-bonus-task":
+        result = await cmdGenerateBonusTask(body);
+        break;
+      case "command:accept-task-proposal":
+        result = await cmdAcceptTaskProposal(body);
+        break;
+      case "command:reschedule-task":
+        result = await cmdRescheduleTask(body);
+        break;
+      case "command:snooze-reschedule":
+        result = await cmdSnoozeReschedule(body);
+        break;
+      case "command:dismiss-reschedule":
+        result = await cmdDismissReschedule(body);
         break;
       case "command:dismiss-nudge":
         result = await cmdDismissNudge(body);

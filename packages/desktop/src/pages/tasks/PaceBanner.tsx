@@ -66,7 +66,6 @@ export default function PaceBanner({ mismatches, onDismiss, onReschedule }: Prop
       </p>
       <div className="pace-banner-stats">
         <span>{top.completedPlanTasks}/{top.totalPlanTasks} tasks done</span>
-        <span>{top.overdueTasks} overdue</span>
         <span>{top.daysRemaining} days left</span>
       </div>
       <div className="pace-banner-actions">

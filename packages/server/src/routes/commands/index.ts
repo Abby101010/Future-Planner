@@ -19,6 +19,9 @@ export {
   cmdDeferOverflow,
   cmdUndoDefer,
   cmdDismissNudge,
+  cmdRescheduleTask,
+  cmdSnoozeReschedule,
+  cmdDismissReschedule,
   deferScore,
   tomorrowOf,
 } from "./tasks";
@@ -29,6 +32,9 @@ export {
   cmdConfirmDailyTasks,
   cmdRegenerateDailyTasks,
   cmdAdaptiveReschedule,
+  cmdAdjustAllOverloadedPlans,
+  cmdGenerateBonusTask,
+  cmdAcceptTaskProposal,
 } from "./planning";
 
 export { cmdStartChatStream, cmdSendChatMessage, cmdClearHomeChat } from "./chat";

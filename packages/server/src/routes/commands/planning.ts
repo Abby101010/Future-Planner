@@ -143,16 +143,10 @@ export async function cmdRegenerateDailyTasks(
   const today = (body.date as string) || getEffectiveDate();
   const rangeStart = getEffectiveDaysAgo(90);
 
-  // Save completed/skipped state before regeneration
-  const existingTasks = await repos.dailyTasks.listForDateRange(today, today);
-  const completedNodes = new Set<string>();
-  const completedTitles = new Set<string>();
-  for (const t of existingTasks) {
-    if (t.completed) {
-      if (t.planNodeId) completedNodes.add(t.planNodeId);
-      completedTitles.add(t.title.toLowerCase());
-    }
-  }
+  // Check whether tasks have been confirmed (plan is locked).
+  const todayLog = await repos.dailyLogs.get(today);
+  const isConfirmed =
+    (todayLog?.payload as Record<string, unknown>)?.tasksConfirmed === true;
 
   const [goals, logs, tasks, heatmapData, activeReminders] =
     await Promise.all([
@@ -185,6 +179,46 @@ export async function cmdRegenerateDailyTasks(
     })
     .slice(0, 14);
 
+  if (isConfirmed) {
+    // ── Post-confirmation: return proposals, don't persist ──
+    const result = await generateAndPersistDailyTasks({
+      date: today,
+      goals,
+      pastLogs: pastLogs as any,
+      heatmapData,
+      activeReminders,
+      dryRun: true,
+      preserveExisting: true, // so confirmedQuickTasks are populated
+    });
+
+    const proposals = (result.tasks ?? []).map((t) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      durationMinutes: t.durationMinutes,
+      cognitiveWeight: t.cognitiveWeight,
+      priority: t.priority,
+      category: t.category,
+      whyToday: t.whyToday,
+      goalId: t.goalId,
+      planNodeId: t.planNodeId,
+    }));
+
+    return { ok: true, date: today, mode: "confirmed", proposals };
+  }
+
+  // ── Pre-confirmation: full wipe-and-replace ──
+  // Save completed/skipped state before regeneration
+  const existingTasks = await repos.dailyTasks.listForDateRange(today, today);
+  const completedNodes = new Set<string>();
+  const completedTitles = new Set<string>();
+  for (const t of existingTasks) {
+    if (t.completed) {
+      if (t.planNodeId) completedNodes.add(t.planNodeId);
+      completedTitles.add(t.title.toLowerCase());
+    }
+  }
+
   await generateAndPersistDailyTasks({
     date: today,
     goals,
@@ -204,7 +238,7 @@ export async function cmdRegenerateDailyTasks(
     }
   }
 
-  return { ok: true, date: today, taskCount: freshTasks.length };
+  return { ok: true, date: today, mode: "proposal", taskCount: freshTasks.length };
 }
 
 export async function cmdAdaptiveReschedule(
@@ -277,7 +311,7 @@ TARGET DATE: ${goal.targetDate ?? "none"}
 
 ACTUAL PACE: ${actualPace} tasks/day (averaged over past 2 weeks)
 
-OVERDUE TASKS (${overdueTasks.length} incomplete from past weeks — must be rescheduled):
+INCOMPLETE PAST TASKS (${overdueTasks.length} from past weeks — need rescheduling):
 ${overdueTasks.map((t) => `- "${t.title}" (was: ${t.originalWeek}, ${t.originalDay})`).join("\n") || "None"}
 
 FUTURE TASKS (${futureTasks.length} currently scheduled):
@@ -304,7 +338,7 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
 
     // Strip incomplete tasks from locked (past) weeks — they've been
     // redistributed into the future plan by the AI. Leaving them causes
-    // detectPaceMismatches to keep counting them as overdue.
+    // detectPaceMismatches to keep counting them as incomplete.
     const cleanedPast: import("@northstar/core").GoalPlan = {
       milestones: pastPlan.milestones,
       years: pastPlan.years.map((yr) => ({
@@ -357,10 +391,229 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
     await repos.goals.upsert(updatedGoal);
     await repos.nudges.dismissByContext(goalId);
     planUpdated = true;
-    console.log(`[adaptive-reschedule] Plan updated for goal ${goalId}. targetDate → ${projectedCompletion}, overdue cleaned: ${overdueTasks.length}`);
+    console.log(`[adaptive-reschedule] Plan updated for goal ${goalId}. targetDate → ${projectedCompletion}, incomplete tasks redistributed: ${overdueTasks.length}`);
   } else {
     console.warn(`[adaptive-reschedule] AI response missing valid plan.years — plan not updated. Keys: ${Object.keys(resultObj).join(", ")}`);
   }
 
   return { ok: true, planUpdated, goalId, summary, overdueTasks: overdueTasks.length, actualPace };
+}
+
+/**
+ * Batch-adjust all overloaded goal plans when too many reschedule tasks
+ * pile up. Runs cmdAdaptiveReschedule sequentially for each goal so the
+ * AI redistributes tasks at the user's actual pace. Requires user
+ * confirmation on the frontend before dispatching.
+ */
+export async function cmdAdjustAllOverloadedPlans(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const goalIds = (body.goalIds ?? (body.payload as Record<string, unknown>)?.goalIds) as string[];
+  if (!Array.isArray(goalIds) || goalIds.length === 0) {
+    throw new Error("command:adjust-all-overloaded-plans requires goalIds[]");
+  }
+
+  const userId = getCurrentUserId();
+  const results: Array<{ goalId: string; ok: boolean; error?: string }> = [];
+  let adjustedCount = 0;
+
+  emitAgentProgress(userId, {
+    agentId: "adaptive-reschedule",
+    phase: "running",
+    message: `Adjusting ${goalIds.length} overloaded plan${goalIds.length > 1 ? "s" : ""}...`,
+  });
+
+  for (let i = 0; i < goalIds.length; i++) {
+    const goalId = goalIds[i];
+    const goal = await repos.goals.get(goalId);
+    const goalTitle = goal?.title ?? goalId.slice(0, 8);
+
+    emitAgentProgress(userId, {
+      agentId: "adaptive-reschedule",
+      phase: "running",
+      message: `Adjusting plan ${i + 1}/${goalIds.length}: ${goalTitle}`,
+    });
+
+    try {
+      const res = await cmdAdaptiveReschedule({ goalId }) as { ok: boolean; planUpdated?: boolean };
+      results.push({ goalId, ok: !!res?.planUpdated });
+      if (res?.planUpdated) adjustedCount++;
+    } catch (err) {
+      console.warn(`[adjust-all] Failed for goal ${goalId}:`, err);
+      results.push({ goalId, ok: false, error: String(err) });
+    }
+  }
+
+  emitAgentProgress(userId, {
+    agentId: "adaptive-reschedule",
+    phase: "done",
+    message: `Adjusted ${adjustedCount}/${goalIds.length} plans`,
+  });
+
+  return { ok: true, results, adjustedCount };
+}
+
+/**
+ * Generate a single lightweight bonus task when the user has completed
+ * all tasks for the day. Appended to the existing list — never replaces.
+ */
+export async function cmdGenerateBonusTask(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const today = (body.date as string) || getEffectiveDate();
+  const rangeStart = getEffectiveDaysAgo(90);
+
+  const [goals, logs, tasks, heatmapData, activeReminders] =
+    await Promise.all([
+      repos.goals.list(),
+      repos.dailyLogs.list(rangeStart, today),
+      repos.dailyTasks.listForDateRange(rangeStart, today),
+      repos.heatmap.listRange(rangeStart, today),
+      repos.reminders.listActive(),
+    ]);
+
+  const tasksByDate = new Map<string, typeof tasks>();
+  for (const t of tasks) {
+    const arr = tasksByDate.get(t.date) ?? [];
+    arr.push(t);
+    tasksByDate.set(t.date, arr);
+  }
+  const pastLogs = logs
+    .filter((l) => l.date !== today)
+    .map((l) => {
+      const dayTasks = tasksByDate.get(l.date) ?? [];
+      return {
+        date: l.date,
+        tasks: dayTasks.map((dt) => ({
+          id: dt.id,
+          title: dt.title,
+          completed: dt.completed,
+          skipped: false,
+        })),
+      };
+    })
+    .slice(0, 14);
+
+  // Generate with preserveExisting so AI knows what's already done
+  const result = await generateAndPersistDailyTasks({
+    date: today,
+    goals,
+    pastLogs: pastLogs as any,
+    heatmapData,
+    activeReminders,
+    dryRun: true,
+    preserveExisting: true,
+  });
+
+  // Pick the first task as the bonus suggestion
+  const bonus = result.tasks?.[0];
+  if (!bonus) {
+    return { ok: true, bonus: null };
+  }
+
+  // Insert as an appended bonus task
+  const existing = await repos.dailyTasks.listForDate(today);
+  await repos.dailyTasks.insert({
+    id: bonus.id ?? crypto.randomUUID(),
+    date: today,
+    title: bonus.title,
+    completed: false,
+    orderIndex: existing.length,
+    goalId: bonus.goalId ?? null,
+    planNodeId: bonus.planNodeId ?? null,
+    payload: {
+      description: bonus.description,
+      durationMinutes: bonus.durationMinutes,
+      cognitiveWeight: bonus.cognitiveWeight ?? 2,
+      whyToday: bonus.whyToday,
+      priority: "bonus",
+      category: bonus.category,
+      source: "ai-generated",
+      isBonus: true,
+    },
+  });
+
+  return {
+    ok: true,
+    bonus: {
+      id: bonus.id,
+      title: bonus.title,
+      description: bonus.description,
+      durationMinutes: bonus.durationMinutes,
+      cognitiveWeight: bonus.cognitiveWeight,
+      category: bonus.category,
+    },
+  };
+}
+
+/**
+ * Accept a single AI-proposed task (from post-confirmation regeneration).
+ * Checks budget before inserting. If over budget, returns suggestion of
+ * which existing task to swap out.
+ */
+export async function cmdAcceptTaskProposal(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const { runBudgetCheck } = await import("../../agents/gatekeeper");
+  const today = (body.date as string) || getEffectiveDate();
+  const proposal = body.proposal as Record<string, unknown> | undefined;
+  if (!proposal || !proposal.title) {
+    throw new Error("command:accept-task-proposal requires args.proposal with title");
+  }
+
+  const existing = await repos.dailyTasks.listForDate(today);
+  const newWeight = (proposal.cognitiveWeight as number) ?? 3;
+
+  const budget = runBudgetCheck(
+    existing.map((t) => ({
+      cognitiveWeight: (t.payload as Record<string, unknown>)?.cognitiveWeight as number | undefined,
+      durationMinutes: (t.payload as Record<string, unknown>)?.durationMinutes as number | undefined,
+    })),
+    newWeight,
+  );
+
+  if (budget.overBudget && body.force !== true) {
+    // Find the lowest-priority incomplete task to suggest swapping
+    const swapCandidate = existing
+      .filter((t) => !t.completed)
+      .sort((a, b) =>
+        ((a.payload as Record<string, unknown>)?.cognitiveWeight as number ?? 3) -
+        ((b.payload as Record<string, unknown>)?.cognitiveWeight as number ?? 3),
+      )[0];
+    return {
+      ok: false,
+      budgetExceeded: true,
+      budget,
+      swapSuggestion: swapCandidate
+        ? {
+            id: swapCandidate.id,
+            title: swapCandidate.title,
+            cognitiveWeight:
+              (swapCandidate.payload as Record<string, unknown>)?.cognitiveWeight as number ?? 3,
+          }
+        : null,
+    };
+  }
+
+  const id = (proposal.id as string) ?? crypto.randomUUID();
+  await repos.dailyTasks.insert({
+    id,
+    date: today,
+    title: proposal.title as string,
+    completed: false,
+    orderIndex: existing.length,
+    goalId: (proposal.goalId as string) ?? null,
+    planNodeId: (proposal.planNodeId as string) ?? null,
+    payload: {
+      description: (proposal.description as string) ?? "",
+      durationMinutes: (proposal.durationMinutes as number) ?? 30,
+      cognitiveWeight: newWeight,
+      priority: (proposal.priority as string) ?? "should-do",
+      category: (proposal.category as string) ?? "planning",
+      whyToday: (proposal.whyToday as string) ?? "",
+      source: "ai-generated",
+    },
+  });
+
+  return { ok: true, taskId: id };
 }

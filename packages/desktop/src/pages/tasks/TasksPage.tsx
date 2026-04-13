@@ -13,7 +13,6 @@
 import { useEffect, useState, useRef } from "react";
 import {
   Flame,
-  ChevronRight,
   RefreshCw,
   X,
   Palmtree,
@@ -26,11 +25,15 @@ import {
   Clock,
   Check,
   Sparkles,
+  Plus,
+  Gift,
+  ArrowRight,
+  CalendarDays,
 } from "lucide-react";
 import { useT } from "../../i18n";
 import { shouldAutoReflect, triggerReflection } from "../../services/memory";
 import Heatmap from "./Heatmap";
-import RecoveryModal from "./RecoveryModal";
+// RecoveryModal removed — missed tasks are now handled by reschedule cards
 import MilestoneCelebration from "./MilestoneCelebration";
 import BigGoalProgress from "./BigGoalProgress";
 import ReminderList from "./ReminderList";
@@ -39,6 +42,7 @@ import NudgesSection from "./NudgesSection";
 import TaskCard from "./TaskCard";
 import GoalTaskCard from "./GoalTaskCard";
 import PaceBanner from "./PaceBanner";
+import OverloadBanner from "./OverloadBanner";
 import AgentProgress from "../goals/AgentProgress";
 import "./PaceBanner.css";
 import type {
@@ -79,6 +83,19 @@ interface PendingGoalTask extends DailyTask {
   weekId?: string;
   dayId?: string;
 }
+interface PendingReschedule {
+  taskId: string;
+  title: string;
+  description?: string;
+  originalDate: string;
+  cognitiveWeight: number;
+  durationMinutes: number;
+  goalId: string | null;
+  goalTitle?: string;
+  rescheduleCount: number;
+  suggestedDate: string;
+  suggestedDateLabel: string;
+}
 interface TasksView {
   todayDate: string;
   todayLog: DailyLog | null;
@@ -92,9 +109,11 @@ interface TasksView {
   vacationMode: TasksVacationMode;
   totalIncompleteTasks: number;
   todayProgress: TodayProgressSummary;
-  todayMissedTasks: DailyTask[];
   pendingGoalTasks: PendingGoalTask[];
+  pendingReschedules: PendingReschedule[];
   paceMismatches: PaceMismatch[];
+  allTasksCompleted?: boolean;
+  overloadedGoals?: Array<{ goalId: string; goalTitle: string; overdueCount: number }>;
 }
 
 const setVacationMode = (
@@ -127,7 +146,6 @@ export default function TasksPage() {
     }
   };
 
-  const [showRecovery, setShowRecovery] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showVacationInput, setShowVacationInput] = useState(false);
@@ -139,6 +157,10 @@ export default function TasksPage() {
     Array<{ taskId: string; title: string; fromDate: string; toDate: string }>
   >([]);
   const [confirming, setConfirming] = useState(false);
+  const [proposals, setProposals] = useState<Array<Record<string, unknown>>>([]);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [generatingBonus, setGeneratingBonus] = useState(false);
+  const [reschedulingId, setReschedulingId] = useState<string | null>(null);
   const deferCheckedRef = useRef<string | null>(null);
 
   // Derived view-data shortcuts.
@@ -247,7 +269,6 @@ export default function TasksPage() {
   const today = data.todayDate;
   const { completed: completedCount, total: totalCount, ratePercent: completionRate } =
     data.todayProgress;
-  const missedTasks = data.todayMissedTasks;
   const pendingGoalTasks = data.pendingGoalTasks;
 
   const handleToggleTask = async (taskId: string) => {
@@ -346,14 +367,6 @@ export default function TasksPage() {
         <MilestoneCelebration
           celebration={todayLog.milestoneCelebration}
           onClose={() => setShowCelebration(false)}
-        />
-      )}
-
-      {/* Recovery modal */}
-      {showRecovery && todayLog && (
-        <RecoveryModal
-          todayLog={todayLog}
-          onClose={() => setShowRecovery(false)}
         />
       )}
 
@@ -477,6 +490,122 @@ export default function TasksPage() {
               ))}
             </ul>
           </div>
+        )}
+
+        {/* ── Overload banner (too many reschedule tasks) ── */}
+        {(data?.overloadedGoals ?? []).length > 0 && (
+          <OverloadBanner
+            overloadedGoals={data!.overloadedGoals!}
+            totalOverdueCount={data!.pendingReschedules.length}
+            onAdjustAll={refetch}
+          />
+        )}
+
+        {/* ── Reschedule cards (incomplete tasks from past days) ── */}
+        {(data?.pendingReschedules ?? []).length > 0 && (
+          <section className="reschedule-section animate-slide-up">
+            <div className="reschedule-section-header">
+              <CalendarDays size={15} />
+              <span>Tasks to reschedule</span>
+              <span className="reminders-count">{data!.pendingReschedules.length}</span>
+            </div>
+            {data!.pendingReschedules.map((r) => {
+              const isProcessing = reschedulingId === r.taskId;
+              return (
+                <div key={r.taskId} className="reschedule-card">
+                  <div className="reschedule-card-content">
+                    <div className="reschedule-card-title">{r.title}</div>
+                    <div className="reschedule-card-meta">
+                      <span>{r.originalDate}</span>
+                      <span>·</span>
+                      <span>{r.durationMinutes}m</span>
+                      <span>·</span>
+                      <span>{r.cognitiveWeight} pts</span>
+                      {r.goalTitle && (
+                        <>
+                          <span>·</span>
+                          <span className="badge badge-source">{r.goalTitle}</span>
+                        </>
+                      )}
+                      {r.rescheduleCount > 0 && (
+                        <span className="reschedule-count-badge">moved {r.rescheduleCount}x</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="reschedule-card-actions">
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={isProcessing}
+                      onClick={async () => {
+                        setReschedulingId(r.taskId);
+                        try {
+                          const res = await run<{
+                            ok: boolean;
+                            budgetExceeded?: boolean;
+                            swapSuggestion?: { id: string; title: string; cognitiveWeight: number };
+                          }>("command:reschedule-task", {
+                            taskId: r.taskId,
+                            targetDate: r.suggestedDate,
+                          });
+                          if (res?.ok) {
+                            refetch();
+                          } else if (res?.budgetExceeded && res.swapSuggestion) {
+                            const swap = res.swapSuggestion;
+                            if (
+                              window.confirm(
+                                `Moving "${r.title}" to ${r.suggestedDateLabel} would exceed that day's capacity.\n\nSwap out "${swap.title}" (${swap.cognitiveWeight} pts) to make room?`,
+                              )
+                            ) {
+                              await run("command:delete-task", { taskId: swap.id });
+                              await run("command:reschedule-task", {
+                                taskId: r.taskId,
+                                targetDate: r.suggestedDate,
+                                force: true,
+                              });
+                              refetch();
+                            }
+                          }
+                        } catch {
+                          /* best-effort */
+                        } finally {
+                          setReschedulingId(null);
+                        }
+                      }}
+                    >
+                      {isProcessing ? (
+                        <Loader2 size={12} className="spin" />
+                      ) : (
+                        <ArrowRight size={12} />
+                      )}
+                      {r.suggestedDateLabel}
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      title="Remind me later"
+                      onClick={async () => {
+                        await run("command:snooze-reschedule", { taskId: r.taskId });
+                        refetch();
+                      }}
+                    >
+                      <Clock size={12} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      title="Drop this task"
+                      onClick={async () => {
+                        if (window.confirm(`Drop "${r.title}"? It won't appear again.`)) {
+                          await run("command:dismiss-reschedule", { taskId: r.taskId });
+                          refetch();
+                        }
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
         )}
 
         {/* ── Pace mismatch banner ── */}
@@ -637,25 +766,34 @@ export default function TasksPage() {
                     onClick={async () => {
                       setRefreshing(true);
                       try {
-                        await run("command:regenerate-daily-tasks", {
+                        const res = await run<{
+                          mode?: string;
+                          proposals?: Array<Record<string, unknown>>;
+                        }>("command:regenerate-daily-tasks", {
                           date: data?.todayDate,
                         });
-                        refetch();
+                        if (res?.mode === "confirmed" && res.proposals) {
+                          // Post-confirmation: show proposals as cards
+                          setProposals(res.proposals);
+                        } else {
+                          // Pre-confirmation: full regeneration happened
+                          refetch();
+                        }
                       } catch {
-                        // fallback to simple refetch
                         refetch();
                       } finally {
                         setRefreshing(false);
                       }
                     }}
                     disabled={refreshing}
-                    title="Regenerate tasks"
+                    title="Suggest new tasks (keeps your current tasks)"
                   >
                     {refreshing ? (
                       <Loader2 size={14} className="spin" />
                     ) : (
-                      <RefreshCw size={14} />
+                      <Sparkles size={14} />
                     )}
+                    Suggest
                   </button>
                 </>
               )}
@@ -780,6 +918,126 @@ export default function TasksPage() {
               <p>{t.dashboard.noTasks}</p>
             </div>
           )}
+
+          {/* ── AI Suggested Tasks (proposals from post-confirmation regeneration) ── */}
+          {proposals.length > 0 && (
+            <>
+              <div className="tasks-source-divider">
+                <span>✨ Suggested Tasks</span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setProposals([])}
+                  style={{ marginLeft: "auto", fontSize: 12 }}
+                >
+                  Dismiss all
+                </button>
+              </div>
+              <div className="tasks-list">
+                {proposals.map((p, i) => (
+                  <div key={`proposal-${p.id || i}`} className="proposal-task-item" style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "10px 12px", borderRadius: 8,
+                    background: "var(--bg-secondary)", marginBottom: 6,
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500 }}>{p.title as string}</div>
+                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                        {p.durationMinutes as number}m · ⚡{p.cognitiveWeight as number}
+                        {p.category ? ` · ${p.category}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={acceptingId === (p.id as string)}
+                      onClick={async () => {
+                        const pid = (p.id as string) ?? `p-${i}`;
+                        setAcceptingId(pid);
+                        try {
+                          const res = await run<{
+                            ok: boolean;
+                            budgetExceeded?: boolean;
+                            swapSuggestion?: { id: string; title: string; cognitiveWeight: number };
+                          }>("command:accept-task-proposal", {
+                            date: data?.todayDate,
+                            proposal: p,
+                          });
+                          if (res?.ok) {
+                            setProposals((prev) => prev.filter((_, j) => j !== i));
+                            refetch();
+                          } else if (res?.budgetExceeded && res.swapSuggestion) {
+                            const swap = res.swapSuggestion;
+                            if (window.confirm(
+                              `Adding "${p.title}" would exceed your daily budget.\n\nSwap out "${swap.title}" (⚡${swap.cognitiveWeight}) to make room?`
+                            )) {
+                              await run("command:delete-task", { taskId: swap.id });
+                              await run("command:accept-task-proposal", {
+                                date: data?.todayDate,
+                                proposal: p,
+                                force: true,
+                              });
+                              setProposals((prev) => prev.filter((_, j) => j !== i));
+                              refetch();
+                            }
+                          }
+                        } catch { /* best-effort */ } finally {
+                          setAcceptingId(null);
+                        }
+                      }}
+                    >
+                      {acceptingId === (p.id as string) ? (
+                        <Loader2 size={12} className="spin" />
+                      ) : (
+                        <Plus size={12} />
+                      )}
+                      Add
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setProposals((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      Skip
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* ── Bonus task prompt (all tasks completed) ── */}
+          {data?.allTasksCompleted && todayLog?.tasksConfirmed && proposals.length === 0 && (
+            <div className="tasks-bonus-prompt" style={{
+              textAlign: "center", padding: "24px 16px",
+              background: "var(--bg-secondary)", borderRadius: 12, marginTop: 12,
+            }}>
+              <Gift size={24} style={{ opacity: 0.5, marginBottom: 8 }} />
+              <p style={{ fontWeight: 500, marginBottom: 4 }}>All done for today!</p>
+              <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 12 }}>
+                Want an optional bonus task to keep the momentum going?
+              </p>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={generatingBonus}
+                onClick={async () => {
+                  setGeneratingBonus(true);
+                  try {
+                    await run("command:generate-bonus-task", {
+                      date: data?.todayDate,
+                    });
+                    refetch();
+                  } catch { /* best-effort */ } finally {
+                    setGeneratingBonus(false);
+                  }
+                }}
+              >
+                {generatingBonus ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                Bonus task
+              </button>
+            </div>
+          )}
         </section>
         )}
 
@@ -817,19 +1075,6 @@ export default function TasksPage() {
           )}
         </section>
 
-        {/* Recovery prompt */}
-        {missedTasks.length > 0 && completedCount > 0 && (
-          <div className="recovery-prompt animate-slide-up">
-            <p>{t.dashboard.recoveryPrompt}</p>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setShowRecovery(true)}
-            >
-              {t.dashboard.adjustPlan}
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

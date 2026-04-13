@@ -58,6 +58,25 @@ export interface PendingGoalTask extends DailyTask {
   dayId?: string;
 }
 
+/** A task from a past day that was never completed — candidate for
+ *  the reschedule confirmation card. */
+export interface PendingReschedule {
+  taskId: string;
+  title: string;
+  description?: string;
+  originalDate: string;
+  cognitiveWeight: number;
+  durationMinutes: number;
+  goalId: string | null;
+  goalTitle?: string;
+  /** Number of times this task has already been rescheduled. */
+  rescheduleCount: number;
+  /** Server-recommended date to move this task to (lightest upcoming day). */
+  suggestedDate: string;
+  /** Human-friendly label like "Tomorrow" or "Wed, Apr 15". */
+  suggestedDateLabel: string;
+}
+
 export interface TasksView {
   todayDate: string;
   todayLog: DailyLog | null;
@@ -73,15 +92,25 @@ export interface TasksView {
   totalIncompleteTasks: number;
   /** Derived: completed/total/ratePercent over today's log. */
   todayProgress: TodayProgressSummary;
-  /** Derived: tasks in today's log that remain incomplete. */
-  todayMissedTasks: DailyTask[];
   /** Derived: goal-plan tasks scheduled for today that the daily-tasks
    *  LLM hasn't yet pulled into today's log. */
   pendingGoalTasks: PendingGoalTask[];
+  /** Incomplete tasks from past days awaiting user reschedule decision. */
+  pendingReschedules: PendingReschedule[];
   /** Active big goals where the user's pace is behind the plan. */
   paceMismatches: PaceMismatch[];
   /** True on Sunday/Monday if user hasn't done a weekly review this week. */
   weeklyReviewDue: boolean;
+  /** True when all today's tasks are completed or skipped (for bonus task prompt). */
+  allTasksCompleted: boolean;
+  /** Goals with too many overdue tasks — triggers the overload banner. */
+  overloadedGoals: OverloadedGoalSummary[];
+}
+
+export interface OverloadedGoalSummary {
+  goalId: string;
+  goalTitle: string;
+  overdueCount: number;
 }
 
 /** Try to extract a date range from a week label like "Jan 6 – Jan 12"
@@ -168,11 +197,33 @@ function dayMatchesToday(
   return false;
 }
 
+/** A plan-tree task from a day BEFORE today that was never completed
+ *  and never materialized as a daily_task. Needs to be converted to a
+ *  reschedule candidate. */
+interface OverduePlanTask {
+  planNodeId: string;
+  title: string;
+  description?: string;
+  goalId: string;
+  goalTitle: string;
+  durationMinutes: number;
+  cognitiveWeight: number;
+  /** How many day-slots before today's slot in the week. */
+  daysBeforeToday: number;
+}
+
+interface PendingGoalTasksResult {
+  todayTasks: PendingGoalTask[];
+  overduePlanTasks: OverduePlanTask[];
+}
+
 function computePendingGoalTasks(
   goals: Goal[],
   todayLog: DailyLog | null,
   today: string,
-): PendingGoalTask[] {
+  /** Plan node keys already in daily_tasks (goalId:planNodeId). */
+  existingPlanNodeKeys: Set<string>,
+): PendingGoalTasksResult {
   const consumed = new Set<string>(
     (todayLog?.tasks ?? [])
       .map((t) => t.planNodeId ?? "")
@@ -186,7 +237,9 @@ function computePendingGoalTasks(
       .map((t) => t.goalId ?? "")
       .filter(Boolean),
   );
-  const out: PendingGoalTask[] = [];
+  const todayTasks: PendingGoalTask[] = [];
+  const overduePlanTasks: OverduePlanTask[] = [];
+
   for (const g of goals) {
     if (!g.plan || !Array.isArray(g.plan.years)) continue;
     if (representedGoalIds.has(g.id)) continue;
@@ -194,25 +247,61 @@ function computePendingGoalTasks(
       for (const month of year.months) {
         for (const week of month.weeks) {
           if (week.locked) continue;
-          for (const day of week.days) {
-            if (!dayMatchesToday(day.label, today, week.label)) continue;
-            for (const tk of day.tasks) {
-              if (tk.completed) continue;
-              if (consumed.has(tk.id)) continue;
-              out.push({
-                ...(tk as unknown as DailyTask),
-                goalTitle: g.title,
-                goalId: g.id,
-                weekId: week.id,
-                dayId: day.id,
-              });
+
+          // Find which day index matches today within this week.
+          let todayIdx = -1;
+          for (let i = 0; i < week.days.length; i++) {
+            if (dayMatchesToday(week.days[i].label, today, week.label)) {
+              todayIdx = i;
+              break;
             }
+          }
+          if (todayIdx < 0) continue;
+
+          // Collect incomplete tasks from days BEFORE today that
+          // don't already have daily_task rows.
+          let hasPriorIncomplete = false;
+          for (let i = 0; i < todayIdx; i++) {
+            for (const tk of week.days[i].tasks) {
+              if (tk.completed) continue;
+              hasPriorIncomplete = true;
+              const key = `${g.id}:${tk.id}`;
+              if (!existingPlanNodeKeys.has(key) && !consumed.has(tk.id)) {
+                const extra = tk as unknown as Record<string, unknown>;
+                overduePlanTasks.push({
+                  planNodeId: tk.id,
+                  title: tk.title ?? "",
+                  description: tk.description,
+                  goalId: g.id,
+                  goalTitle: g.title,
+                  durationMinutes: tk.durationMinutes ?? 30,
+                  cognitiveWeight: (extra.cognitiveWeight as number) ?? 3,
+                  daysBeforeToday: todayIdx - i,
+                });
+              }
+            }
+          }
+
+          // Block today's tasks if earlier days have incomplete tasks.
+          if (hasPriorIncomplete) continue;
+
+          const day = week.days[todayIdx];
+          for (const tk of day.tasks) {
+            if (tk.completed) continue;
+            if (consumed.has(tk.id)) continue;
+            todayTasks.push({
+              ...(tk as unknown as DailyTask),
+              goalTitle: g.title,
+              goalId: g.id,
+              weekId: week.id,
+              dayId: day.id,
+            });
           }
         }
       }
     }
   }
-  return out;
+  return { todayTasks, overduePlanTasks };
 }
 
 function computeTodayProgress(
@@ -274,6 +363,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     nudges,
     vacationState,
     userProfile,
+    pendingRescheduleRaw,
   ] = await Promise.all([
     repos.goals.list(),
     repos.dailyLogs.list(rangeStart, today),
@@ -283,6 +373,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     repos.nudges.list(true),
     repos.vacationMode.get(),
     repos.users.get(),
+    repos.dailyTasks.listPendingReschedule(today),
   ]);
 
   // Group tasks by date for cheap hydration.
@@ -300,14 +391,18 @@ export async function resolveTasksView(): Promise<TasksView> {
   let todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
 
   // Auto-generate daily tasks if: no log for today, goals exist,
-  // and the current time is past the user's dailyTaskRefreshTime.
+  // current time is past the user's dailyTaskRefreshTime, and we're
+  // NOT in the quiet window (1 AM – 6 AM). No plan should generate
+  // between 1 AM and 6 AM — the user's day is over.
   if (!todayLog && goals.length > 0) {
     const refreshTime = userProfile?.settings?.dailyTaskRefreshTime ?? "06:00";
     const now = new Date();
+    const wallHour = now.getHours();
     const [rh, rm] = refreshTime.split(":").map(Number);
     const refreshMinutes = (rh || 0) * 60 + (rm || 0);
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    if (nowMinutes >= refreshMinutes) {
+    const nowMinutes = wallHour * 60 + now.getMinutes();
+    const inQuietWindow = wallHour >= 1 && wallHour < 6;
+    if (!inQuietWindow && nowMinutes >= refreshMinutes) {
       try {
         await generateAndPersistDailyTasks({
           date: today,
@@ -365,18 +460,76 @@ export async function resolveTasksView(): Promise<TasksView> {
       }
     : { active: false, startDate: null, endDate: null };
 
-  let pendingGoalTasks = computePendingGoalTasks(goals, todayLog, today);
+  // Build a set of (goalId:planNodeId) keys already in daily_tasks
+  // so we don't create duplicate rows for plan tasks.
+  const existingPlanNodeKeys = new Set<string>();
+  for (const t of tasksInRange) {
+    if (t.planNodeId && t.goalId) {
+      existingPlanNodeKeys.add(`${t.goalId}:${t.planNodeId}`);
+    }
+  }
+
+  const pgResult = computePendingGoalTasks(
+    goals, todayLog, today, existingPlanNodeKeys,
+  );
+
+  // Plan-tree tasks are NOT shown directly in "Today". The AI daily
+  // task generation is the sole source for today's task list. Plan
+  // tasks from prior days get materialized as reschedule candidates
+  // below; today's plan tasks are simply not surfaced.
+  const pendingGoalTasks: PendingGoalTask[] = [];
+
+  // Materialize overdue plan-tree tasks as daily_task rows so they
+  // appear in the reschedule section. This is a one-time side effect
+  // — subsequent loads find the rows already exist.
+  const materializedReschedules: Omit<PendingReschedule, "suggestedDate" | "suggestedDateLabel">[] = [];
+  for (const ot of pgResult.overduePlanTasks) {
+    const origDate = new Date(`${today}T12:00:00`);
+    origDate.setDate(origDate.getDate() - ot.daysBeforeToday);
+    const origDateStr = origDate.toISOString().split("T")[0];
+    const taskId = `plan-${ot.goalId.slice(0, 8)}-${ot.planNodeId}`;
+
+    try {
+      await repos.dailyTasks.insert({
+        id: taskId,
+        date: origDateStr,
+        goalId: ot.goalId,
+        planNodeId: ot.planNodeId,
+        title: ot.title,
+        completed: false,
+        orderIndex: 0,
+        payload: {
+          description: ot.description ?? "",
+          durationMinutes: ot.durationMinutes,
+          cognitiveWeight: ot.cognitiveWeight,
+          source: "plan-materialized",
+          category: "planning",
+        },
+      });
+      // Add directly to this response's reschedule list.
+      materializedReschedules.push({
+        taskId,
+        title: ot.title,
+        description: ot.description,
+        originalDate: origDateStr,
+        cognitiveWeight: ot.cognitiveWeight,
+        durationMinutes: ot.durationMinutes,
+        goalId: ot.goalId,
+        goalTitle: ot.goalTitle,
+        rescheduleCount: 0,
+      });
+    } catch {
+      // Already exists (duplicate key) — safe to ignore
+    }
+  }
 
   console.debug(
     `[tasksView] ${pendingGoalTasks.length} pending goal tasks, ` +
+    `${pgResult.overduePlanTasks.length} overdue plan tasks materialized, ` +
     `todayLog has ${todayLog?.tasks.length ?? 0} tasks`,
   );
 
   const todayProgress = computeTodayProgress(todayLog, pendingGoalTasks);
-  const todayMissedTasks = [
-    ...(todayLog?.tasks ?? []).filter((t) => !t.completed),
-    ...pendingGoalTasks.filter((t) => !t.completed),
-  ];
 
   // Pace mismatch detection: compare user's actual task rate against plan assumptions
   let paceMismatches: PaceMismatch[] = [];
@@ -433,6 +586,113 @@ export async function resolveTasksView(): Promise<TasksView> {
     }
   }
 
+  // All tasks completed — triggers bonus task prompt on the client.
+  const todayTasks = todayLog?.tasks ?? [];
+  const allTasksCompleted =
+    todayTasks.length > 0 &&
+    todayTasks.every((t) => t.completed || t.skipped);
+
+  // Pending reschedules: incomplete tasks from past days that need
+  // user confirmation on where to move them. No "overdue" concept —
+  // just a confirmation card asking the user to pick a new day.
+  // (pendingRescheduleRaw was fetched in the initial parallel batch.)
+  const pendingRescheduleRecords = pendingRescheduleRaw;
+  const goalMap = new Map(goals.map((g) => [g.id, g.title]));
+
+  // Compute suggested reschedule dates by looking at cognitive load for
+  // each of the next 7 days. We recommend the day with the lightest load
+  // (tomorrow is preferred when loads are tied).
+  const futureDates: string[] = [];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(`${today}T12:00:00`);
+    d.setDate(d.getDate() + i);
+    futureDates.push(d.toISOString().split("T")[0]);
+  }
+  let futureTasks: DailyTaskRecord[] = [];
+  try {
+    futureTasks = await repos.dailyTasks.listForDateRange(
+      futureDates[0],
+      futureDates[futureDates.length - 1],
+    );
+  } catch { /* best-effort */ }
+  const loadByDate = new Map<string, number>();
+  for (const ft of futureTasks) {
+    const cw = (ft.payload.cognitiveWeight as number) ?? 3;
+    loadByDate.set(ft.date, (loadByDate.get(ft.date) ?? 0) + cw);
+  }
+  // Also count today's load so we can potentially suggest today if very light
+  const todayCogLoad = (todayLog?.tasks ?? []).reduce(
+    (s, t) => s + (t.completed || t.skipped ? 0 : ((t as unknown as Record<string, unknown>).cognitiveWeight as number ?? 3)),
+    0,
+  );
+
+  function pickSuggestedDate(taskCogWeight: number): string {
+    // Find the lightest day among the next 7 days
+    let bestDate = futureDates[0]; // default: tomorrow
+    let bestLoad = loadByDate.get(futureDates[0]) ?? 0;
+    for (const fd of futureDates) {
+      const load = loadByDate.get(fd) ?? 0;
+      if (load < bestLoad) {
+        bestLoad = load;
+        bestDate = fd;
+      }
+    }
+    return bestDate;
+  }
+
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function formatSuggestedLabel(dateStr: string): string {
+    const tomorrow = futureDates[0];
+    if (dateStr === tomorrow) return "Tomorrow";
+    const d = new Date(dateStr + "T12:00:00");
+    return `${dayNames[d.getDay()]}, ${monthNames[d.getMonth()]} ${d.getDate()}`;
+  }
+
+  const pendingReschedules: PendingReschedule[] = [
+    ...pendingRescheduleRecords.map((t) => {
+      const cw = (t.payload.cognitiveWeight as number) ?? 3;
+      const suggested = pickSuggestedDate(cw);
+      return {
+        taskId: t.id,
+        title: t.title,
+        description: (t.payload.description as string) ?? undefined,
+        originalDate: t.date,
+        cognitiveWeight: cw,
+        durationMinutes: (t.payload.durationMinutes as number) ?? 30,
+        goalId: t.goalId,
+        goalTitle: t.goalId ? goalMap.get(t.goalId) : undefined,
+        rescheduleCount: (t.payload.rescheduleCount as number) ?? 0,
+        suggestedDate: suggested,
+        suggestedDateLabel: formatSuggestedLabel(suggested),
+      };
+    }),
+    // Append plan-tree tasks that were just materialized as daily_tasks.
+    ...materializedReschedules.map((mr) => ({
+      ...mr,
+      suggestedDate: pickSuggestedDate(mr.cognitiveWeight),
+      suggestedDateLabel: formatSuggestedLabel(pickSuggestedDate(mr.cognitiveWeight)),
+    })),
+  ];
+
+  // Overload detection: when 5+ tasks are waiting to be rescheduled,
+  // group by goal so the UI can offer a batch "adjust all plans" action.
+  const OVERLOAD_THRESHOLD = 5;
+  const overloadedGoals: OverloadedGoalSummary[] = [];
+  if (pendingReschedules.length >= OVERLOAD_THRESHOLD) {
+    const byGoal = new Map<string, { goalTitle: string; count: number }>();
+    for (const r of pendingReschedules) {
+      if (!r.goalId) continue;
+      const entry = byGoal.get(r.goalId) ?? { goalTitle: r.goalTitle ?? "", count: 0 };
+      entry.count++;
+      byGoal.set(r.goalId, entry);
+    }
+    for (const [goalId, { goalTitle, count }] of byGoal) {
+      overloadedGoals.push({ goalId, goalTitle, overdueCount: count });
+    }
+    overloadedGoals.sort((a, b) => b.overdueCount - a.overdueCount);
+  }
+
   return {
     todayDate: today,
     todayLog,
@@ -446,9 +706,11 @@ export async function resolveTasksView(): Promise<TasksView> {
     vacationMode,
     totalIncompleteTasks,
     todayProgress,
-    todayMissedTasks,
     pendingGoalTasks,
+    pendingReschedules,
     paceMismatches,
     weeklyReviewDue,
+    allTasksCompleted,
+    overloadedGoals,
   };
 }
