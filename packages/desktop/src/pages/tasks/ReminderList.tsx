@@ -34,10 +34,12 @@ export default function ReminderList({
 
   const saveEdit = (r: Reminder) => {
     if (!onEdit) return;
+    const newTime = new Date(editTime);
     onEdit({
       ...r,
       title: editTitle,
-      reminderTime: new Date(editTime).toISOString(),
+      reminderTime: newTime.toISOString(),
+      date: newTime.toISOString().split("T")[0],
     });
     setEditingId(null);
   };

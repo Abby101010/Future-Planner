@@ -14,6 +14,7 @@ import {
 } from "../../services/signalRecorder";
 import { routeCantComplete } from "../../coordinators/dailyPlanner/cantCompleteRouter";
 import { packageCurrentPlan, evaluateCapacity } from "../../coordinators/dailyPlanner/memoryPackager";
+import { rotateNextTask } from "../../coordinators/dailyPlanner/taskRotation";
 
 export async function cmdCreateTask(
   body: Record<string, unknown>,
@@ -87,6 +88,27 @@ export async function cmdToggleTask(
       } catch (err) {
         console.warn("[toggle-task] goal progress recalc failed:", err);
       }
+
+      // Smart task rotation: fill freed budget with next best task
+      const userId = getCurrentUserId();
+      const tz = timezoneStore.getStore() || "UTC";
+      const todayForRotation = getEffectiveDate();
+      setImmediate(() => {
+        runWithUserId(userId, () =>
+          timezoneStore.run(tz, async () => {
+            try {
+              const result = await rotateNextTask(taskId, task.goalId!, todayForRotation);
+              if (result.rotated) {
+                emitViewInvalidate(userId, {
+                  viewKinds: ["view:tasks", "view:dashboard"],
+                });
+              }
+            } catch (err) {
+              console.warn("[toggle-task] smart rotation failed:", err);
+            }
+          }),
+        );
+      });
     }
 
     return { ok: true, taskId, completed: next };
