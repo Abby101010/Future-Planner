@@ -526,7 +526,7 @@ export interface GoalPlanMilestone {
 /** Year-level objectives (only for goals > 1 year or habits) */
 export interface GoalPlanYear {
   id: string;
-  label: string;              // e.g. "2025" — actual year, NOT "Year 1"
+  label: string;              // e.g. "Year 1" or "2025"
   objective: string;          // 1 sentence: what to achieve this year
   months: GoalPlanMonth[];
 }
@@ -534,7 +534,7 @@ export interface GoalPlanYear {
 /** Month-level objectives */
 export interface GoalPlanMonth {
   id: string;
-  label: string;              // e.g. "January 2025" — full month + year, NOT "Month 1"
+  label: string;              // e.g. "Month 1" or "January 2025"
   objective: string;          // 1 sentence: what to achieve this month
   weeks: GoalPlanWeek[];
 }
@@ -542,7 +542,7 @@ export interface GoalPlanMonth {
 /** Week-level plan with daily tasks */
 export interface GoalPlanWeek {
   id: string;
-  label: string;              // e.g. "Jan 6 – Jan 12" — date range, NOT "Week 1"
+  label: string;              // e.g. "Week 1" or "Jan 6 – Jan 12"
   objective: string;          // 1 sentence: what to achieve this week
   locked: boolean;            // true = future week, hidden from user
   days: GoalPlanDay[];
@@ -551,7 +551,7 @@ export interface GoalPlanWeek {
 /** Day-level tasks */
 export interface GoalPlanDay {
   id: string;
-  label: string;              // ISO date: "2025-01-06" — NOT "Monday" or "Jan 6"
+  label: string;              // e.g. "Monday" or "Jan 6"
   tasks: GoalPlanTask[];
 }
 

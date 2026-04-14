@@ -211,15 +211,6 @@ PLAN RULES:
 - For goals < 1 year, use a single year wrapper.
 - ALL IDs must be globally unique (e.g. "task-a3f7c912"). NEVER use sequential IDs like "task-001".
   When adding NEW tasks in a patch, generate fresh random hex IDs. When keeping existing tasks, reuse their IDs.
-- DATE FORMAT IS CRITICAL:
-  - Week labels MUST be date ranges: "Apr 6 – Apr 12" (NOT "Week 1").
-  - Day labels MUST be ISO dates: "2026-04-12" (NOT "Monday", NOT "Apr 12").
-  - Month labels should include the year: "April 2026" (NOT "Month 1").
-  - Year labels should be the actual year: "2026" (NOT "Year 1").
-  - The ONLY exception: habits with no target date may use "Week 1", "Month 1" etc.
-  - NEVER use weekday names (Monday, Tuesday...) as day labels — they are ambiguous.
-  - Use the provided "today" date context to compute the correct ISO dates for each day.
-  - EVERY week, day, month, and year MUST have a non-empty "label" field.
 
 Respond ONLY with valid JSON:
 {
@@ -274,8 +265,8 @@ Include the day with only the tasks to KEEP — omitted tasks are deleted:
                 "id": "<week-id>",
                 "days": [
                   {
-                    "id": "<day-id>",
-                    "label": "2026-04-14",
+                    "id": "<monday-id>",
+                    "label": "Monday",
                     "tasks": [
                       { "id": "<task-A-id>", "title": "Task A (kept)", "description": "...", "durationMinutes": 30, "priority": "must-do", "category": "learning", "completed": false },
                       { "id": "<task-C-id>", "title": "Task C (kept)", "description": "...", "durationMinutes": 20, "priority": "should-do", "category": "exercise", "completed": false }
@@ -301,27 +292,27 @@ OR when the plan is ready (full plan):
     ],
     "years": [
       {
-        "id": "year-a1b2c3d4",
-        "label": "2026",
+        "id": "year-1",
+        "label": "Year 1",
         "objective": "One sentence.",
         "months": [
           {
-            "id": "month-e5f6a7b8",
-            "label": "April 2026",
+            "id": "month-1",
+            "label": "Month 1",
             "objective": "One sentence.",
             "weeks": [
               {
-                "id": "week-c9d0e1f2",
-                "label": "Apr 14 – Apr 20",
+                "id": "week-1",
+                "label": "Week 1",
                 "objective": "One sentence.",
                 "locked": false,
                 "days": [
                   {
-                    "id": "day-3a4b5c6d",
-                    "label": "2026-04-14",
+                    "id": "day-1",
+                    "label": "Monday",
                     "tasks": [
                       {
-                        "id": "task-7e8f9a0b",
+                        "id": "task-1",
                         "title": "Task title",
                         "description": "One sentence.",
                         "durationMinutes": 30,
@@ -332,13 +323,6 @@ OR when the plan is ready (full plan):
                     ]
                   }
                 ]
-              },
-              {
-                "id": "week-d1e2f3a4",
-                "label": "Apr 28 – May 4",
-                "objective": "One sentence objective.",
-                "locked": true,
-                "days": []
               }
             ]
           }
@@ -466,7 +450,7 @@ Respond ONLY with valid JSON:
               },
               {
                 "id": "week-d1e2f3a4",
-                "label": "Apr 20 – Apr 26",
+                "label": "Week 3",
                 "objective": "One sentence objective.",
                 "locked": true,
                 "days": []

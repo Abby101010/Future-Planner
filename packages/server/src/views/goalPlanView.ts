@@ -99,8 +99,8 @@ export async function resolveGoalPlanView(
       : (goal.plan ?? null);
 
   // Self-heal: if the reconstructed plan looks broken (months with no weeks,
-  // tasks with 0 duration, generic labels like "Week 1") but the inline
-  // goal.plan has data, re-normalize and re-persist.
+  // tasks with 0 duration) but the inline goal.plan has data, re-normalize
+  // and re-persist. This repairs plans created before normalizePlan was fixed.
   if (plan && goal.plan && Array.isArray(goal.plan.years)) {
     const hasBrokenWeeks = plan.years.some((yr) =>
       yr.months.some((mo) => mo.weeks.length === 0),
@@ -114,19 +114,7 @@ export async function resolveGoalPlanView(
         ),
       ),
     );
-    const hasGenericLabels = plan.years.some((yr) =>
-      /^year\s+\d+$/i.test(yr.label?.trim() || "") ||
-      yr.months.some((mo) =>
-        /^month\s+\d+$/i.test(mo.label?.trim() || "") ||
-        mo.weeks.some((wk) =>
-          /^week\s+\d+$/i.test(wk.label?.trim() || "") ||
-          wk.days.some((dy) =>
-            !dy.label || !/^\d{4}-\d{2}-\d{2}$/.test(dy.label.trim()),
-          ),
-        ),
-      ),
-    );
-    if (hasBrokenWeeks || hasBrokenDurations || hasGenericLabels) {
+    if (hasBrokenWeeks || hasBrokenDurations) {
       try {
         console.log(`[goalPlanView] self-healing plan for goal ${goalId}`);
         const healed = repos.goalPlan.normalizePlan(goal.plan);

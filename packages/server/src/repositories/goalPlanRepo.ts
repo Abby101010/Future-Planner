@@ -235,16 +235,6 @@ export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
       });
       const weeks = Array.isArray(mo.weeks) ? mo.weeks : [];
       weeks.forEach((w, wi) => {
-        const days = Array.isArray(w.days) ? w.days : [];
-        // Derive week start/end from day labels (guaranteed ISO after normalization)
-        let weekStart: string | null = null;
-        let weekEnd: string | null = null;
-        for (const d of days) {
-          if (isISODate(d.label)) {
-            if (!weekStart || d.label < weekStart) weekStart = d.label;
-            if (!weekEnd || d.label > weekEnd) weekEnd = d.label;
-          }
-        }
         out.push({
           id: w.id,
           goalId,
@@ -252,8 +242,8 @@ export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
           nodeType: "week",
           title: w.label ?? "",
           description: "",
-          startDate: weekStart,
-          endDate: weekEnd,
+          startDate: null,
+          endDate: null,
           orderIndex: wi,
           payload: {
             label: w.label ?? "",
@@ -261,8 +251,8 @@ export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
             locked: Boolean(w.locked),
           },
         });
+        const days = Array.isArray(w.days) ? w.days : [];
         days.forEach((d, di) => {
-          const dayDate = isISODate(d.label) ? d.label : null;
           out.push({
             id: d.id,
             goalId,
@@ -270,8 +260,8 @@ export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
             nodeType: "day",
             title: d.label ?? "",
             description: "",
-            startDate: dayDate,
-            endDate: dayDate,
+            startDate: null,
+            endDate: null,
             orderIndex: di,
             payload: { label: d.label ?? "" },
           });
@@ -304,59 +294,11 @@ export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
   return out;
 }
 
-// ── Date label helpers ──
-
-const SHORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const FULL_MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
-
-function isISODate(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-function isGenericWeekLabel(s: string): boolean {
-  return !s || !s.trim() || /^week\s+\d+$/i.test(s.trim());
-}
-function isGenericMonthLabel(s: string): boolean {
-  return !s || !s.trim() || /^month\s+\d+$/i.test(s.trim());
-}
-function isGenericYearLabel(s: string): boolean {
-  return !s || !s.trim() || /^year\s+\d+$/i.test(s.trim());
-}
-function isGenericDayLabel(s: string): boolean {
-  return !s || !s.trim() ||
-    /^day\s+\d+$/i.test(s.trim()) ||
-    /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)$/i.test(s.trim());
-}
-
-/** Format a Date as "Apr 14". */
-function fmtShort(d: Date): string {
-  return `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}`;
-}
-
-/** Get the next Monday on or after a date. */
-function nextMonday(d: Date): Date {
-  const result = new Date(d);
-  result.setHours(12, 0, 0, 0);
-  const dow = result.getDay(); // 0=Sun
-  const offset = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
-  result.setDate(result.getDate() + offset);
-  return result;
-}
-
 /** Ensure every node in the plan tree has required fields so downstream
  *  code never hits undefined.toLowerCase() or similar. Also generates IDs
  *  for nodes missing them (AI sometimes omits them), normalizes snake_case
- *  fields from the AI, and defaults numeric/boolean fields.
- *
- *  LABEL ENFORCEMENT: Validates that labels follow the canonical format
- *  (day = ISO date, week = date range, month = "Month Year", year = "YYYY").
- *  If the AI produced generic labels ("Week 1", "Monday", etc.), computes
- *  actual dates by walking weeks sequentially from the earliest found date
- *  or from today.
- *
- *  Mutates the plan in place and returns it for convenience. */
+ *  fields from the AI, and defaults numeric/boolean fields. Mutates the
+ *  plan in place and returns it for convenience. */
 export function normalizePlan(plan: GoalPlan): GoalPlan {
   if (!plan) return plan;
   if (!Array.isArray(plan.milestones)) plan.milestones = [];
@@ -414,148 +356,7 @@ export function normalizePlan(plan: GoalPlan): GoalPlan {
       }
     }
   }
-
-  // ── Label enforcement: compute proper date-based labels ──
-  // Walk every week in order. If any labels are generic ("Week 1",
-  // "Monday", etc.), compute actual dates from the earliest ISO day
-  // label found, or from today as fallback.
-  _enforceDateLabels(plan);
-
   return plan;
-}
-
-/** Walk the plan and replace generic labels with computed date labels.
- *  Finds the earliest ISO day label or uses today, then walks every week
- *  in sequence assigning Monday-based dates. */
-function _enforceDateLabels(plan: GoalPlan): void {
-  // 1. Scan all day labels to find the earliest ISO date and detect
-  //    whether any labels are generic.
-  let earliestDate: Date | null = null;
-  let hasGenericLabels = false;
-  let globalWeekIndex = 0;
-
-  for (const yr of plan.years) {
-    for (const mo of yr.months) {
-      for (const wk of mo.weeks) {
-        if (isGenericWeekLabel(wk.label)) hasGenericLabels = true;
-        for (const dy of wk.days) {
-          if (isISODate(dy.label)) {
-            const d = new Date(dy.label + "T12:00:00");
-            if (!isNaN(d.getTime()) && (!earliestDate || d < earliestDate)) {
-              earliestDate = d;
-            }
-          } else if (isGenericDayLabel(dy.label)) {
-            hasGenericLabels = true;
-          }
-        }
-      }
-    }
-  }
-
-  // Nothing to fix if all labels are already proper
-  if (!hasGenericLabels) return;
-
-  // 2. Determine the base Monday: the Monday of the week containing the
-  //    earliest ISO date, or the next Monday from today.
-  let baseMon: Date;
-  if (earliestDate) {
-    const dow = earliestDate.getDay(); // 0=Sun, 1=Mon, …, 6=Sat
-    baseMon = new Date(earliestDate);
-    if (dow === 0) {
-      // Sunday → go back 6 days to get Monday
-      baseMon.setDate(baseMon.getDate() - 6);
-    } else {
-      // Mon(1)→0, Tue(2)→-1, … Sat(6)→-5
-      baseMon.setDate(baseMon.getDate() - (dow - 1));
-    }
-    baseMon.setHours(12, 0, 0, 0);
-  } else {
-    baseMon = nextMonday(new Date());
-  }
-
-  // 3. Walk every week sequentially and assign dates
-  globalWeekIndex = 0;
-  for (const yr of plan.years) {
-    for (const mo of yr.months) {
-      for (const wk of mo.weeks) {
-        const weekMon = new Date(baseMon);
-        weekMon.setDate(weekMon.getDate() + globalWeekIndex * 7);
-
-        // Fix day labels
-        for (let di = 0; di < wk.days.length; di++) {
-          const dy = wk.days[di];
-          if (!isISODate(dy.label)) {
-            const dayDate = new Date(weekMon);
-            dayDate.setDate(dayDate.getDate() + di);
-            dy.label = dayDate.toISOString().split("T")[0];
-          }
-        }
-
-        // Fix week label
-        if (isGenericWeekLabel(wk.label)) {
-          const numDays = Math.max(wk.days.length, 5);
-          const weekEnd = new Date(weekMon);
-          weekEnd.setDate(weekEnd.getDate() + numDays - 1);
-          wk.label = `${fmtShort(weekMon)} – ${fmtShort(weekEnd)}`;
-        }
-
-        globalWeekIndex++;
-      }
-
-      // Fix month label
-      if (isGenericMonthLabel(mo.label)) {
-        // Derive from first week's Monday
-        const firstWeekForMonth = mo.weeks[0];
-        if (firstWeekForMonth) {
-          // Find the first day label (should now be ISO)
-          const firstDay = firstWeekForMonth.days[0];
-          if (firstDay && isISODate(firstDay.label)) {
-            const d = new Date(firstDay.label + "T12:00:00");
-            mo.label = `${FULL_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-          }
-        }
-      }
-    }
-
-    // Fix year label
-    if (isGenericYearLabel(yr.label)) {
-      const firstMonth = yr.months[0];
-      if (firstMonth) {
-        const firstWeek = firstMonth.weeks[0];
-        if (firstWeek) {
-          const firstDay = firstWeek.days[0];
-          if (firstDay && isISODate(firstDay.label)) {
-            const d = new Date(firstDay.label + "T12:00:00");
-            yr.label = String(d.getFullYear());
-          } else {
-            // For locked weeks with no days, derive from global week index
-            // Calculate the Monday of the first week in this year
-            const yearStartIdx = _getGlobalWeekIndex(plan, yr.months[0]?.weeks[0]);
-            if (yearStartIdx >= 0) {
-              const wd = new Date(baseMon);
-              wd.setDate(wd.getDate() + yearStartIdx * 7);
-              yr.label = String(wd.getFullYear());
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/** Helper: find the global sequential index of a specific week in the plan. */
-function _getGlobalWeekIndex(plan: GoalPlan, targetWk: GoalPlanWeek | undefined): number {
-  if (!targetWk) return -1;
-  let idx = 0;
-  for (const yr of plan.years) {
-    for (const mo of yr.months) {
-      for (const wk of mo.weeks) {
-        if (wk === targetWk) return idx;
-        idx++;
-      }
-    }
-  }
-  return -1;
 }
 
 /** Replace all nodes for a goal with the flattened representation of
