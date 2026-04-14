@@ -523,12 +523,12 @@ export async function resolveTasksView(): Promise<TasksView> {
   let paceMismatches: PaceMismatch[] = [];
   try {
     const userId = getCurrentUserId();
-    const memory = await loadMemory(userId);
+    const [memory, userProfile] = await Promise.all([loadMemory(userId), repos.users.get()]);
     const logsForCapacity = hydratedLogs.map((l) => ({
       date: l.date,
       tasks: l.tasks.map((t) => ({ completed: t.completed, skipped: !!t.skipped })),
     }));
-    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay());
+    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay(), undefined, userProfile?.weeklyAvailability);
     paceMismatches = detectPaceMismatches(goals, capacity.avgTasksCompletedPerDay, today);
 
     // Insert pace_warning nudges for severe mismatches (deduped per goal per week)

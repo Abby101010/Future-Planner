@@ -48,10 +48,13 @@ export async function cmdRegenerateGoalPlan(
     throw new Error("AI returned invalid plan shape");
   }
   const plan = planCandidate as unknown as import("@northstar/core").GoalPlan;
-  await repos.goalPlan.replacePlan(goalId, plan);
+  // Fetch goal for date range to enable timeline gap-fill
+  const existing = await repos.goals.get(goalId);
+  const goalStartDate = existing?.createdAt?.split("T")[0];
+  const goalEndDate = existing?.targetDate;
+  await repos.goalPlan.replacePlan(goalId, plan, goalStartDate, goalEndDate);
   // Flip planConfirmed on the goal so dashboards/goal-plan view stop
   // showing the "not planned" state.
-  const existing = await repos.goals.get(goalId);
   if (existing) {
     await repos.goals.upsert({
       ...existing,
@@ -180,11 +183,13 @@ export async function cmdAdaptiveReschedule(
     logsByDate.set(t.date, arr);
   }
   const logsForCapacity = [...logsByDate.entries()].map(([date, tasks]) => ({ date, tasks }));
-  const memory = await loadMemory(userId);
+  const [memory, user] = await Promise.all([loadMemory(userId), repos.users.get()]);
   const capacity = computeCapacityProfile(
     memory,
     logsForCapacity,
     new Date(today + "T00:00:00").getDay(),
+    undefined,
+    user?.weeklyAvailability,
   );
   const actualPace = capacity.avgTasksCompletedPerDay || 2;
 
@@ -253,28 +258,14 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
   if (newFuturePlan && Array.isArray((newFuturePlan as { years?: unknown }).years)) {
     const typedFuture = newFuturePlan as unknown as import("@northstar/core").GoalPlan;
 
-    // Strip incomplete tasks from locked (past) weeks — they've been
-    // redistributed into the future plan by the AI. Leaving them causes
-    // detectPaceMismatches to keep counting them as incomplete.
-    const cleanedPast: import("@northstar/core").GoalPlan = {
-      milestones: pastPlan.milestones,
-      years: pastPlan.years.map((yr) => ({
-        ...yr,
-        months: yr.months.map((mo) => ({
-          ...mo,
-          weeks: mo.weeks.map((wk) => ({
-            ...wk,
-            days: (wk.days ?? []).map((d) => ({
-              ...d,
-              tasks: (d.tasks ?? []).filter((t) => t.completed),
-            })),
-          })),
-        })),
-      })),
-    };
-
-    const merged = mergePlans(cleanedPast, typedFuture);
-    await repos.goalPlan.replacePlan(goalId, merged);
+    // Keep past plan exactly as-is — completed tasks stay, incomplete
+    // tasks stay in their original positions. The AI has redistributed
+    // overdue tasks into the future plan; the originals remain as a
+    // record of where they were originally scheduled.
+    const merged = mergePlans(pastPlan, typedFuture);
+    const startDate = goal.createdAt?.split("T")[0];
+    const endDate = goal.targetDate;
+    await repos.goalPlan.replacePlan(goalId, merged, startDate, endDate);
 
     // Compute projected completion: try AI summary first, then derive
     // from remaining tasks / actual pace as a reliable fallback.
@@ -535,4 +526,59 @@ export async function cmdAcceptTaskProposal(
   });
 
   return { ok: true, taskId: id };
+}
+
+/**
+ * One-time heal: re-normalize all big goal plans with timeline gap-fill.
+ * Does NOT delete any tasks — only adds missing structural nodes
+ * (years, months, weeks, days) so the timeline is a complete grid.
+ */
+export async function cmdHealAllGoalPlans(): Promise<unknown> {
+  const goals = await repos.goals.list();
+  const bigGoals = goals.filter(
+    (g) =>
+      g.status !== "archived" &&
+      g.status !== "completed" &&
+      (g.goalType === "big" || ((!g.goalType) && g.scope === "big")) &&
+      g.planConfirmed,
+  );
+
+  const results: Array<{ goalId: string; title: string; healed: boolean; nodesBefore?: number; nodesAfter?: number }> = [];
+
+  for (const goal of bigGoals) {
+    try {
+      const nodes = await repos.goalPlan.listForGoal(goal.id);
+      console.log(`[heal-all] ${goal.title}: ${nodes.length} nodes in DB, planConfirmed=${goal.planConfirmed}`);
+      let plan = nodes.length > 0
+        ? repos.goalPlan.reconstructPlan(nodes)
+        : null;
+      // Fall back to inline plan if reconstruction is empty
+      if (!plan || (plan.years.length === 0 && plan.milestones.length === 0)) {
+        plan = goal.plan ?? null;
+        console.log(`[heal-all] ${goal.title}: using inline plan, years=${plan?.years?.length}`);
+      }
+      if (!plan || !Array.isArray(plan.years) || plan.years.length === 0) {
+        console.log(`[heal-all] ${goal.title}: skipped — no plan data`);
+        results.push({ goalId: goal.id, title: goal.title, healed: false });
+        continue;
+      }
+
+      const startDate = goal.createdAt?.split("T")[0];
+      const endDate = goal.targetDate;
+      const nodesBefore = nodes.length;
+      console.log(`[heal-all] ${goal.title}: healing with startDate=${startDate}, endDate=${endDate}`);
+
+      // normalizePlan + gap-fill, then persist
+      await repos.goalPlan.replacePlan(goal.id, plan, startDate, endDate);
+
+      const nodesAfter = (await repos.goalPlan.listForGoal(goal.id)).length;
+      console.log(`[heal-all] ${goal.title}: ${nodesBefore} → ${nodesAfter} nodes`);
+      results.push({ goalId: goal.id, title: goal.title, healed: true, nodesBefore, nodesAfter });
+    } catch (err) {
+      console.warn(`[heal-all] Failed for ${goal.id}:`, err);
+      results.push({ goalId: goal.id, title: goal.title, healed: false });
+    }
+  }
+
+  return { ok: true, healed: results.filter((r) => r.healed).length, total: bigGoals.length, results };
 }

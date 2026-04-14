@@ -16,17 +16,29 @@ import * as repos from "../../repositories";
 import type { PendingTaskRecord } from "../../repositories/pendingTasksRepo";
 import type { DailyTaskRecord } from "../../repositories/dailyTasksRepo";
 import { getEffectiveDate, getEffectiveDaysAgo } from "../../dateUtils";
-import { generateAndPersistDailyTasks } from "../../services/dailyTaskGeneration";
 import { packageCurrentPlan, evaluateCapacity } from "./memoryPackager";
 import { hydrateDailyLog } from "../../views/_mappers";
+import { loadMemory, computeCapacityProfile } from "../../memory";
+import { getCurrentUserId } from "../../middleware/requestContext";
 import type { DailyLog, Goal, HeatmapEntry, Reminder, TaskSource } from "@northstar/core";
+import { COGNITIVE_BUDGET, computeCognitiveWeight } from "@northstar/core";
 
 // ── Types ──────────────────────────────────────────────────
 
+export interface DeferralRecommendation {
+  taskId: string;
+  title: string;
+  goalId: string | null;
+  goalTitle: string;
+  cognitiveWeight: number;
+  durationMinutes: number;
+  reason: string;
+}
+
 export interface ScenarioResult {
   ok: boolean;
-  scenario: "pool-integration" | "bonus-suggest" | "full-generation";
-  /** For full-generation: task count in proposal */
+  scenario: "pool-integration" | "bonus-suggest" | "full-generation" | "collect-and-schedule";
+  /** For collect-and-schedule / full-generation: task count inserted */
   taskCount?: number;
   /** For bonus-suggest: the bonus suggestions */
   bonusSuggestions?: Array<Record<string, unknown>>;
@@ -40,6 +52,17 @@ export interface ScenarioResult {
     reason: string;
     deferCandidates: Array<{ id: string; title: string; cognitiveWeight: number }>;
   }>;
+  /** Cross-goal deferral recommendations when total load exceeds budget */
+  deferralRecommendations?: DeferralRecommendation[];
+  /** Budget summary after collecting all tasks */
+  budgetSummary?: {
+    totalWeight: number;
+    maxWeight: number;
+    totalTasks: number;
+    maxTasks: number;
+    overloaded: boolean;
+    goalBreakdown: Array<{ goalId: string; goalTitle: string; taskCount: number; totalWeight: number }>;
+  };
   date: string;
 }
 
@@ -51,6 +74,10 @@ interface ScenarioContext {
   activeReminders: Reminder[];
   existingTasks: DailyTaskRecord[];
   pooledTasks: PendingTaskRecord[];
+  /** Effective daily weight budget (from capacity profile + weekly availability) */
+  effectiveMaxWeight: number;
+  /** Effective daily task count limit */
+  effectiveMaxTasks: number;
 }
 
 // ── Router ─────────────────────────────────────────────────
@@ -59,7 +86,8 @@ export async function routeRefresh(date?: string): Promise<ScenarioResult> {
   const today = date ?? getEffectiveDate();
   const rangeStart = getEffectiveDaysAgo(90);
 
-  const [goals, logs, tasksInRange, heatmapData, activeReminders, pooledTasks] =
+  const userId = getCurrentUserId();
+  const [goals, logs, tasksInRange, heatmapData, activeReminders, pooledTasks, memory, user] =
     await Promise.all([
       repos.goals.list(),
       repos.dailyLogs.list(rangeStart, today),
@@ -67,6 +95,8 @@ export async function routeRefresh(date?: string): Promise<ScenarioResult> {
       repos.heatmap.listRange(rangeStart, today),
       repos.reminders.listActive(),
       repos.pendingTasks.listPooledForDate(today),
+      loadMemory(userId),
+      repos.users.get(),
     ]);
 
   // Build past logs for the coordinator
@@ -83,6 +113,16 @@ export async function routeRefresh(date?: string): Promise<ScenarioResult> {
 
   const existingTasks = tasksByDate.get(today) ?? [];
 
+  // Compute capacity profile with weekly availability
+  const logsForCapacity = pastLogs.map((l) => ({
+    date: l.date,
+    tasks: l.tasks.map((t) => ({ completed: t.completed, skipped: !!t.skipped })),
+  }));
+  const capacity = computeCapacityProfile(
+    memory, logsForCapacity, new Date(today + "T00:00:00").getDay(),
+    undefined, user?.weeklyAvailability,
+  );
+
   const ctx: ScenarioContext = {
     today,
     goals,
@@ -91,11 +131,13 @@ export async function routeRefresh(date?: string): Promise<ScenarioResult> {
     activeReminders,
     existingTasks,
     pooledTasks,
+    effectiveMaxWeight: capacity.capacityBudget,
+    effectiveMaxTasks: capacity.maxDailyTasks ?? COGNITIVE_BUDGET.MAX_DAILY_TASKS,
   };
 
   // Route to the appropriate scenario
   if (existingTasks.length === 0) {
-    return scenarioFullGeneration(ctx);
+    return scenarioCollectAndSchedule(ctx);
   }
   if (pooledTasks.length > 0) {
     return scenarioPoolIntegration(ctx);
@@ -103,36 +145,55 @@ export async function routeRefresh(date?: string): Promise<ScenarioResult> {
   return scenarioBonusSuggest(ctx);
 }
 
-// ── Scenario 4: Full Generation (empty day) ────────────────
+// ── Scenario 4: Collect & Schedule (empty day) ────────────
+//
+// Deterministically collects tasks from ALL existing sources (user-created
+// pool tasks + goal plan tasks scheduled for today) and inserts them
+// into daily_tasks. NO AI invention — the coordinator only organises
+// what the user already created or what the confirmed goal plan has
+// scheduled for this date.
+//
+// After inserting ALL tasks, runs cross-goal budget analysis. If the
+// combined load exceeds the cognitive budget, it attaches deferral
+// RECOMMENDATIONS (not deletions) — the user decides what stays.
 
-async function scenarioFullGeneration(
+async function scenarioCollectAndSchedule(
   ctx: ScenarioContext,
 ): Promise<ScenarioResult> {
-  const { today, goals, pastLogs, heatmapData, activeReminders, pooledTasks } = ctx;
+  const { today, pooledTasks, goals } = ctx;
 
-  // Feed pooled tasks as confirmedQuickTasks so the coordinator
-  // incorporates them into the generated plan.
-  // generateAndPersistDailyTasks will pick them up via the
-  // preExistingTasks mechanism (they'll be in daily_tasks after
-  // we insert them as "committed" rows before generation).
+  let orderIdx = 0;
+  // Track all inserted tasks for cross-goal budget analysis
+  const inserted: Array<{
+    id: string;
+    title: string;
+    goalId: string | null;
+    goalTitle: string;
+    cognitiveWeight: number;
+    durationMinutes: number;
+    priority: string;
+    source: string;
+  }> = [];
 
-  // Pre-insert pooled tasks into daily_tasks so the generation
-  // sees them as committed inputs.
-  for (let i = 0; i < pooledTasks.length; i++) {
-    const pt = pooledTasks[i];
+  // 1. Pre-insert pooled tasks (user-created via chat / quick-add)
+  for (const pt of pooledTasks) {
     const analysis = (pt.payload.analysis ?? {}) as Record<string, unknown>;
+    const taskId = crypto.randomUUID();
+    const weight = (analysis.cognitiveWeight as number) ?? 3;
+    const minutes = (analysis.durationMinutes as number) ?? 30;
+    const priority = (analysis.priority as string) || "should-do";
     await repos.dailyTasks.insert({
-      id: crypto.randomUUID(),
+      id: taskId,
       date: today,
       title: (analysis.title as string) || pt.title || (pt.payload.userInput as string) || "Untitled",
       completed: false,
-      orderIndex: i,
+      orderIndex: orderIdx++,
       source: "user_created" as TaskSource,
       payload: {
         description: (analysis.description as string) || "",
-        durationMinutes: (analysis.durationMinutes as number) ?? 30,
-        cognitiveWeight: (analysis.cognitiveWeight as number) ?? 3,
-        priority: (analysis.priority as string) || "should-do",
+        durationMinutes: minutes,
+        cognitiveWeight: weight,
+        priority,
         category: (analysis.category as string) || "planning",
         whyToday: (analysis.reasoning as string) || "",
         source: "pool-committed",
@@ -140,21 +201,184 @@ async function scenarioFullGeneration(
       },
     });
     await repos.pendingTasks.updateStatus(pt.id, "confirmed");
+    inserted.push({
+      id: taskId,
+      title: (analysis.title as string) || pt.title || "Untitled",
+      goalId: null,
+      goalTitle: "User Tasks",
+      cognitiveWeight: weight,
+      durationMinutes: minutes,
+      priority,
+      source: "pool",
+    });
   }
 
-  const result = await generateAndPersistDailyTasks({
-    date: today,
-    goals,
-    pastLogs: pastLogs as DailyLog[],
-    heatmapData,
-    activeReminders,
-  });
+  // 2. Collect goal plan tasks scheduled for today that aren't already
+  //    in daily_tasks (dedup by plan node id).
+  const goalPlanTasks = await repos.goalPlan.listTasksForDateRange(today, today);
+  const existingPlanNodeIds = new Set(
+    (await repos.dailyTasks.listForDate(today))
+      .map((t) => t.planNodeId)
+      .filter(Boolean),
+  );
+  const goalMap = new Map(goals.map((g) => [g.id, g.title]));
+
+  let goalTasksInserted = 0;
+  for (const gpt of goalPlanTasks) {
+    if (existingPlanNodeIds.has(gpt.id)) continue;
+    if (gpt.completed) continue;
+    const taskId = crypto.randomUUID();
+    const minutes = gpt.durationMinutes ?? 30;
+    const priority = gpt.priority || "should-do";
+    const goalImportance = gpt.goalImportance ?? "medium";
+    const weight = computeCognitiveWeight(goalImportance, minutes, priority);
+    await repos.dailyTasks.insert({
+      id: taskId,
+      date: today,
+      goalId: gpt.goalId,
+      planNodeId: gpt.id,
+      title: gpt.title,
+      completed: false,
+      orderIndex: orderIdx++,
+      source: "big_goal" as TaskSource,
+      payload: {
+        description: gpt.description || "",
+        durationMinutes: minutes,
+        cognitiveWeight: weight,
+        priority,
+        category: gpt.category || "planning",
+        whyToday: `Scheduled in goal plan for ${today}`,
+      },
+    });
+    goalTasksInserted++;
+    inserted.push({
+      id: taskId,
+      title: gpt.title,
+      goalId: gpt.goalId,
+      goalTitle: goalMap.get(gpt.goalId) ?? gpt.goalTitle ?? "Unknown Goal",
+      cognitiveWeight: weight,
+      durationMinutes: minutes,
+      priority,
+      source: "big_goal",
+    });
+  }
+
+  // 3. Cross-goal budget analysis — recommend deferrals if overloaded.
+  //    ALL tasks are already inserted (user sees full picture).
+  //    Recommendations are advisory — user decides what to act on.
+  const totalWeight = inserted.reduce((s, t) => s + t.cognitiveWeight, 0);
+  const totalTasks = inserted.length;
+  const maxWeight = ctx.effectiveMaxWeight;
+  const maxTasks = ctx.effectiveMaxTasks;
+  const overloaded = totalWeight > maxWeight || totalTasks > maxTasks;
+
+  // Build per-goal breakdown
+  const goalGroups = new Map<string, { goalTitle: string; tasks: typeof inserted; totalWeight: number }>();
+  for (const t of inserted) {
+    const key = t.goalId ?? "__user__";
+    const group = goalGroups.get(key) ?? { goalTitle: t.goalTitle, tasks: [], totalWeight: 0 };
+    group.tasks.push(t);
+    group.totalWeight += t.cognitiveWeight;
+    goalGroups.set(key, group);
+  }
+
+  const goalBreakdown = [...goalGroups.entries()].map(([goalId, g]) => ({
+    goalId: goalId === "__user__" ? "" : goalId,
+    goalTitle: g.goalTitle,
+    taskCount: g.tasks.length,
+    totalWeight: g.totalWeight,
+  }));
+
+  let deferralRecommendations: DeferralRecommendation[] | undefined;
+
+  if (overloaded) {
+    // Strategy: spread goals fairly. If 3 goals each have 3 tasks (9 total)
+    // but budget is 5, recommend deferring lowest-priority tasks while
+    // keeping at least 1 task per goal so every goal gets attention.
+    const excessTasks = totalTasks - maxTasks;
+    const excessWeight = totalWeight - maxWeight;
+
+    if (excessTasks > 0 || excessWeight > 0) {
+      // Collect deferral candidates: all tasks, sorted so we defer from
+      // goals with the most tasks first (fairness), then lowest priority,
+      // then lowest weight. Never defer the last task of a goal.
+      const candidates = [...inserted]
+        .map((t) => ({
+          ...t,
+          goalTaskCount: goalGroups.get(t.goalId ?? "__user__")!.tasks.length,
+        }))
+        .sort((a, b) => {
+          // Goals with more tasks donate first (spread the pain)
+          if (a.goalTaskCount !== b.goalTaskCount) return b.goalTaskCount - a.goalTaskCount;
+          // Lower priority defers first
+          const priRank = (p: string) => p === "must-do" ? 0 : p === "should-do" ? 1 : 2;
+          if (priRank(a.priority) !== priRank(b.priority)) return priRank(b.priority) - priRank(a.priority);
+          // Lighter tasks defer first
+          return a.cognitiveWeight - b.cognitiveWeight;
+        });
+
+      deferralRecommendations = [];
+      let remainingWeight = totalWeight;
+      let remainingTasks = totalTasks;
+      // Track how many tasks remain per goal to enforce min-1
+      const goalRemaining = new Map<string, number>();
+      for (const [key, g] of goalGroups) goalRemaining.set(key, g.tasks.length);
+
+      for (const c of candidates) {
+        if (remainingTasks <= maxTasks && remainingWeight <= maxWeight) break;
+        const key = c.goalId ?? "__user__";
+        // Keep at least 1 task per goal
+        if ((goalRemaining.get(key) ?? 0) <= 1) continue;
+
+        deferralRecommendations.push({
+          taskId: c.id,
+          title: c.title,
+          goalId: c.goalId,
+          goalTitle: c.goalTitle,
+          cognitiveWeight: c.cognitiveWeight,
+          durationMinutes: c.durationMinutes,
+          reason: c.goalTaskCount > 2
+            ? `${c.goalTitle} has ${c.goalTaskCount} tasks today — spreading across days`
+            : `Over daily budget (${totalWeight}/${maxWeight} weight, ${totalTasks}/${maxTasks} tasks)`,
+        });
+        goalRemaining.set(key, (goalRemaining.get(key) ?? 1) - 1);
+        remainingWeight -= c.cognitiveWeight;
+        remainingTasks -= 1;
+      }
+    }
+  }
+
+  // 4. Create a daily log entry for the day
+  const totalInserted = pooledTasks.length + goalTasksInserted;
+  if (totalInserted > 0) {
+    const reasoning = overloaded
+      ? `Collected ${pooledTasks.length} user task(s) and ${goalTasksInserted} goal plan task(s) for today. ` +
+        `Day is overloaded (${totalWeight}/${maxWeight} weight, ${totalTasks}/${maxTasks} tasks) — ` +
+        `${deferralRecommendations?.length ?? 0} deferral(s) recommended.`
+      : `Collected ${pooledTasks.length} user task(s) and ${goalTasksInserted} goal plan task(s) for today.`;
+    await repos.dailyLogs.upsert({
+      date: today,
+      payload: {
+        tasksConfirmed: false,
+        adaptiveReasoning: reasoning,
+      },
+    });
+  }
 
   return {
     ok: true,
-    scenario: "full-generation",
-    taskCount: result.tasks?.length ?? 0,
+    scenario: "collect-and-schedule",
+    taskCount: totalInserted,
     poolIntegrated: pooledTasks.length,
+    deferralRecommendations: deferralRecommendations?.length ? deferralRecommendations : undefined,
+    budgetSummary: {
+      totalWeight,
+      maxWeight,
+      totalTasks,
+      maxTasks,
+      overloaded,
+      goalBreakdown,
+    },
     date: today,
   };
 }
@@ -226,35 +450,39 @@ async function scenarioPoolIntegration(
 }
 
 // ── Scenario 3b: Bonus Suggest (has tasks, no pool) ────────
+//
+// When the day already has tasks and there are no pending pool items,
+// suggest unclaimed goal plan tasks for today that the user can
+// optionally add. No AI call — just a deterministic lookup.
 
 async function scenarioBonusSuggest(
   ctx: ScenarioContext,
 ): Promise<ScenarioResult> {
-  const { today, goals, pastLogs, heatmapData, activeReminders } = ctx;
+  const { today } = ctx;
 
-  // Ask the coordinator for suggestions without persisting
-  const result = await generateAndPersistDailyTasks({
-    date: today,
-    goals,
-    pastLogs: pastLogs as DailyLog[],
-    heatmapData,
-    activeReminders,
-    dryRun: true,
-    preserveExisting: true,
-  });
+  // Find goal plan tasks for today not yet in daily_tasks
+  const goalPlanTasks = await repos.goalPlan.listTasksForDateRange(today, today);
+  const existingTasks = await repos.dailyTasks.listForDate(today);
+  const existingPlanNodeIds = new Set(
+    existingTasks
+      .map((t) => t.planNodeId)
+      .filter(Boolean),
+  );
 
-  const bonusSuggestions = (result.tasks ?? []).map((t) => ({
-    id: t.id,
-    title: t.title,
-    description: t.description,
-    durationMinutes: t.durationMinutes,
-    cognitiveWeight: t.cognitiveWeight,
-    priority: t.priority,
-    category: t.category,
-    whyToday: t.whyToday,
-    goalId: t.goalId,
-    planNodeId: t.planNodeId,
-  }));
+  const bonusSuggestions = goalPlanTasks
+    .filter((gpt) => !existingPlanNodeIds.has(gpt.id) && !gpt.completed)
+    .map((gpt) => ({
+      id: gpt.id,
+      title: gpt.title,
+      description: gpt.description,
+      durationMinutes: gpt.durationMinutes,
+      cognitiveWeight: 3,
+      priority: gpt.priority,
+      category: gpt.category,
+      whyToday: `Scheduled in goal plan for ${today}`,
+      goalId: gpt.goalId,
+      planNodeId: gpt.id,
+    }));
 
   return {
     ok: true,

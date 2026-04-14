@@ -1,4 +1,4 @@
-import { Plus, Clock, Palmtree, Trash2, X, CheckCircle2, Circle } from "lucide-react";
+import { Plus, Clock, Palmtree, Trash2, X, CheckCircle2, Circle, Target } from "lucide-react";
 import type { DailyTask } from "@northstar/core";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -74,7 +74,11 @@ export default function CalendarDayDetail({
         </p>
       ) : (
         <div className="cal-day-events">
-          {sorted.map((task) => (
+          {sorted.map((task) => {
+              const extra = task as unknown as Record<string, unknown>;
+              const isGoalPlan = Boolean(extra._isGoalPlanTask);
+              const goalTitle = extra._goalTitle as string | undefined;
+              return (
               <div
                 key={task.id}
                 className={`cal-event ${task.isVacation ? "cal-event-vacation" : ""} ${task.completed ? "cal-event-completed" : ""}`}
@@ -95,9 +99,17 @@ export default function CalendarDayDetail({
                       {task.title}
                     </span>
                   </div>
+                  {isGoalPlan && goalTitle && (
+                    <div className="cal-event-goal-badge">
+                      <Target size={11} />
+                      {goalTitle}
+                    </div>
+                  )}
                   <div className="cal-event-time">
                     {task.isAllDay || !task.scheduledTime ? (
-                      "All day"
+                      isGoalPlan
+                        ? `${task.durationMinutes ?? 30}m`
+                        : "All day"
                     ) : (
                       <>
                         <Clock size={12} />
@@ -130,6 +142,7 @@ export default function CalendarDayDetail({
                     <p className="cal-event-notes">{task.notes}</p>
                   )}
                 </div>
+                {!isGoalPlan && (
                 <div className="cal-event-actions">
                   <button
                     className="btn btn-ghost btn-xs"
@@ -146,8 +159,10 @@ export default function CalendarDayDetail({
                     <Trash2 size={13} />
                   </button>
                 </div>
+                )}
               </div>
-            ))}
+              );
+            })}
         </div>
       )}
     </div>

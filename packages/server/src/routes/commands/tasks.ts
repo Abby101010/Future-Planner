@@ -449,11 +449,14 @@ export async function cmdDeferOverflow(
   const maxMinutes = (body.maxMinutes as number | undefined) ?? 180;
 
   const tasks = await repos.dailyTasks.listForDate(date);
-  // Only consider un-completed, un-skipped tasks for deferral.
+  // Only consider un-completed, un-skipped, non-big-goal tasks for deferral.
+  // Big goal tasks belong to the plan timeline and must not be auto-deferred.
   const active = tasks.filter((t) => {
     if (t.completed) return false;
     const pl = t.payload as Record<string, unknown>;
-    return !pl?.skipped;
+    if (pl?.skipped) return false;
+    if (pl?.source === "big_goal") return false;
+    return true;
   });
 
   const weightOf = (t: (typeof active)[number]): number =>

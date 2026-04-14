@@ -458,6 +458,19 @@
   border-radius: 4px;
 }
 
+.cal-event-goal-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  margin-top: 0.15rem;
+}
+
 .cal-event-source {
   display: flex;
   align-items: center;

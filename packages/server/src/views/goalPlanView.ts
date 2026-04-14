@@ -98,10 +98,10 @@ export async function resolveGoalPlanView(
       ? reconstructed
       : (goal.plan ?? null);
 
-  // Self-heal: if the reconstructed plan looks broken (months with no weeks,
-  // tasks with 0 duration, generic labels like "Week 1") but the inline
-  // goal.plan has data, re-normalize and re-persist.
-  if (plan && goal.plan && Array.isArray(goal.plan.years)) {
+  // Self-heal: if the plan has broken labels, missing durations, or
+  // generic "Week 1" style labels, re-normalize using the RECONSTRUCTED
+  // plan (not the stale inline goal.plan) and gap-fill the timeline.
+  if (plan && Array.isArray(plan.years)) {
     const hasBrokenWeeks = plan.years.some((yr) =>
       yr.months.some((mo) => mo.weeks.length === 0),
     );
@@ -129,9 +129,11 @@ export async function resolveGoalPlanView(
     if (hasBrokenWeeks || hasBrokenDurations || hasGenericLabels) {
       try {
         console.log(`[goalPlanView] self-healing plan for goal ${goalId}`);
-        const healed = repos.goalPlan.normalizePlan(goal.plan);
-        await repos.goalPlan.replacePlan(goalId, healed);
-        await repos.goals.upsert({ ...goal, plan: healed });
+        const startDate = goal.createdAt?.split("T")[0];
+        const endDate = goal.targetDate;
+        // Heal the reconstructed plan (authoritative DB data), not the inline copy
+        const healed = repos.goalPlan.normalizePlan(plan, startDate, endDate);
+        await repos.goalPlan.replacePlan(goalId, healed, startDate, endDate);
         plan = healed;
       } catch (err) {
         console.warn(`[goalPlanView] self-heal failed for ${goalId}:`, err);
@@ -161,7 +163,7 @@ export async function resolveGoalPlanView(
   let paceMismatch: PaceMismatch | null = null;
   try {
     const userId = getCurrentUserId();
-    const memory = await loadMemory(userId);
+    const [memory, userProfile] = await Promise.all([loadMemory(userId), repos.users.get()]);
     const rangeStart = getEffectiveDaysAgo(90);
     const logs = await repos.dailyLogs.list(rangeStart, today);
     const tasks = await repos.dailyTasks.listForDateRange(rangeStart, today);
@@ -178,7 +180,7 @@ export async function resolveGoalPlanView(
         tasks: dayTasks.map((t) => ({ completed: t.completed, skipped: false })),
       };
     });
-    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay());
+    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay(), undefined, userProfile?.weeklyAvailability);
     const goalForPace = plan ? { ...goal, plan } : goal;
     const mismatches = detectPaceMismatches([goalForPace], capacity.avgTasksCompletedPerDay, today);
     paceMismatch = mismatches.length > 0 ? mismatches[0] : null;

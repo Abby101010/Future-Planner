@@ -62,6 +62,7 @@ import {
   cmdSetVacationMode,
   cmdCompleteOnboarding,
   cmdResetData,
+  cmdHealAllGoalPlans,
 } from "./commands/index";
 
 const commandsRouter = Router();
@@ -208,6 +209,9 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:set-vacation-mode":
         result = await cmdSetVacationMode(body);
+        break;
+      case "command:heal-all-goal-plans" as CommandKind:
+        result = await cmdHealAllGoalPlans();
         break;
       default: {
         // Unknown slug: the URL didn't match any known command. 404 with

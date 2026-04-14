@@ -24,6 +24,8 @@
  */
 
 import { query } from "./db/pool";
+import type { TimeBlock } from "@northstar/core";
+import { COGNITIVE_BUDGET } from "@northstar/core";
 
 // ── Types ────────────────────────────────────────────────
 export type FactCategory =
@@ -301,12 +303,14 @@ export function computeCapacityProfile(
   }>,
   todayDayOfWeek: number,
   monthlyContext?: { capacityMultiplier: number; maxDailyTasks: number } | null,
+  weeklyAvailability?: TimeBlock[],
 ): CapacityProfile {
   const DEFAULT_BUDGET = 10;
 
   const newUser = (): CapacityProfile => {
+    let bud = DEFAULT_BUDGET;
     const profile: CapacityProfile = {
-      capacityBudget: DEFAULT_BUDGET,
+      capacityBudget: bud,
       recentCompletionRate: -1,
       avgTasksCompletedPerDay: 0,
       avgTasksAssignedPerDay: 0,
@@ -317,12 +321,28 @@ export function computeCapacityProfile(
       chronicSnoozePatterns: [],
     };
     if (monthlyContext) {
-      profile.capacityBudget = Math.max(
-        4,
-        Math.min(12, Math.round(profile.capacityBudget * monthlyContext.capacityMultiplier)),
-      );
+      bud = Math.max(4, Math.min(12, Math.round(bud * monthlyContext.capacityMultiplier)));
+      profile.capacityBudget = bud;
       profile.maxDailyTasks = monthlyContext.maxDailyTasks;
       profile.monthlyContextApplied = true;
+    }
+    // Apply weekly availability for new users too
+    if (weeklyAvailability && weeklyAvailability.length > 0) {
+      const tbDay = todayDayOfWeek === 0 ? 6 : todayDayOfWeek - 1;
+      const todayBlocks = weeklyAvailability.filter(b => b.day === tbDay);
+      const totalHours = todayBlocks.length;
+      let availMod = 0;
+      if (totalHours === 0) availMod = -3;
+      else if (totalHours <= 2) availMod = -1;
+      else if (totalHours <= 4) availMod = 0;
+      else if (totalHours <= 6) availMod = 1;
+      else availMod = 2;
+      bud = Math.max(6, Math.min(12, bud + availMod));
+      profile.capacityBudget = bud;
+    }
+    if (profile.maxDailyTasks === undefined) {
+      profile.maxDailyTasks = bud >= 8 ? COGNITIVE_BUDGET.MAX_DAILY_TASKS
+        : bud >= 7 ? 4 : 3;
     }
     return profile;
   };
@@ -405,6 +425,30 @@ export function computeCapacityProfile(
   else if (trend === "improving" && budget < 12) budget = Math.min(12, budget + 1);
   budget = Math.max(6, Math.min(12, budget + dayOfWeekModifier));
 
+  // Weekly availability modifier — TimeBlock[] from onboarding timeboard
+  if (weeklyAvailability && weeklyAvailability.length > 0) {
+    // Convert JS getDay() (0=Sun) to TimeBlock convention (0=Mon)
+    const tbDay = todayDayOfWeek === 0 ? 6 : todayDayOfWeek - 1;
+    const todayBlocks = weeklyAvailability.filter(b => b.day === tbDay);
+    const totalHours = todayBlocks.length; // each block = 1 hour
+    const avgImp = todayBlocks.length > 0
+      ? todayBlocks.reduce((s, b) => s + b.importance, 0) / todayBlocks.length
+      : 0;
+
+    let availMod = 0;
+    if (totalHours === 0) availMod = -3;
+    else if (totalHours <= 2) availMod = -1;
+    else if (totalHours <= 4) availMod = 0;
+    else if (totalHours <= 6) availMod = 1;
+    else availMod = 2;
+
+    // High-importance blocks boost further
+    if (avgImp >= 2.5) availMod += 1;
+    else if (avgImp <= 1.5 && totalHours > 0) availMod -= 1;
+
+    budget = Math.max(6, Math.min(12, budget + availMod));
+  }
+
   // Chronic snooze patterns from signals (last 14 days)
   const chronicSnoozePatterns: string[] = [];
   const snoozeCounts = new Map<string, number>();
@@ -424,6 +468,12 @@ export function computeCapacityProfile(
     budget = Math.max(4, Math.min(12, Math.round(budget * monthlyContext.capacityMultiplier)));
     maxDailyTasks = monthlyContext.maxDailyTasks;
     monthlyContextApplied = true;
+  }
+
+  // Derive effective max tasks from budget when not set by monthly context
+  if (maxDailyTasks === undefined) {
+    maxDailyTasks = budget >= 8 ? COGNITIVE_BUDGET.MAX_DAILY_TASKS
+      : budget >= 7 ? 4 : 3;
   }
 
   return {

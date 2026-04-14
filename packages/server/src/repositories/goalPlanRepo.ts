@@ -357,13 +357,15 @@ function nextMonday(d: Date): Date {
  *  or from today.
  *
  *  Mutates the plan in place and returns it for convenience. */
-export function normalizePlan(plan: GoalPlan): GoalPlan {
+export function normalizePlan(plan: GoalPlan, startDate?: string, endDate?: string): GoalPlan {
   if (!plan) return plan;
   if (!Array.isArray(plan.milestones)) plan.milestones = [];
   if (!Array.isArray(plan.years)) plan.years = [];
 
   for (const ms of plan.milestones) {
-    ms.id = ms.id || genId("ms");
+    // Always regenerate IDs to avoid cross-goal collisions in the DB
+    // (DB primary key is (user_id, id), shared IDs cause data corruption)
+    ms.id = genId("ms");
     ms.title = ms.title ?? "";
     ms.description = ms.description ?? "";
     ms.targetDate = ms.targetDate ?? "";
@@ -371,17 +373,17 @@ export function normalizePlan(plan: GoalPlan): GoalPlan {
   }
 
   for (const yr of plan.years) {
-    yr.id = yr.id || genId("year");
+    yr.id = genId("year");
     yr.label = yr.label ?? "";
     yr.objective = yr.objective ?? "";
     if (!Array.isArray(yr.months)) yr.months = [];
     for (const mo of yr.months) {
-      mo.id = mo.id || genId("month");
+      mo.id = genId("month");
       mo.label = mo.label ?? "";
       mo.objective = mo.objective ?? "";
       if (!Array.isArray(mo.weeks)) mo.weeks = [];
       for (const wk of mo.weeks) {
-        wk.id = wk.id || genId("week");
+        wk.id = genId("week");
         wk.label = wk.label ?? "";
         wk.objective = wk.objective ?? "";
         if (!Array.isArray(wk.days)) wk.days = [];
@@ -393,11 +395,11 @@ export function normalizePlan(plan: GoalPlan): GoalPlan {
           wk.locked = !hasTasks;
         }
         for (const dy of wk.days) {
-          dy.id = dy.id || genId("day");
+          dy.id = genId("day");
           dy.label = dy.label ?? "";
           if (!Array.isArray(dy.tasks)) dy.tasks = [];
           for (const t of dy.tasks) {
-            t.id = t.id || genId("task");
+            t.id = genId("task");
             t.title = t.title ?? "";
             t.description = t.description ?? "";
             t.completed = Boolean(t.completed);
@@ -415,13 +417,217 @@ export function normalizePlan(plan: GoalPlan): GoalPlan {
     }
   }
 
+  // ── ID deduplication: ensure every node ID is unique within this plan.
+  // AI-generated plans can reuse IDs across goals (e.g. "year-f6a7b8c9").
+  // The DB primary key is (user_id, id) so shared IDs cause cross-goal
+  // data corruption. Regenerate any duplicate IDs.
+  const seenIds = new Set<string>();
+  for (const ms of plan.milestones) {
+    if (seenIds.has(ms.id)) ms.id = genId("ms");
+    seenIds.add(ms.id);
+  }
+  for (const yr of plan.years) {
+    if (seenIds.has(yr.id)) yr.id = genId("year");
+    seenIds.add(yr.id);
+    for (const mo of yr.months) {
+      if (seenIds.has(mo.id)) mo.id = genId("month");
+      seenIds.add(mo.id);
+      for (const wk of mo.weeks) {
+        if (seenIds.has(wk.id)) wk.id = genId("week");
+        seenIds.add(wk.id);
+        for (const dy of wk.days) {
+          if (seenIds.has(dy.id)) dy.id = genId("day");
+          seenIds.add(dy.id);
+          for (const t of dy.tasks) {
+            if (seenIds.has(t.id)) t.id = genId("task");
+            seenIds.add(t.id);
+          }
+        }
+      }
+    }
+  }
+
   // ── Label enforcement: compute proper date-based labels ──
   // Walk every week in order. If any labels are generic ("Week 1",
   // "Monday", etc.), compute actual dates from the earliest ISO day
   // label found, or from today as fallback.
   _enforceDateLabels(plan);
 
+  // ── Gap fill: ensure every week/month/year exists from start to end ──
+  if (startDate && endDate) {
+    _fillTimelineGaps(plan, startDate, endDate);
+  }
+
   return plan;
+}
+
+/** Ensure every week, month, and year from startDate to endDate exists
+ *  in the plan. Missing structural nodes are inserted as stubs with
+ *  proper labels. Empty days get an ISO date label and empty tasks[].
+ *  This guarantees the timeline is always a complete grid. */
+function _fillTimelineGaps(plan: GoalPlan, startDate: string, endDate: string): void {
+  const start = new Date(startDate + "T12:00:00");
+  const end = new Date(endDate + "T12:00:00");
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) return;
+
+  // 1. Compute the Monday of the start week
+  const startDow = start.getDay();
+  const startMon = new Date(start);
+  if (startDow === 0) startMon.setDate(startMon.getDate() - 6);
+  else startMon.setDate(startMon.getDate() - (startDow - 1));
+  startMon.setHours(12, 0, 0, 0);
+
+  // 2. Build the expected calendar grid: { year → { month → weeks[] } }
+  type WeekSlot = { mon: Date; label: string; dayLabels: string[] };
+  type MonthSlot = { label: string; yearNum: number; monthNum: number; weeks: WeekSlot[] };
+  const monthMap = new Map<string, MonthSlot>();
+  const yearSet = new Set<number>();
+
+  const cursor = new Date(startMon);
+  while (cursor <= end) {
+    const mon = new Date(cursor);
+    const fri = new Date(mon);
+    fri.setDate(fri.getDate() + 4);
+    const weekLabel = `${fmtShort(mon)} – ${fmtShort(fri)}`;
+
+    // Determine which month this week belongs to (use Monday's month)
+    const mKey = `${FULL_MONTHS[mon.getMonth()]} ${mon.getFullYear()}`;
+    yearSet.add(mon.getFullYear());
+
+    if (!monthMap.has(mKey)) {
+      monthMap.set(mKey, {
+        label: mKey,
+        yearNum: mon.getFullYear(),
+        monthNum: mon.getMonth(),
+        weeks: [],
+      });
+    }
+
+    // Build 7 day labels (Mon-Sun) for this week
+    const dayLabels: string[] = [];
+    for (let d = 0; d < 7; d++) {
+      const dayDate = new Date(mon);
+      dayDate.setDate(dayDate.getDate() + d);
+      dayLabels.push(dayDate.toISOString().split("T")[0]);
+    }
+
+    monthMap.get(mKey)!.weeks.push({ mon, label: weekLabel, dayLabels });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  // 3. Index existing plan nodes by date for matching
+  const existingWeekStarts = new Set<string>(); // Mon ISO dates of existing weeks
+  const existingMonthKeys = new Set<string>(); // "Month Year" labels
+  const existingYearLabels = new Set<string>();
+
+  for (const yr of plan.years) {
+    existingYearLabels.add(yr.label);
+    for (const mo of yr.months) {
+      existingMonthKeys.add(mo.label);
+      for (const wk of mo.weeks) {
+        // Try to extract the Monday date from the week label or first day
+        const firstDay = wk.days?.[0];
+        if (firstDay && isISODate(firstDay.label)) {
+          const d = new Date(firstDay.label + "T12:00:00");
+          const dow = d.getDay();
+          const monDate = new Date(d);
+          if (dow === 0) monDate.setDate(monDate.getDate() - 6);
+          else monDate.setDate(monDate.getDate() - (dow - 1));
+          existingWeekStarts.add(monDate.toISOString().split("T")[0]);
+        } else {
+          // Try parsing the week label "Apr 14 – Apr 18"
+          const m = wk.label.match(
+            /([A-Za-z]+)\s+(\d{1,2})\s*[–\-]\s*([A-Za-z]+)\s+(\d{1,2})/,
+          );
+          if (m) {
+            // Use start year from the plan context
+            for (const tryYear of yearSet) {
+              const testDate = new Date(`${m[1]} ${m[2]}, ${tryYear}`);
+              if (!isNaN(testDate.getTime())) {
+                const dow = testDate.getDay();
+                const monDate = new Date(testDate);
+                if (dow === 0) monDate.setDate(monDate.getDate() - 6);
+                else monDate.setDate(monDate.getDate() - (dow - 1));
+                existingWeekStarts.add(monDate.toISOString().split("T")[0]);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Insert missing nodes
+  for (const yearNum of yearSet) {
+    const yearLabel = String(yearNum);
+    let yearNode = plan.years.find((yr) => yr.label === yearLabel);
+    if (!yearNode) {
+      yearNode = {
+        id: genId("year"),
+        label: yearLabel,
+        objective: "",
+        months: [],
+      };
+      plan.years.push(yearNode);
+    }
+
+    // Sort months for this year
+    const monthsForYear = [...monthMap.values()]
+      .filter((ms) => ms.yearNum === yearNum)
+      .sort((a, b) => a.monthNum - b.monthNum);
+
+    for (const ms of monthsForYear) {
+      let monthNode = yearNode.months.find((mo) => mo.label === ms.label);
+      if (!monthNode) {
+        monthNode = {
+          id: genId("month"),
+          label: ms.label,
+          objective: "",
+          weeks: [],
+        };
+        yearNode.months.push(monthNode);
+      }
+
+      for (const ws of ms.weeks) {
+        const monISO = ws.mon.toISOString().split("T")[0];
+        if (existingWeekStarts.has(monISO)) continue;
+
+        // Insert stub week with day slots
+        const days: GoalPlanDay[] = ws.dayLabels.map((dl) => ({
+          id: genId("day"),
+          label: dl,
+          tasks: [],
+        }));
+
+        monthNode.weeks.push({
+          id: genId("week"),
+          label: ws.label,
+          objective: "",
+          locked: true,
+          days,
+        });
+        existingWeekStarts.add(monISO);
+      }
+
+      // Sort weeks within month by first day date
+      monthNode.weeks.sort((a, b) => {
+        const aDate = a.days?.[0]?.label ?? "";
+        const bDate = b.days?.[0]?.label ?? "";
+        return aDate.localeCompare(bDate);
+      });
+    }
+
+    // Sort months within year by month number
+    yearNode.months.sort((a, b) => {
+      const aIdx = FULL_MONTHS.findIndex((m) => a.label.startsWith(m));
+      const bIdx = FULL_MONTHS.findIndex((m) => b.label.startsWith(m));
+      return aIdx - bIdx;
+    });
+  }
+
+  // Sort years
+  plan.years.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Walk the plan and replace generic labels with computed date labels.
@@ -564,8 +770,10 @@ function _getGlobalWeekIndex(plan: GoalPlan, targetWk: GoalPlanWeek | undefined)
 export async function replacePlan(
   goalId: string,
   plan: GoalPlan,
+  startDate?: string,
+  endDate?: string,
 ): Promise<void> {
-  normalizePlan(plan);
+  normalizePlan(plan, startDate, endDate);
   await deleteForGoal(goalId);
   const nodes = flattenPlan(goalId, plan);
   if (nodes.length > 0) {
@@ -667,4 +875,65 @@ export function reconstructPlan(nodes: GoalPlanNode[]): GoalPlan {
     });
 
   return { milestones, years };
+}
+
+// ── Calendar / daily-planner integration ─────────────────
+
+export interface GoalPlanTaskForCalendar {
+  id: string;
+  goalId: string;
+  goalTitle: string;
+  goalImportance: string;
+  title: string;
+  description: string;
+  date: string;
+  durationMinutes: number;
+  priority: string;
+  category: string;
+  completed: boolean;
+  completedAt?: string;
+}
+
+/**
+ * Find all task-type plan nodes whose parent day node falls within
+ * a date range. Joins against the goals table to include the goal title.
+ */
+export async function listTasksForDateRange(
+  startDate: string,
+  endDate: string,
+): Promise<GoalPlanTaskForCalendar[]> {
+  const userId = requireUserId();
+  const rows = await query<
+    GoalPlanNodeRow & { day_date: string; goal_title: string; goal_importance: string }
+  >(
+    `select t.*, d.start_date as day_date, g.title as goal_title, g.priority as goal_importance
+     from goal_plan_nodes t
+     join goal_plan_nodes d on d.user_id = t.user_id and d.id = t.parent_id
+     join goals g on g.user_id = t.user_id and g.id = t.goal_id
+     where t.user_id = $1
+       and t.node_type = 'task'
+       and d.node_type = 'day'
+       and d.start_date >= $2
+       and d.start_date <= $3
+     order by d.start_date asc, t.order_index asc`,
+    [userId, startDate, endDate],
+  );
+
+  return rows.map((r) => {
+    const pl = parseJson(r.payload);
+    return {
+      id: r.id,
+      goalId: r.goal_id,
+      goalTitle: r.goal_title,
+      goalImportance: r.goal_importance ?? "medium",
+      title: r.title,
+      description: r.description,
+      date: r.day_date,
+      durationMinutes: (pl.durationMinutes as number) ?? 30,
+      priority: (pl.priority as string) ?? "should-do",
+      category: (pl.category as string) ?? "planning",
+      completed: (pl.completed as boolean) ?? false,
+      completedAt: (pl.completedAt as string) ?? undefined,
+    };
+  });
 }

@@ -8,7 +8,18 @@ export interface PlanSplit {
   overdueTasks: Array<GoalPlanTask & { originalDay: string; originalWeek: string }>;
 }
 
+/** Extract the end date of a week from its day labels (last ISO day label).
+ *  Falls back to null if no valid day labels found. */
+function weekEndDate(wk: GoalPlanYear["months"][number]["weeks"][number]): string | null {
+  for (let i = (wk.days ?? []).length - 1; i >= 0; i--) {
+    const label = wk.days[i]?.label;
+    if (label && /^\d{4}-\d{2}-\d{2}$/.test(label)) return label;
+  }
+  return null;
+}
+
 export function splitPlan(plan: GoalPlan): PlanSplit {
+  const today = new Date().toISOString().split("T")[0];
   const pastYears: GoalPlanYear[] = [];
   const futureYears: GoalPlanYear[] = [];
   const overdueTasks: PlanSplit["overdueTasks"] = [];
@@ -20,10 +31,14 @@ export function splitPlan(plan: GoalPlan): PlanSplit {
       const pastWeeks = [];
       const futureWeeks = [];
       for (const wk of mo.weeks) {
-        if (wk.locked) {
+        const endDate = weekEndDate(wk);
+        // A week is "past" if its end date is before today, or if we can't
+        // parse dates, fall back to the locked flag for backwards compat.
+        const isPast = endDate ? endDate < today : wk.locked;
+        if (isPast) {
           pastWeeks.push(wk);
-          for (const dy of wk.days) {
-            for (const tk of dy.tasks) {
+          for (const dy of wk.days ?? []) {
+            for (const tk of dy.tasks ?? []) {
               if (!tk.completed) {
                 overdueTasks.push({ ...tk, originalDay: dy.label, originalWeek: wk.label });
               }

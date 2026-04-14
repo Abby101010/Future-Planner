@@ -556,7 +556,9 @@ aiRouter.post(
               // Full replacement — user asked to start over.
               console.log("[goal-plan-chat/stream] FULL PLAN REPLACEMENT");
               const planObj = result.plan as unknown as GoalPlan;
-              await repos.goalPlan.replacePlan(goalId, planObj);
+              const gStart = goal.createdAt?.split("T")[0];
+              const gEnd = goal.targetDate;
+              await repos.goalPlan.replacePlan(goalId, planObj, gStart, gEnd);
               nextPlan = planObj;
               planReplaced = true;
             } else if (result.planPatch && nextPlan) {
@@ -585,7 +587,9 @@ aiRouter.post(
               const taskCountBefore = daysBefore.reduce((s, d) => s + (d.tasks?.length ?? 0), 0);
               const taskCountAfter = daysAfter.reduce((s, d) => s + (d.tasks?.length ?? 0), 0);
               console.log("[goal-plan-chat/stream] patch result: tasks before=%d, after=%d", taskCountBefore, taskCountAfter);
-              await repos.goalPlan.replacePlan(goalId, patched);
+              const gStart2 = goal.createdAt?.split("T")[0];
+              const gEnd2 = goal.targetDate;
+              await repos.goalPlan.replacePlan(goalId, patched, gStart2, gEnd2);
               nextPlan = patched;
               planReplaced = true;
             } else {
@@ -821,7 +825,9 @@ aiRouter.post(
             if (result.planReady && result.plan && Array.isArray((result.plan as { years?: unknown }).years)) {
               console.log("[ai/chat/stream] FULL PLAN GENERATED — persisting");
               const planObj = result.plan as unknown as GoalPlan;
-              await repos.goalPlan.replacePlan(goalId, planObj);
+              const gs = goal.createdAt?.split("T")[0];
+              const ge = goal.targetDate;
+              await repos.goalPlan.replacePlan(goalId, planObj, gs, ge);
               nextPlan = planObj;
               planReplaced = true;
               // Mark goal as confirmed + active so the UI stops showing
@@ -839,7 +845,9 @@ aiRouter.post(
               const tasksAfter = patched.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days?.flatMap(d => d.tasks?.map(t => ({ id: t.id, title: t.title, dur: t.durationMinutes })) ?? []) ?? []) ?? []) ?? []) ?? [];
               console.log("[ai/chat/stream] tasks before:", tasksBefore.slice(0, 20));
               console.log("[ai/chat/stream] tasks after:", tasksAfter.slice(0, 20));
-              await repos.goalPlan.replacePlan(goalId, patched);
+              const gs2 = goal.createdAt?.split("T")[0];
+              const ge2 = goal.targetDate;
+              await repos.goalPlan.replacePlan(goalId, patched, gs2, ge2);
               nextPlan = patched;
               planReplaced = true;
             } else {

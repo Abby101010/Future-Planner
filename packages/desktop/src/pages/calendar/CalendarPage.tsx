@@ -18,7 +18,7 @@ import {
   AlertTriangle,
   RefreshCw,
 } from "lucide-react";
-import type { DailyTask, Goal } from "@northstar/core";
+import type { DailyTask, Goal, GoalPlanTaskForCalendar } from "@northstar/core";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
 import CalendarDayDetail from "./CalendarDayDetail";
@@ -36,6 +36,7 @@ interface CalendarView {
   rangeStart: string;
   rangeEnd: string;
   tasks: DailyTask[];
+  goalPlanTasks: GoalPlanTaskForCalendar[];
   goals: Goal[];
   vacationMode: CalendarVacationMode;
 }
@@ -95,7 +96,34 @@ export default function CalendarPage() {
   );
   const { run, running } = useCommand();
 
-  const calendarTasks = data?.tasks ?? [];
+  // Merge daily tasks + goal plan tasks into a unified list for the grid.
+  // Goal plan tasks are mapped to a DailyTask-like shape with an extra
+  // _isGoalPlanTask flag so the day detail can render them distinctly.
+  const calendarTasks = useMemo(() => {
+    const tasks: (DailyTask & { _isGoalPlanTask?: boolean; _goalTitle?: string })[] =
+      data?.tasks ?? [];
+    const planTasks: (DailyTask & { _isGoalPlanTask?: boolean; _goalTitle?: string })[] =
+      (data?.goalPlanTasks ?? []).map((gpt) => ({
+        id: gpt.id,
+        title: gpt.title,
+        description: gpt.description,
+        date: gpt.date,
+        category: gpt.category as DailyTask["category"],
+        priority: gpt.priority as DailyTask["priority"],
+        completed: gpt.completed,
+        completedAt: gpt.completedAt,
+        durationMinutes: gpt.durationMinutes,
+        whyToday: "",
+        isMomentumTask: false,
+        progressContribution: "",
+        goalId: gpt.goalId,
+        planNodeId: gpt.id,
+        source: "big_goal" as const,
+        _isGoalPlanTask: true,
+        _goalTitle: gpt.goalTitle,
+      }));
+    return [...tasks, ...planTasks];
+  }, [data]);
 
   // ── Calendar grid ─────────────────────────────────────
 

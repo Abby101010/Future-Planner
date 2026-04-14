@@ -509,6 +509,13 @@
   gap: 2px;
 }
 
+.gp-day-empty {
+  font-size: 12px;
+  color: var(--text-tertiary, #999);
+  padding: 4px 0;
+  font-style: italic;
+}
+
 /* ── Tasks within days ── */
 
 .gp-task {

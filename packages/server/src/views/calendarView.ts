@@ -6,7 +6,7 @@
  */
 
 import * as repos from "../repositories";
-import type { DailyTask, Goal } from "@northstar/core";
+import type { DailyTask, Goal, GoalPlanTaskForCalendar } from "@northstar/core";
 import { flattenDailyTask } from "./_mappers";
 
 export interface CalendarVacationMode {
@@ -24,6 +24,7 @@ export interface CalendarView {
   rangeStart: string;
   rangeEnd: string;
   tasks: DailyTask[];
+  goalPlanTasks: GoalPlanTaskForCalendar[];
   goals: Goal[];
   vacationMode: CalendarVacationMode;
 }
@@ -103,14 +104,26 @@ export async function resolveCalendarView(
   const startDate = args?.startDate || defaults.startDate;
   const endDate = args?.endDate || defaults.endDate;
 
-  const [taskRecords, goals, vacationState] = await Promise.all([
+  const [taskRecords, goals, vacationState, goalPlanTasksRaw] = await Promise.all([
     repos.dailyTasks.listForDateRange(startDate, endDate),
     repos.goals.list(),
     repos.vacationMode.get(),
+    repos.goalPlan.listTasksForDateRange(startDate, endDate),
   ]);
 
   const tasks = taskRecords.map((r) => flattenDailyTask(r, r.date));
   const expanded = expandRecurring(tasks, startDate, endDate);
+
+  // Deduplicate: filter out goal plan tasks that already have a
+  // corresponding daily_tasks row (matched by planNodeId).
+  const existingPlanNodeIds = new Set(
+    taskRecords
+      .map((r) => r.planNodeId)
+      .filter(Boolean) as string[],
+  );
+  const goalPlanTasks = goalPlanTasksRaw.filter(
+    (t) => !existingPlanNodeIds.has(t.id),
+  );
 
   const vacationMode: CalendarVacationMode = vacationState
     ? {
@@ -124,6 +137,7 @@ export async function resolveCalendarView(
     rangeStart: startDate,
     rangeEnd: endDate,
     tasks: expanded,
+    goalPlanTasks,
     goals,
     vacationMode,
   };

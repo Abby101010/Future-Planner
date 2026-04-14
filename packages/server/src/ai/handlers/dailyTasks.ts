@@ -9,6 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext } from "../../calendar";
 import { loadMemory, computeCapacityProfile } from "../../memory";
 import { getCurrentUserId } from "../../middleware/requestContext";
+import * as repos from "../../repositories";
 import { getMonthlyContext } from "../../database";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
@@ -87,11 +88,13 @@ export async function handleDailyTasks(
     /* no monthly context */
   }
 
+  const user = await repos.users.get();
   const capacityProfile = computeCapacityProfile(
     memory,
     logsForCapacity,
     todayDayOfWeek,
     monthlyCtx,
+    user?.weeklyAvailability,
   );
 
   const capacityBlock = `

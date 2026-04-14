@@ -108,8 +108,10 @@ export async function cmdSendChatMessage(
       try {
         const planObj = result.plan as unknown as import("@northstar/core").GoalPlan;
         if (Array.isArray(planObj.years)) {
-          await repos.goalPlan.replacePlan(goalId, planObj);
           const existing = await repos.goals.get(goalId);
+          const gStartDate = existing?.createdAt?.split("T")[0];
+          const gEndDate = existing?.targetDate;
+          await repos.goalPlan.replacePlan(goalId, planObj, gStartDate, gEndDate);
           if (existing) {
             await repos.goals.upsert({ ...existing, plan: planObj });
           }
@@ -136,7 +138,9 @@ export async function cmdSendChatMessage(
 
           if (currentPlan) {
             const patched = applyPlanPatch(currentPlan, result.planPatch);
-            await repos.goalPlan.replacePlan(goalId, patched);
+            const gStartDate = existing.createdAt?.split("T")[0];
+            const gEndDate = existing.targetDate;
+            await repos.goalPlan.replacePlan(goalId, patched, gStartDate, gEndDate);
             await repos.goals.upsert({ ...existing, plan: patched });
             planReplaced = true;
           }

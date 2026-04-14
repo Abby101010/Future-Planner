@@ -38,6 +38,7 @@ export {
   cmdAdjustAllOverloadedPlans,
   cmdGenerateBonusTask,
   cmdAcceptTaskProposal,
+  cmdHealAllGoalPlans,
 } from "./planning";
 
 export { cmdStartChatStream, cmdSendChatMessage, cmdClearHomeChat } from "./chat";

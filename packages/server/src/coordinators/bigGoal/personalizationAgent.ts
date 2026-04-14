@@ -36,14 +36,15 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 export async function runPersonalizationAgent(): Promise<PersonalizationResult> {
   const userId = getCurrentUserId();
 
-  // Load memory and compute capacity in parallel
-  const [memory, pastLogs] = await Promise.all([
+  // Load memory, user profile, and past logs in parallel
+  const [memory, pastLogs, user] = await Promise.all([
     loadMemory(userId),
     loadRecentLogs(),
+    repos.users.get(),
   ]);
 
   const dayOfWeek = new Date().getDay();
-  const profile = computeCapacityProfile(memory, pastLogs, dayOfWeek, null);
+  const profile = computeCapacityProfile(memory, pastLogs, dayOfWeek, null, user?.weeklyAvailability);
   const memoryContext = buildMemoryContext(memory, "planning");
 
   // Determine weak days from the profile

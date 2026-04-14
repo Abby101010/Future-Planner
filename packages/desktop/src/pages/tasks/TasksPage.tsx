@@ -342,7 +342,7 @@ export default function TasksPage() {
 
   const handleUndoDefer = async () => {
     if (!data?.todayDate || deferMoves.length === 0) return;
-    await run("command:undo-defer", { fromDate: data.todayDate });
+    await run("command:undo-defer", { date: data.todayDate });
     setDeferMoves([]);
     refetch();
   };

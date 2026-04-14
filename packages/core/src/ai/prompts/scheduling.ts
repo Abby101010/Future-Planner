@@ -96,7 +96,11 @@ IMPORTANT:
 - Day labels MUST be ISO dates (YYYY-MM-DD) so the system can match them to calendar dates
 - Generate unique IDs for all nodes (use descriptive slugs like "week-apr-13", "day-2026-04-13", "task-review-ch3")
 - Only include detailed daily tasks for the NEXT 14 DAYS
-- For weeks beyond 14 days, include week-level focus + objectives only (no daily tasks)
+- For weeks beyond 14 days, include week stubs with locked: true, 5 day slots (Mon-Fri, ISO labels), empty tasks
+- You MUST preserve every existing year, month, and week node. Do NOT remove structural nodes.
+  Only move tasks between existing day slots. If a day becomes empty, leave it with an empty
+  tasks array — do NOT delete the day or week.
+- Return the FULL future plan including all weeks/months/days, not just ones with tasks
 - Incomplete past tasks keep their original titles/descriptions — just move them to new dates
 - Return ONLY valid JSON, no markdown fences.`;
 

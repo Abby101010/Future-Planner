@@ -567,6 +567,22 @@ export interface GoalPlanTask {
   completedAt?: string;
 }
 
+/** A goal plan task projected onto a calendar date range. */
+export interface GoalPlanTaskForCalendar {
+  id: string;
+  goalId: string;
+  goalTitle: string;
+  goalImportance: string;
+  title: string;
+  description: string;
+  date: string;
+  durationMinutes: number;
+  priority: string;
+  category: string;
+  completed: boolean;
+  completedAt?: string;
+}
+
 // ── Legacy flat plan type (for small goals) ──
 
 /** A flat section used for small goals with simple task lists */

@@ -18,13 +18,16 @@ export async function handleGenerateGoalPlan(
   const researchSummary = payload._researchSummary ?? "";
   const researchFindings = payload._researchFindings ?? [];
 
+  const today = new Date().toISOString().split("T")[0];
+  const startDate = (payload as unknown as Record<string, unknown>).startDate as string | undefined;
   const goalContext = [
     `- Goal: "${goalTitle}"`,
     `- Type: ${isHabit ? "Ongoing habit (no due date)" : "Goal with target date"}`,
+    `- Start date: ${startDate || today}`,
     `- Target date: ${isHabit ? "N/A (habit)" : targetDate || "flexible"}`,
     `- Importance: ${importance}`,
     description ? `- User's description/context: "${description}"` : null,
-    `- Today: ${new Date().toISOString().split("T")[0]}`,
+    `- Today: ${today}`,
   ]
     .filter(Boolean)
     .join("\n");

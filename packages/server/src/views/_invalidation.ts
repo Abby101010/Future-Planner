@@ -82,26 +82,31 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:goal-plan",
     "view:dashboard",
     "view:tasks",
+    "view:calendar",
   ],
   "command:regenerate-goal-plan": [
     "view:goal-plan",
     "view:dashboard",
     "view:tasks",
+    "view:calendar",
   ],
   "command:reallocate-goal-plan": [
     "view:goal-plan",
     "view:dashboard",
     "view:tasks",
+    "view:calendar",
   ],
   "command:adaptive-reschedule": [
     "view:goal-plan",
     "view:dashboard",
     "view:tasks",
+    "view:calendar",
   ],
   "command:adjust-all-overloaded-plans": [
     "view:goal-plan",
     "view:dashboard",
     "view:tasks",
+    "view:calendar",
   ],
   "command:regenerate-daily-tasks": [
     "view:dashboard",

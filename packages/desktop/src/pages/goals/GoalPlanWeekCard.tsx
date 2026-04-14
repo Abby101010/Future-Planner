@@ -85,6 +85,9 @@ export default function GoalPlanWeekCard({
             <div key={day.id} className="gp-day">
               <div className="gp-day-label">{formatDayLabel(day.label)}</div>
               <div className="gp-day-tasks">
+                {(day.tasks ?? []).length === 0 && (
+                  <div className="gp-day-empty">{t.goalPlan?.noTasks ?? "No tasks scheduled"}</div>
+                )}
                 {(day.tasks ?? []).map((task) => (
                   <div
                     key={task.id}

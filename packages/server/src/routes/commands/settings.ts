@@ -36,8 +36,17 @@ export async function cmdDeleteMonthlyContext(
 export async function cmdUpdateSettings(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const patch = (body.settings as Partial<UserSettings>) ?? {};
-  await repos.users.updateSettings(patch);
+  const patch = (body.settings ?? {}) as Record<string, unknown>;
+  // weeklyAvailability lives in its own DB column, not inside settings.
+  // Extract it before forwarding the rest to updateSettings.
+  const weeklyAvail = patch.weeklyAvailability as TimeBlock[] | undefined;
+  if (weeklyAvail && Array.isArray(weeklyAvail)) {
+    await repos.users.updateWeeklyAvailability(weeklyAvail);
+  }
+  const { weeklyAvailability: _wa, ...settingsPatch } = patch;
+  if (Object.keys(settingsPatch).length > 0) {
+    await repos.users.updateSettings(settingsPatch as Partial<UserSettings>);
+  }
   // Also accept user-profile-level patches (e.g. timezone)
   const userPatch = body.user as Record<string, unknown> | undefined;
   if (userPatch?.timezone && typeof userPatch.timezone === "string") {

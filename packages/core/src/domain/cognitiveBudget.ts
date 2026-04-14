@@ -27,6 +27,31 @@ export const COGNITIVE_BUDGET = {
 
 export type TaskPriority = "must-do" | "should-do" | "bonus";
 
+/** Maps goal importance → default task priority + cognitive weight base + frequency. */
+export const IMPORTANCE_PRIORITY_RULES = {
+  critical: { defaultPriority: "must-do" as TaskPriority, baseWeight: 4, freqLabel: "daily" },
+  high:     { defaultPriority: "must-do" as TaskPriority, baseWeight: 3, freqLabel: "5-6x/week" },
+  medium:   { defaultPriority: "should-do" as TaskPriority, baseWeight: 3, freqLabel: "3-4x/week" },
+  low:      { defaultPriority: "should-do" as TaskPriority, baseWeight: 2, freqLabel: "1-2x/week" },
+} as const;
+
+/**
+ * Compute cognitive weight from goal importance + task duration + task priority.
+ * Replaces the hardcoded `weight = 3` in scenarios.ts.
+ */
+export function computeCognitiveWeight(
+  goalImportance: string,
+  durationMinutes: number,
+  taskPriority: string,
+): number {
+  const rules = IMPORTANCE_PRIORITY_RULES[goalImportance as keyof typeof IMPORTANCE_PRIORITY_RULES]
+    ?? IMPORTANCE_PRIORITY_RULES.medium;
+  const base = rules.baseWeight;
+  const durationMod = durationMinutes >= 60 ? 1 : durationMinutes <= 15 ? -1 : 0;
+  const priorityMod = taskPriority === "must-do" ? 1 : taskPriority === "bonus" ? -1 : 0;
+  return Math.max(1, Math.min(5, base + durationMod + priorityMod));
+}
+
 interface BudgetableTask {
   cognitiveWeight?: number;
   durationMinutes?: number;
