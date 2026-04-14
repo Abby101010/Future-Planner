@@ -127,27 +127,12 @@ export async function dispatchChatIntent(
         await run(cmd("command:skip-task"), { taskId: i.taskId });
       } else if (i.action === "delete") {
         await run(cmd("command:delete-task"), { taskId: i.taskId });
-      } else if (i.action === "reschedule") {
-        await run(cmd("command:skip-task"), { taskId: i.taskId });
-        if (i.rescheduleDate) {
-          const pendingId = crypto.randomUUID();
-          await run(cmd("command:create-pending-task"), {
-            id: pendingId,
-            userInput: task.title,
-            status: "ready",
-            analysis: {
-              title: task.title,
-              description: task.description || "",
-              suggestedDate: i.rescheduleDate,
-              durationMinutes: task.durationMinutes || 30,
-              cognitiveWeight: task.cognitiveWeight || 3,
-              priority: task.priority || "should-do",
-              category: task.category || "planning",
-              reasoning: "Rescheduled via chat",
-            },
-          });
-          await run(cmd("command:confirm-pending-task"), { pendingId });
-        }
+      } else if (i.action === "reschedule" && i.rescheduleDate) {
+        await run(cmd("command:reschedule-task"), {
+          taskId: i.taskId,
+          targetDate: i.rescheduleDate,
+          force: true,
+        });
       }
       break;
     }
