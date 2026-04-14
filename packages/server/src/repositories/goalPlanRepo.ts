@@ -1030,17 +1030,17 @@ export async function listTasksForDateRange(
 }
 
 /**
- * Find the next uncompleted task nodes for a specific goal (or all goals),
- * ordered chronologically by parent day date, then by order_index.
+ * Find uncompleted task nodes for a specific goal (or all goals),
+ * scheduled for today or overdue (not future-dated).
  * Excludes tasks that already have a daily_task row (dedup by plan_node_id).
  *
  * @param goalId - filter to a specific goal, or null for all active goals
- * @param fromDate - only consider tasks on or after this date
+ * @param asOfDate - only consider tasks on or before this date (today + overdue)
  * @param limit - max results to return
  */
 export async function listNextUncompletedTasks(
   goalId: string | null,
-  fromDate: string,
+  asOfDate: string,
   limit: number = 5,
 ): Promise<GoalPlanTaskForCalendar[]> {
   const userId = requireUserId();
@@ -1055,15 +1055,15 @@ export async function listNextUncompletedTasks(
      where t.user_id = $1
        and t.node_type = 'task'
        and d.node_type = 'day'
-       and d.start_date >= $2
+       and d.start_date <= $2
        and (t.payload->>'completed')::boolean is not true
        and dt.id is null
        and g.status not in ('archived', 'completed')
        and g.plan_confirmed = true
        ${goalId ? "and t.goal_id = $4" : ""}
-     order by d.start_date asc, t.order_index asc
+     order by d.start_date desc, t.order_index asc
      limit $3`,
-    goalId ? [userId, fromDate, limit, goalId] : [userId, fromDate, limit],
+    goalId ? [userId, asOfDate, limit, goalId] : [userId, asOfDate, limit],
   );
 
   return rows.map((r) => {

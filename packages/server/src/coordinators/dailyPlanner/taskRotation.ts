@@ -59,12 +59,10 @@ function scoreCandidate(
   // Importance
   score += IMPORTANCE_WEIGHTS[candidate.goalImportance] ?? 20;
 
-  // Chronological urgency
-  const daysAway = daysBetween(today, candidate.date);
-  if (daysAway <= 0) score += 50;       // overdue or today
-  else if (daysAway <= 1) score += 30;  // tomorrow
-  else if (daysAway <= 3) score += 15;  // within 3 days
-  else score += 5;                       // further out
+  // Chronological urgency — only today or overdue tasks are candidates
+  const daysOverdue = daysBetween(candidate.date, today);
+  if (daysOverdue === 0) score += 50;       // scheduled for today
+  else if (daysOverdue > 0) score += 30;    // overdue (past date)
 
   return score;
 }
