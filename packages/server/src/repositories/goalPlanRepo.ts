@@ -544,10 +544,9 @@ export function normalizePlan(plan: GoalPlan, startDate?: string, endDate?: stri
   // label found, or from today as fallback.
   _enforceDateLabels(plan);
 
-  // ── Gap fill: ensure every week/month/year exists from start to end ──
-  if (startDate && endDate) {
-    _fillTimelineGaps(plan, startDate, endDate);
-  }
+  // Gap-fill removed: empty stub weeks/months clutter the UI and cause
+  // cross-month pollution (e.g. "May 1–4" appearing under April).
+  // The plan only needs structural nodes where tasks actually exist.
 
   return plan;
 }

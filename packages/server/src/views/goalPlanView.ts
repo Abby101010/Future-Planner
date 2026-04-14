@@ -101,47 +101,18 @@ export async function resolveGoalPlanView(
       ? reconstructed
       : (goal.plan ?? null);
 
-  // Self-heal: if the plan has broken labels, missing durations, or
-  // generic "Week 1" style labels, re-normalize using the RECONSTRUCTED
-  // plan (not the stale inline goal.plan) and gap-fill the timeline.
+  // Strip empty stub weeks/months that have no tasks — these are artifacts
+  // from prior gap-fill runs that clutter the UI and cause cross-month issues.
   if (plan && Array.isArray(plan.years)) {
-    const hasBrokenWeeks = plan.years.some((yr) =>
-      yr.months.some((mo) => mo.weeks.length === 0),
-    );
-    const hasBrokenDurations = plan.years.some((yr) =>
-      yr.months.some((mo) =>
-        mo.weeks.some((wk) =>
-          wk.days.some((dy) =>
-            dy.tasks.some((t) => !t.durationMinutes),
-          ),
-        ),
-      ),
-    );
-    const hasGenericLabels = plan.years.some((yr) =>
-      /^year\s+\d+$/i.test(yr.label?.trim() || "") ||
-      yr.months.some((mo) =>
-        /^month\s+\d+$/i.test(mo.label?.trim() || "") ||
-        mo.weeks.some((wk) =>
-          /^week\s+\d+$/i.test(wk.label?.trim() || "") ||
-          wk.days.some((dy) =>
-            !dy.label || !/^\d{4}-\d{2}-\d{2}$/.test(dy.label.trim()),
-          ),
-        ),
-      ),
-    );
-    if (hasBrokenWeeks || hasBrokenDurations || hasGenericLabels) {
-      try {
-        console.log(`[goalPlanView] self-healing plan for goal ${goalId}`);
-        const startDate = goal.createdAt?.split("T")[0];
-        const endDate = goal.targetDate;
-        // Heal the reconstructed plan (authoritative DB data), not the inline copy
-        const healed = repos.goalPlan.normalizePlan(plan, startDate, endDate);
-        await repos.goalPlan.replacePlan(goalId, healed, startDate, endDate);
-        plan = healed;
-      } catch (err) {
-        console.warn(`[goalPlanView] self-heal failed for ${goalId}:`, err);
+    for (const yr of plan.years) {
+      for (const mo of yr.months) {
+        mo.weeks = mo.weeks.filter((wk) =>
+          wk.days.some((dy) => dy.tasks.length > 0),
+        );
       }
+      yr.months = yr.months.filter((mo) => mo.weeks.length > 0);
     }
+    plan.years = plan.years.filter((yr) => yr.months.length > 0);
   }
 
   const progress = computePlanProgress(plan);
