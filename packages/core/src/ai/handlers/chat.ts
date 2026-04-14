@@ -244,6 +244,26 @@ ${remindersSummary}`;
       : "";
 
     contextBlock += `\n\nGOAL CONTEXT:\n${goalContext}${planBlock}`;
+
+    // Overload advisory — user has too many goals for their capacity
+    const advisory = context.overloadAdvisory as Record<string, unknown> | null | undefined;
+    if (advisory) {
+      contextBlock += `\n\nOVERLOAD ADVISORY (user has too many active goals for their daily capacity):
+- Total active goals: ${advisory.totalActiveGoals}
+- This goal's importance: ${advisory.goalImportance}
+- This goal's fair share of daily capacity: ~${advisory.suggestedTasksPerDay} tasks/day (${advisory.suggestedFreqLabel})
+- Remaining tasks in this plan: ${advisory.remainingTasks}
+- Current target date: ${advisory.currentTargetDate ?? "none"}
+- Suggested new target date: ${advisory.suggestedTargetDate}
+
+IMPORTANT: The user is asking about adjusting this goal because they're overloaded.
+1. Explain that they have ${advisory.totalActiveGoals} active goals competing for limited daily capacity
+2. Suggest reducing this goal to ${advisory.suggestedFreqLabel} frequency
+3. Explain this would extend the deadline to ${advisory.suggestedTargetDate}
+4. Ask for their confirmation before making changes
+5. When they confirm, output a COMPLETE modified plan with the reduced frequency — spread remaining tasks across more days with each day having at most ${advisory.suggestedTasksPerDay} tasks for this goal
+6. Set planReady: true with the full adjusted plan`;
+    }
   }
 
   // Weekly review context

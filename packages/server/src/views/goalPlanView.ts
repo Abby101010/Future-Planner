@@ -13,7 +13,7 @@ import type {
   GoalPlan,
   GoalPlanMessage,
 } from "@northstar/core";
-import { detectPaceMismatches, type PaceMismatch } from "../services/paceDetection";
+import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type OverloadAdvisory } from "../services/paceDetection";
 import { loadMemory, computeCapacityProfile } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
@@ -38,6 +38,8 @@ export interface GoalPlanView {
   scheduledTasks: DailyTask[];
   /** Pace mismatch for this specific goal (null if on track). */
   paceMismatch: PaceMismatch | null;
+  /** Cross-goal overload advisory (null if no overload detected). */
+  overloadAdvisory: OverloadAdvisory | null;
 }
 
 function computePlanProgress(plan: GoalPlan | null): GoalPlanProgress {
@@ -83,6 +85,7 @@ export async function resolveGoalPlanView(
       progress: { total: 0, completed: 0, percent: 0 },
       scheduledTasks: [],
       paceMismatch: null,
+      overloadAdvisory: null,
     };
   }
 
@@ -161,9 +164,12 @@ export async function resolveGoalPlanView(
   // Pace mismatch detection for this goal — use the reconstructed plan
   // (same data the UI displays), not the inline goal.plan which may lag.
   let paceMismatch: PaceMismatch | null = null;
+  let overloadAdvisory: OverloadAdvisory | null = null;
   try {
     const userId = getCurrentUserId();
-    const [memory, userProfile] = await Promise.all([loadMemory(userId), repos.users.get()]);
+    const [memory, userProfile, allGoals] = await Promise.all([
+      loadMemory(userId), repos.users.get(), repos.goals.list(),
+    ]);
     const rangeStart = getEffectiveDaysAgo(90);
     const logs = await repos.dailyLogs.list(rangeStart, today);
     const tasks = await repos.dailyTasks.listForDateRange(rangeStart, today);
@@ -184,6 +190,13 @@ export async function resolveGoalPlanView(
     const goalForPace = plan ? { ...goal, plan } : goal;
     const mismatches = detectPaceMismatches([goalForPace], capacity.avgTasksCompletedPerDay, today);
     paceMismatch = mismatches.length > 0 ? mismatches[0] : null;
+
+    // Cross-goal overload detection
+    const advisories = detectCrossGoalOverload(
+      allGoals, capacity.avgTasksCompletedPerDay,
+      capacity.maxDailyTasks ?? 5, today,
+    );
+    overloadAdvisory = advisories.find((a) => a.goalId === goalId) ?? null;
   } catch {
     // pace detection is best-effort
   }
@@ -195,5 +208,6 @@ export async function resolveGoalPlanView(
     progress,
     scheduledTasks,
     paceMismatch,
+    overloadAdvisory,
   };
 }

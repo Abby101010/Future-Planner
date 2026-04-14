@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ArrowLeft,
   AlertTriangle,
+  TrendingDown,
   FileText,
   RefreshCw,
   MessageCircle,
@@ -50,6 +51,7 @@ interface GoalPlanViewModel {
   progress: GoalPlanProgress;
   scheduledTasks: DailyTask[];
   paceMismatch: import("@northstar/core").PaceMismatch | null;
+  overloadAdvisory: import("@northstar/core").OverloadAdvisory | null;
 }
 
 interface GoalPlanPageProps {
@@ -82,10 +84,12 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const planChat = data?.planChat ?? [];
   const progress = data?.progress ?? { total: 0, completed: 0, percent: 0 };
   const paceMismatch = data?.paceMismatch ?? null;
+  const overloadAdvisory = data?.overloadAdvisory ?? null;
 
   // ── Ephemeral UI state ──
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [rescheduleDismissed, setRescheduleDismissed] = useState(false);
+  const [overloadDismissed, setOverloadDismissed] = useState(false);
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
@@ -98,6 +102,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const toggleChat = useStore((s) => s.toggleChat);
   const setChatOpen = useStore((s) => s.setChatOpen);
   const isChatOpen = useStore((s) => s.isChatOpen);
+  const setPendingChatMessage = useStore((s) => s.setPendingChatMessage);
 
   // Ref-gated expansion: set to true on mount, goal change, or reschedule.
   // When plan data arrives and the flag is true, expand unlocked weeks and
@@ -481,6 +486,47 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
             Refine plan in Chat
           </button>
         </div>
+
+        {/* Overload advisor — too many goals for daily capacity */}
+        {overloadAdvisory && !overloadDismissed && goal?.planConfirmed && (
+          <div className="gp-overload-advisor animate-slide-up">
+            <div className="gp-overload-content">
+              <TrendingDown size={16} />
+              <div>
+                <strong>Schedule overloaded</strong>
+                <p>
+                  You have {overloadAdvisory.totalActiveGoals} active goals but
+                  can only complete ~{Math.round(overloadAdvisory.suggestedTasksPerDay * overloadAdvisory.totalActiveGoals)} tasks/day.
+                  I suggest adjusting this goal to {overloadAdvisory.suggestedFreqLabel}
+                  {overloadAdvisory.suggestedTargetDate && overloadAdvisory.currentTargetDate
+                    ? `, extending the deadline to ${overloadAdvisory.suggestedTargetDate}`
+                    : ""}.
+                </p>
+              </div>
+            </div>
+            <div className="gp-overload-actions">
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setPendingChatMessage(
+                    `My schedule is overloaded with ${overloadAdvisory.totalActiveGoals} active goals. ` +
+                    `I'd like to adjust this goal's pace and extend the timeline to fit my actual capacity.`
+                  );
+                  setChatOpen(true);
+                }}
+              >
+                <MessageCircle size={13} />
+                Chat to Adjust
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setOverloadDismissed(true)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Reschedule banner — too many incomplete tasks */}
         {showRescheduleBanner && (

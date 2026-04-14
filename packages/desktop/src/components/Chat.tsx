@@ -68,6 +68,7 @@ function stripJsonEnvelope(text: string): string {
 interface GoalPlanViewModel {
   planChat: GoalPlanMessage[];
   plan: GoalPlan | null;
+  overloadAdvisory: import("@northstar/core").OverloadAdvisory | null;
 }
 
 interface ChatContext {
@@ -81,6 +82,7 @@ interface ChatContext {
   description?: string;
   weeklyReviewDue?: boolean;
   activeGoals?: Array<Record<string, unknown>>;
+  overloadAdvisory?: import("@northstar/core").OverloadAdvisory | null;
 }
 
 interface DashboardView {
@@ -109,6 +111,8 @@ export default function Chat() {
   const setChatOpen = useStore((s) => s.setChatOpen);
   const setView = useStore((s) => s.setView);
   const currentView = useStore((s) => s.currentView);
+  const pendingChatMessage = useStore((s) => s.pendingChatMessage);
+  const setPendingChatMessage = useStore((s) => s.setPendingChatMessage);
 
   const { data: dashData } = useQuery<DashboardView>("view:dashboard");
   const { run: runCommand } = useCommand();
@@ -221,10 +225,14 @@ export default function Chat() {
       if (freshPlan) {
         ctx.selectedGoalPlan = freshPlan as unknown as Record<string, unknown>;
       }
+      // Pass overload advisory so the AI can discuss schedule adjustments
+      if (goalPlanData?.overloadAdvisory) {
+        ctx.overloadAdvisory = goalPlanData.overloadAdvisory;
+      }
     }
 
     return ctx;
-  }, [currentView, dashData?.activeGoals, goalPlanData?.plan]);
+  }, [currentView, dashData?.activeGoals, goalPlanData?.plan, goalPlanData?.overloadAdvisory]);
 
   const sendMessageText = useCallback(async (text: string) => {
     if (!text || isStreaming) return;
@@ -421,6 +429,17 @@ export default function Chat() {
       void sendMessageText(`Help me plan my goal: "${context.goalTitle}"`);
     }
   }, [isOpen, isStreaming, context, messages.length, sendMessageText]);
+
+  // Consume a pending chat message set by another component (e.g.,
+  // GoalPlanPage's "Chat to Adjust" overload button). Fire once the
+  // panel is open and we're not already streaming.
+  useEffect(() => {
+    if (isOpen && !isStreaming && pendingChatMessage) {
+      const msg = pendingChatMessage;
+      setPendingChatMessage(null);
+      void sendMessageText(msg);
+    }
+  }, [isOpen, isStreaming, pendingChatMessage, setPendingChatMessage, sendMessageText]);
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

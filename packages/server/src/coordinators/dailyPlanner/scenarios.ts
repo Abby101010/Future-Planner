@@ -458,7 +458,7 @@ async function scenarioPoolIntegration(
 async function scenarioBonusSuggest(
   ctx: ScenarioContext,
 ): Promise<ScenarioResult> {
-  const { today } = ctx;
+  const { today, goals } = ctx;
 
   // Find goal plan tasks for today not yet in daily_tasks
   const goalPlanTasks = await repos.goalPlan.listTasksForDateRange(today, today);
@@ -469,25 +469,86 @@ async function scenarioBonusSuggest(
       .filter(Boolean),
   );
 
-  const bonusSuggestions = goalPlanTasks
-    .filter((gpt) => !existingPlanNodeIds.has(gpt.id) && !gpt.completed)
-    .map((gpt) => ({
-      id: gpt.id,
-      title: gpt.title,
-      description: gpt.description,
-      durationMinutes: gpt.durationMinutes,
-      cognitiveWeight: 3,
-      priority: gpt.priority,
-      category: gpt.category,
-      whyToday: `Scheduled in goal plan for ${today}`,
-      goalId: gpt.goalId,
-      planNodeId: gpt.id,
-    }));
+  const candidates = goalPlanTasks
+    .filter((gpt) => !existingPlanNodeIds.has(gpt.id) && !gpt.completed);
+
+  if (candidates.length === 0) {
+    return { ok: true, scenario: "bonus-suggest", bonusSuggestions: [], date: today };
+  }
+
+  // Compute remaining cognitive budget from active (non-completed, non-skipped) tasks
+  const activeTasks = existingTasks.filter(
+    (t) => !t.completed && !t.payload?.skipped,
+  );
+  const currentWeight = activeTasks.reduce(
+    (s, t) => s + ((t.payload?.cognitiveWeight as number) ?? 3), 0,
+  );
+  const currentCount = activeTasks.length;
+  const maxWeight = ctx.effectiveMaxWeight;
+  const maxTasks = ctx.effectiveMaxTasks;
+  const remainingWeight = Math.max(0, maxWeight - currentWeight);
+  const remainingSlots = Math.max(0, maxTasks - currentCount);
+
+  // Auto-insert tasks that fit within the remaining budget
+  const goalMap = new Map(goals.map((g) => [g.id, g.title]));
+  let usedWeight = 0;
+  let usedSlots = 0;
+  let orderIdx = existingTasks.length;
+  let autoInserted = 0;
+  const bonusSuggestions: Array<Record<string, unknown>> = [];
+
+  for (const gpt of candidates) {
+    const minutes = gpt.durationMinutes ?? 30;
+    const priority = gpt.priority || "should-do";
+    const goalImportance = gpt.goalImportance ?? "medium";
+    const weight = computeCognitiveWeight(goalImportance, minutes, priority);
+
+    if (usedSlots < remainingSlots && usedWeight + weight <= remainingWeight) {
+      // Auto-insert — fits within budget
+      const taskId = crypto.randomUUID();
+      await repos.dailyTasks.insert({
+        id: taskId,
+        date: today,
+        goalId: gpt.goalId,
+        planNodeId: gpt.id,
+        title: gpt.title,
+        completed: false,
+        orderIndex: orderIdx++,
+        source: "big_goal" as TaskSource,
+        payload: {
+          description: gpt.description || "",
+          durationMinutes: minutes,
+          cognitiveWeight: weight,
+          priority,
+          category: gpt.category || "planning",
+          whyToday: `Scheduled in goal plan for ${today}`,
+        },
+      });
+      usedWeight += weight;
+      usedSlots++;
+      autoInserted++;
+    } else {
+      // Over budget — suggest instead
+      bonusSuggestions.push({
+        id: gpt.id,
+        title: gpt.title,
+        description: gpt.description,
+        durationMinutes: minutes,
+        cognitiveWeight: weight,
+        priority,
+        category: gpt.category,
+        whyToday: `Scheduled in goal plan for ${today}`,
+        goalId: gpt.goalId,
+        planNodeId: gpt.id,
+      });
+    }
+  }
 
   return {
     ok: true,
     scenario: "bonus-suggest",
-    bonusSuggestions,
+    taskCount: autoInserted,
+    bonusSuggestions: bonusSuggestions.length ? bonusSuggestions : undefined,
     date: today,
   };
 }

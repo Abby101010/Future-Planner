@@ -122,6 +122,97 @@ export async function patchNodePayload(
   );
 }
 
+/**
+ * Move a task node to a different day in the plan tree. Finds or creates
+ * a day node for `targetDate` under the appropriate week, then reparents
+ * the task node. Used when a daily_task with a plan_node_id is rescheduled
+ * so the GoalPlanPage timeline reflects the move.
+ */
+export async function moveTaskToDate(
+  taskNodeId: string,
+  goalId: string,
+  targetDate: string,
+): Promise<void> {
+  const userId = requireUserId();
+
+  // 1. Load the task node to find its current parent (day node)
+  const taskNode = await getNode(taskNodeId);
+  if (!taskNode || taskNode.nodeType !== "task") return;
+
+  const currentDayId = taskNode.parentId;
+  if (!currentDayId) return;
+
+  // 2. Check if the current day already matches the target date
+  const currentDay = await getNode(currentDayId);
+  if (currentDay && currentDay.title === targetDate) return;
+  if (currentDay && (currentDay.payload as Record<string, unknown>)?.label === targetDate) return;
+
+  // 3. Look for an existing day node with this date in the same goal
+  const existingDays = await query<GoalPlanNodeRow>(
+    `select * from goal_plan_nodes
+      where user_id = $1 and goal_id = $2 and node_type = 'day'
+        and (title = $3 or payload->>'label' = $3)
+      limit 1`,
+    [userId, goalId, targetDate],
+  );
+
+  let targetDayId: string;
+
+  if (existingDays.length > 0) {
+    targetDayId = existingDays[0].id;
+  } else {
+    // 4. No existing day node — find the correct week to parent it under.
+    //    Look for a week whose date range contains targetDate, or the
+    //    closest future week. Fall back to creating under the same week
+    //    as the current day.
+    const weekId = currentDay?.parentId ?? null;
+    targetDayId = `day-${Math.random().toString(16).slice(2, 10)}`;
+
+    // Count existing days in the target week for order_index
+    const siblingCount = weekId
+      ? (await query<{ cnt: string }>(
+          `select count(*) as cnt from goal_plan_nodes
+            where user_id = $1 and goal_id = $2 and parent_id = $3 and node_type = 'day'`,
+          [userId, goalId, weekId],
+        ))[0]?.cnt ?? "0"
+      : "0";
+
+    await query(
+      `insert into goal_plan_nodes (
+         id, user_id, goal_id, parent_id, node_type, title, description,
+         start_date, end_date, order_index, payload, updated_at
+       ) values ($1, $2, $3, $4, 'day', $5, '', $5, $5, $6, $7::jsonb, now())`,
+      [
+        targetDayId,
+        userId,
+        goalId,
+        weekId,
+        targetDate,
+        parseInt(siblingCount, 10),
+        JSON.stringify({ label: targetDate }),
+      ],
+    );
+  }
+
+  // 5. Reparent the task node to the target day
+  //    Also get the new order_index (append to end)
+  const taskSiblings = await query<{ cnt: string }>(
+    `select count(*) as cnt from goal_plan_nodes
+      where user_id = $1 and goal_id = $2 and parent_id = $3 and node_type = 'task'`,
+    [userId, goalId, targetDayId],
+  );
+  const newOrder = parseInt(taskSiblings[0]?.cnt ?? "0", 10);
+
+  await query(
+    `update goal_plan_nodes
+        set parent_id = $3,
+            order_index = $4,
+            updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, taskNodeId, targetDayId, newOrder],
+  );
+}
+
 /** Bulk upsert a set of nodes for a single goal. Callers are responsible for
  *  computing parent/child relationships — this function does not mutate the
  *  shape, it just persists it row-by-row in one implicit batch. */

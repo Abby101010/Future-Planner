@@ -44,6 +44,10 @@ interface StoreApi {
   setChatOpen: (open: boolean) => void;
   toggleChat: () => void;
 
+  /** Pre-seeded message to auto-send when the chat panel opens. */
+  pendingChatMessage: string | null;
+  setPendingChatMessage: (msg: string | null) => void;
+
   /** Whether the sidebar is collapsed (icons only). */
   isSidebarCollapsed: boolean;
   toggleSidebar: () => void;
@@ -65,6 +69,9 @@ const useStore = create<StoreApi>((set) => ({
   isChatOpen: false,
   setChatOpen: (open) => set({ isChatOpen: open }),
   toggleChat: () => set((s) => ({ isChatOpen: !s.isChatOpen })),
+
+  pendingChatMessage: null,
+  setPendingChatMessage: (msg) => set({ pendingChatMessage: msg }),
 
   isSidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),

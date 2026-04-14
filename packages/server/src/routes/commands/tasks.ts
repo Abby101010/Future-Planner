@@ -781,6 +781,15 @@ export async function cmdRescheduleTask(
     },
   });
 
+  // Sync the goal plan tree so GoalPlanPage timeline reflects the move
+  if (task.planNodeId && task.goalId) {
+    try {
+      await repos.goalPlan.moveTaskToDate(task.planNodeId, task.goalId, targetDate);
+    } catch (err) {
+      console.warn("[reschedule-task] plan node sync failed:", err);
+    }
+  }
+
   return { ok: true, taskId, from: originalDate, to: targetDate };
 }
 

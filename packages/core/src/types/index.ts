@@ -710,6 +710,22 @@ export interface ChatSession {
   updatedAt: string;
 }
 
+/** Advisory for a single goal when the user's total active goals exceed
+ *  their daily capacity. Suggests reducing frequency and extending the
+ *  target date so the combined load fits the user's real pace. */
+export interface OverloadAdvisory {
+  goalId: string;
+  goalTitle: string;
+  goalImportance: string;
+  currentTasksPerDay: number;
+  suggestedTasksPerDay: number;
+  suggestedFreqLabel: string;
+  currentTargetDate: string | null;
+  suggestedTargetDate: string;
+  remainingTasks: number;
+  totalActiveGoals: number;
+}
+
 /** Pace mismatch detected between a goal plan's assumed pace and the user's
  *  actual completion rate. Used by PaceBanner and GoalPlanPage. */
 export interface PaceMismatch {

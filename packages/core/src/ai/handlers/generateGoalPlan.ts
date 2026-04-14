@@ -46,7 +46,7 @@ Do NOT ignore this data. If research says something takes 6 months, don't plan f
 
   const response = await client.messages.create({
     model: getModelForTask("generate-goal-plan"),
-    max_tokens: 8192,
+    max_tokens: 16384,
     system: personalizeSystem(
       `${GENERATE_GOAL_PLAN_SYSTEM}\n\nGOAL CONTEXT:\n${goalContext}${researchBlock}`,
       memoryContext,

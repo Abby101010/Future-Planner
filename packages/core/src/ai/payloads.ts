@@ -98,6 +98,7 @@ export interface UnifiedChatPayload extends EnrichedPayload {
     weeklyReviewDue?: boolean;
     activeGoals?: LooseRow[];
     activeReminders?: LooseRow[];
+    overloadAdvisory?: LooseRow | null;
   };
   goals?: LooseRow[];
   todayTasks?: LooseRow[];

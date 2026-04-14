@@ -22,7 +22,7 @@ import type {
 } from "@northstar/core";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import { hydrateDailyLog, nudgeToContextual } from "./_mappers";
-import { detectPaceMismatches, type PaceMismatch } from "../services/paceDetection";
+import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type OverloadAdvisory } from "../services/paceDetection";
 import { loadMemory, computeCapacityProfile } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
 
@@ -106,6 +106,8 @@ export interface TasksView {
   allTasksCompleted: boolean;
   /** Goals with too many overdue tasks — triggers the overload banner. */
   overloadedGoals: OverloadedGoalSummary[];
+  /** Cross-goal overload advisories when goals exceed daily capacity. */
+  overloadAdvisories: OverloadAdvisory[];
   /** True when the user has at least one active goal. */
   hasGoals: boolean;
   /** True when today already has a plan (log exists with tasks). */
@@ -521,6 +523,7 @@ export async function resolveTasksView(): Promise<TasksView> {
 
   // Pace mismatch detection: compare user's actual task rate against plan assumptions
   let paceMismatches: PaceMismatch[] = [];
+  let overloadAdvisories: OverloadAdvisory[] = [];
   try {
     const userId = getCurrentUserId();
     const [memory, userProfile] = await Promise.all([loadMemory(userId), repos.users.get()]);
@@ -530,6 +533,12 @@ export async function resolveTasksView(): Promise<TasksView> {
     }));
     const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay(), undefined, userProfile?.weeklyAvailability);
     paceMismatches = detectPaceMismatches(goals, capacity.avgTasksCompletedPerDay, today);
+
+    // Cross-goal overload detection
+    overloadAdvisories = detectCrossGoalOverload(
+      goals, capacity.avgTasksCompletedPerDay,
+      capacity.maxDailyTasks ?? 5, today,
+    );
 
     // Insert pace_warning nudges for severe mismatches (deduped per goal per week)
     const weekNum = Math.floor(new Date(today + "T00:00:00").getTime() / (7 * 86400000));
@@ -705,6 +714,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     weeklyReviewDue,
     allTasksCompleted,
     overloadedGoals,
+    overloadAdvisories,
     hasGoals: activeGoals.length > 0,
     hasTodayPlan: todayLog !== null && (todayLog.tasks?.length ?? 0) > 0,
     pooledTaskCount,

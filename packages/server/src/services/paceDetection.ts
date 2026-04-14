@@ -2,6 +2,22 @@ import type { Goal, GoalPlan, GoalPlanTask, GoalPlanYear, PaceMismatch } from "@
 
 export type { PaceMismatch };
 
+/** Advisory for a single goal when the user's total active goals exceed
+ *  their daily capacity. Suggests reducing frequency and extending the
+ *  target date so the combined load fits the user's real pace. */
+export interface OverloadAdvisory {
+  goalId: string;
+  goalTitle: string;
+  goalImportance: string;
+  currentTasksPerDay: number;
+  suggestedTasksPerDay: number;
+  suggestedFreqLabel: string;
+  currentTargetDate: string | null;
+  suggestedTargetDate: string;
+  remainingTasks: number;
+  totalActiveGoals: number;
+}
+
 export interface PlanSplit {
   pastPlan: GoalPlan;
   futurePlan: GoalPlan;
@@ -189,4 +205,92 @@ export function detectPaceMismatches(
     const sev = { severe: 0, moderate: 1, mild: 2 };
     return sev[a.severity] - sev[b.severity];
   });
+}
+
+// ── Cross-goal overload detection ─────────────────────────
+
+const IMPORTANCE_WEIGHT: Record<string, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+function freqLabel(tasksPerWeek: number): string {
+  if (tasksPerWeek >= 6) return "daily";
+  if (tasksPerWeek >= 4) return "5x/week";
+  if (tasksPerWeek >= 3) return "3-4x/week";
+  return "1-2x/week";
+}
+
+/**
+ * Detect when the user has more active big goals than their daily capacity
+ * can serve. Returns per-goal advisories suggesting reduced frequency and
+ * extended target dates so the total planned load fits the user's real pace.
+ */
+export function detectCrossGoalOverload(
+  goals: Goal[],
+  avgTasksCompletedPerDay: number,
+  maxDailyTasks: number,
+  today: string,
+): OverloadAdvisory[] {
+  const activeGoals = goals.filter(
+    (g) =>
+      (g.goalType === "big" || ((!g.goalType) && g.scope === "big")) &&
+      g.planConfirmed &&
+      g.plan &&
+      Array.isArray(g.plan.years) &&
+      g.status !== "archived" &&
+      g.status !== "completed",
+  );
+
+  // No overload if goals fit within daily capacity
+  if (activeGoals.length <= maxDailyTasks) return [];
+  // Need completion history to detect
+  if (avgTasksCompletedPerDay <= 0) return [];
+
+  const totalWeight = activeGoals.reduce(
+    (s, g) => s + (IMPORTANCE_WEIGHT[g.importance ?? "medium"] ?? 2),
+    0,
+  );
+
+  const advisories: OverloadAdvisory[] = [];
+
+  for (const g of activeGoals) {
+    const stats = countPlanStats(g.plan!);
+    const remaining = stats.total - stats.completed;
+    if (remaining <= 0) continue;
+
+    const weight = IMPORTANCE_WEIGHT[g.importance ?? "medium"] ?? 2;
+    const fairSharePerDay = (weight / totalWeight) * avgTasksCompletedPerDay;
+    const fairSharePerWeek = fairSharePerDay * 7;
+
+    // Compute suggested target date from remaining tasks at fair-share pace
+    const daysNeeded = Math.ceil(remaining / Math.max(fairSharePerDay, 0.05));
+    const suggestedDate = new Date(today + "T00:00:00");
+    suggestedDate.setDate(suggestedDate.getDate() + daysNeeded);
+    const suggestedTargetDate = suggestedDate.toISOString().split("T")[0];
+
+    // Only advise if the goal would need an extension (or has no target date)
+    const currentTarget = g.targetDate || null;
+    if (currentTarget && suggestedTargetDate <= currentTarget) continue;
+
+    advisories.push({
+      goalId: g.id,
+      goalTitle: g.title,
+      goalImportance: g.importance ?? "medium",
+      currentTasksPerDay: Math.round(stats.planTasksPerDay * 10) / 10,
+      suggestedTasksPerDay: Math.round(fairSharePerDay * 100) / 100,
+      suggestedFreqLabel: freqLabel(fairSharePerWeek),
+      currentTargetDate: currentTarget,
+      suggestedTargetDate,
+      remainingTasks: remaining,
+      totalActiveGoals: activeGoals.length,
+    });
+  }
+
+  // Sort by importance (lowest first — most likely to need reduction)
+  return advisories.sort(
+    (a, b) => (IMPORTANCE_WEIGHT[a.goalImportance] ?? 2) - (IMPORTANCE_WEIGHT[b.goalImportance] ?? 2),
+  );
 }

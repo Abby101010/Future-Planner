@@ -166,6 +166,8 @@ export default function TasksPage() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [generatingBonus, setGeneratingBonus] = useState(false);
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+  const [skipConfirmTaskId, setSkipConfirmTaskId] = useState<string | null>(null);
+  const [skipCustomDate, setSkipCustomDate] = useState("");
   const [cantCompleteTask, setCantCompleteTask] = useState<{
     id: string;
     title: string;
@@ -292,9 +294,97 @@ export default function TasksPage() {
     refetch();
   };
 
-  const handleSkipTask = async (taskId: string) => {
+  const handleSkipTask = (taskId: string) => {
+    setSkipConfirmTaskId(taskId);
+    // Default the custom date picker to tomorrow
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    setSkipCustomDate(d.toISOString().split("T")[0]);
+  };
+
+  const handleSkipMove = async (taskId: string, targetDate: string) => {
+    setSkipConfirmTaskId(null);
+    try {
+      const res = await run<{
+        ok: boolean;
+        budgetExceeded?: boolean;
+        swapSuggestion?: { id: string; title: string; cognitiveWeight: number };
+      }>("command:reschedule-task", { taskId, targetDate });
+      if (res?.budgetExceeded && res.swapSuggestion) {
+        const swap = res.swapSuggestion;
+        if (window.confirm(
+          `Moving to ${targetDate} would exceed that day's capacity.\n\nSwap out "${swap.title}" (${swap.cognitiveWeight} pts) to make room?`,
+        )) {
+          await run("command:delete-task", { taskId: swap.id });
+          await run("command:reschedule-task", { taskId, targetDate, force: true });
+        }
+      }
+    } catch { /* best-effort */ }
+    refetch();
+  };
+
+  const handleSkipDrop = async (taskId: string) => {
+    setSkipConfirmTaskId(null);
     await run("command:skip-task", { taskId });
     refetch();
+  };
+
+  // Compute tomorrow's date for skip suggestion
+  const tomorrowDate = (() => {
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  })();
+  const tomorrowLabel = (() => {
+    const d = new Date(tomorrowDate + "T12:00:00");
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  })();
+
+  const renderSkipConfirm = (taskId: string) => {
+    if (skipConfirmTaskId !== taskId) return null;
+    return (
+      <div className="skip-confirm-row animate-slide-up">
+        <span className="skip-confirm-label">Reschedule this task?</span>
+        <div className="skip-confirm-actions">
+          <button
+            className="btn btn-primary btn-xs"
+            onClick={() => handleSkipMove(taskId, tomorrowDate)}
+          >
+            <CalendarDays size={12} />
+            Move to {tomorrowLabel}
+          </button>
+          <div className="skip-confirm-custom">
+            <input
+              type="date"
+              value={skipCustomDate}
+              min={tomorrowDate}
+              onChange={(e) => setSkipCustomDate(e.target.value)}
+              className="skip-date-input"
+            />
+            <button
+              className="btn btn-ghost btn-xs"
+              onClick={() => handleSkipMove(taskId, skipCustomDate)}
+              disabled={!skipCustomDate || skipCustomDate <= today}
+            >
+              Move
+            </button>
+          </div>
+          <button
+            className="btn btn-ghost btn-xs skip-drop-btn"
+            onClick={() => handleSkipDrop(taskId)}
+          >
+            Just skip
+          </button>
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={() => setSkipConfirmTaskId(null)}
+            title="Cancel"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const handleCantComplete = (task: DailyTask) => {
@@ -364,18 +454,20 @@ export default function TasksPage() {
   const goalTasks = allTodayTasks.filter(
     (t) => t.goalId || t.planNodeId,
   );
-  // Calendar-sourced: category hint or progressContribution mentions calendar
+  // Calendar-sourced: category hint or progressContribution mentions calendar.
+  const isCalendarSourced = (t: DailyTask) =>
+    !t.goalId &&
+    !t.planNodeId &&
+    (t.progressContribution?.toLowerCase().includes("calendar") ||
+      t.whyToday?.toLowerCase().includes("calendar"));
+  // Exclude skipped calendar tasks — if the event was canceled the task is dead.
   const calendarTasks = allTodayTasks.filter(
-    (t) =>
-      !t.goalId &&
-      !t.planNodeId &&
-      (t.progressContribution?.toLowerCase().includes("calendar") ||
-        t.whyToday?.toLowerCase().includes("calendar")),
+    (t) => isCalendarSourced(t) && !t.skipped,
   );
-  // Everything else = general tasks
+  // Everything else = general tasks (also exclude skipped calendar tasks entirely)
   const generalTasks = allTodayTasks.filter(
     (t) =>
-      !goalTasks.includes(t) && !calendarTasks.includes(t),
+      !goalTasks.includes(t) && !calendarTasks.includes(t) && !isCalendarSourced(t),
   );
 
   // Find the goal title for a goalId
@@ -878,23 +970,25 @@ export default function TasksPage() {
               </div>
               <div className="tasks-list">
                 {goalTasks.map((task, i) => (
-                  <TaskCard
-                    key={`goal-${task.id}-${i}`}
-                    task={task}
-                    isOneThing={
-                      task.id ===
-                      (todayLog as unknown as { one_thing?: string })?.one_thing
-                    }
-                    onToggle={() => handleToggleTask(task.id)}
-                    onSkip={() => handleSkipTask(task.id)}
-                    onCantComplete={() => handleCantComplete(task)}
-                    onDelete={() => handleDeleteTask(task.id)}
-                    selected={selectedIds.has(task.id)}
-                    onToggleSelect={() => toggleSelectTask(task.id)}
-                    selectMode={selectMode}
-                    index={i}
-                    sourceBadge={goalTitleFor(task.goalId)}
-                  />
+                  <div key={`goal-${task.id}-${i}`}>
+                    <TaskCard
+                      task={task}
+                      isOneThing={
+                        task.id ===
+                        (todayLog as unknown as { one_thing?: string })?.one_thing
+                      }
+                      onToggle={() => handleToggleTask(task.id)}
+                      onSkip={() => handleSkipTask(task.id)}
+                      onCantComplete={() => handleCantComplete(task)}
+                      onDelete={() => handleDeleteTask(task.id)}
+                      selected={selectedIds.has(task.id)}
+                      onToggleSelect={() => toggleSelectTask(task.id)}
+                      selectMode={selectMode}
+                      index={i}
+                      sourceBadge={goalTitleFor(task.goalId)}
+                    />
+                    {renderSkipConfirm(task.id)}
+                  </div>
                 ))}
               </div>
             </>
@@ -939,19 +1033,21 @@ export default function TasksPage() {
               </div>
               <div className="tasks-list">
                 {calendarTasks.map((task, i) => (
-                  <TaskCard
-                    key={`cal-${task.id}-${i}`}
-                    task={task}
-                    isOneThing={false}
-                    onToggle={() => handleToggleTask(task.id)}
-                    onSkip={() => handleSkipTask(task.id)}
-                    onCantComplete={() => handleCantComplete(task)}
-                    onDelete={() => handleDeleteTask(task.id)}
-                    selected={selectedIds.has(task.id)}
-                    onToggleSelect={() => toggleSelectTask(task.id)}
-                    selectMode={selectMode}
-                    index={i}
-                  />
+                  <div key={`cal-${task.id}-${i}`}>
+                    <TaskCard
+                      task={task}
+                      isOneThing={false}
+                      onToggle={() => handleToggleTask(task.id)}
+                      onSkip={() => handleSkipTask(task.id)}
+                      onCantComplete={() => handleCantComplete(task)}
+                      onDelete={() => handleDeleteTask(task.id)}
+                      selected={selectedIds.has(task.id)}
+                      onToggleSelect={() => toggleSelectTask(task.id)}
+                      selectMode={selectMode}
+                      index={i}
+                    />
+                    {renderSkipConfirm(task.id)}
+                  </div>
                 ))}
               </div>
             </>
@@ -965,22 +1061,24 @@ export default function TasksPage() {
               </div>
               <div className="tasks-list">
                 {generalTasks.map((task, i) => (
-                  <TaskCard
-                    key={`gen-${task.id}-${i}`}
-                    task={task}
-                    isOneThing={
-                      task.id ===
-                      (todayLog as unknown as { one_thing?: string })?.one_thing
-                    }
-                    onToggle={() => handleToggleTask(task.id)}
-                    onSkip={() => handleSkipTask(task.id)}
-                    onCantComplete={() => handleCantComplete(task)}
-                    onDelete={() => handleDeleteTask(task.id)}
-                    selected={selectedIds.has(task.id)}
-                    onToggleSelect={() => toggleSelectTask(task.id)}
-                    selectMode={selectMode}
-                    index={i}
-                  />
+                  <div key={`gen-${task.id}-${i}`}>
+                    <TaskCard
+                      task={task}
+                      isOneThing={
+                        task.id ===
+                        (todayLog as unknown as { one_thing?: string })?.one_thing
+                      }
+                      onToggle={() => handleToggleTask(task.id)}
+                      onSkip={() => handleSkipTask(task.id)}
+                      onCantComplete={() => handleCantComplete(task)}
+                      onDelete={() => handleDeleteTask(task.id)}
+                      selected={selectedIds.has(task.id)}
+                      onToggleSelect={() => toggleSelectTask(task.id)}
+                      selectMode={selectMode}
+                      index={i}
+                    />
+                    {renderSkipConfirm(task.id)}
+                  </div>
                 ))}
               </div>
             </>

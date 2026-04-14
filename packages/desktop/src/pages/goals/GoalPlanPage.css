@@ -868,6 +868,51 @@
   gap: 2px;
 }
 
+/* ── Overload Advisor ── */
+
+.gp-overload-advisor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  border-radius: var(--radius-lg);
+}
+
+.gp-overload-content {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  flex: 1;
+}
+
+.gp-overload-content svg {
+  color: #f97316;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.gp-overload-content strong {
+  font-size: 13px;
+  color: var(--text-primary);
+  display: block;
+}
+
+.gp-overload-content p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}
+
+.gp-overload-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
 /* ── Reschedule Banner ── */
 
 .gp-reschedule-banner {
