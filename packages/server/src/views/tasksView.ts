@@ -319,9 +319,11 @@ function computeTodayProgress(
   pendingGoalTasks: PendingGoalTask[],
 ): TodayProgressSummary {
   const logTasks = todayLog?.tasks ?? [];
+  // Exclude skipped tasks — they don't count toward today's progress
+  const activeTasks = logTasks.filter((t) => !t.skipped);
   const pendingCompleted = pendingGoalTasks.filter((t) => t.completed).length;
-  const completed = logTasks.filter((t) => t.completed).length + pendingCompleted;
-  const total = logTasks.length + pendingGoalTasks.length;
+  const completed = activeTasks.filter((t) => t.completed).length + pendingCompleted;
+  const total = activeTasks.length + pendingGoalTasks.length;
   const ratePercent = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0;
   return { completed, total, ratePercent };
 }
