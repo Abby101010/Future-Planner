@@ -406,6 +406,15 @@ export async function resolveTasksView(): Promise<TasksView> {
   const todayDom = new Date(today + "T00:00:00").getDate();
   const todayReminders = activeReminders
     .filter((r) => {
+      // For repeating reminders, hide if already acknowledged today.
+      // They'll reappear on the next applicable day.
+      if (r.repeat && r.acknowledged && r.acknowledgedAt) {
+        const ackDate = new Date(r.acknowledgedAt).toISOString().slice(0, 10);
+        if (ackDate === today) return false;
+      }
+      // One-time reminders: hide if already acknowledged.
+      if (!r.repeat && r.acknowledged) return false;
+
       if (r.date === today) return true;
       if (r.repeat === "daily") return true;
       if (r.repeat === "weekly") {
