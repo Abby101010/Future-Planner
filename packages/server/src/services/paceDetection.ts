@@ -115,23 +115,6 @@ function countPlanStats(plan: GoalPlan) {
   return { total, completed, totalDays, planTasksPerDay };
 }
 
-function countOverdue(plan: GoalPlan, today: string): number {
-  let overdue = 0;
-  for (const yr of plan.years ?? []) {
-    for (const mo of yr.months) {
-      for (const wk of mo.weeks) {
-        if (!wk.locked) continue;
-        for (const dy of wk.days) {
-          for (const tk of dy.tasks) {
-            if (!tk.completed) overdue++;
-          }
-        }
-      }
-    }
-  }
-  return overdue;
-}
-
 export function detectPaceMismatches(
   goals: Goal[],
   avgTasksCompletedPerDay: number,
@@ -148,7 +131,6 @@ export function detectPaceMismatches(
     const stats = countPlanStats(g.plan);
     if (stats.total === 0) continue;
 
-    const overdue = countOverdue(g.plan, today);
     const remaining = stats.total - stats.completed;
     if (remaining === 0) continue;
 
@@ -169,18 +151,15 @@ export function detectPaceMismatches(
       severity = "severe";
     } else if (requiredTasksPerDay > actualPace * 1.2 || estimatedDelayDays > 7) {
       severity = "moderate";
-    } else if (overdue > 3) {
-      severity = "moderate";
     }
 
-    if (severity === "mild" && overdue <= 2) continue;
+    if (severity === "mild") continue;
 
     mismatches.push({
       goalId: g.id,
       goalTitle: g.title,
       planTasksPerDay: Math.round(stats.planTasksPerDay * 10) / 10,
       actualTasksPerDay: Math.round(actualPace * 10) / 10,
-      overdueTasks: overdue,
       totalPlanTasks: stats.total,
       completedPlanTasks: stats.completed,
       remainingTasks: remaining,

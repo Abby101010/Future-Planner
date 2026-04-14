@@ -34,6 +34,7 @@ export function flattenDailyTask(r: DailyTaskRecord, date?: string): DailyTask {
     actualMinutes: p.actualMinutes as number | undefined,
     snoozedCount: p.snoozedCount as number | undefined,
     skipped: p.skipped as boolean | undefined,
+    source: r.source,
     goalId: r.goalId ?? null,
     planNodeId: r.planNodeId ?? null,
     // Calendar-unified fields

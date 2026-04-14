@@ -32,12 +32,19 @@ import { dispatchChatIntent } from "../utils/dispatchChatIntent";
 import { PendingGoalCard } from "../pages/dashboard/PendingCards";
 import type {
   HomeChatMessage,
+  GoalPlanMessage,
   Goal,
+  GoalPlan,
   DailyTask,
   Reminder,
   CommandKind,
 } from "@northstar/core";
 import "./Chat.css";
+
+interface GoalPlanViewModel {
+  planChat: GoalPlanMessage[];
+  plan: GoalPlan | null;
+}
 
 interface ChatContext {
   currentPage: string;
@@ -82,6 +89,18 @@ export default function Chat() {
   const { data: dashData } = useQuery<DashboardView>("view:dashboard");
   const { run: runCommand } = useCommand();
 
+  // Derive goalId early — needed for the goal-plan query below.
+  const goalPlanGoalId = currentView.startsWith("goal-plan-")
+    ? currentView.replace("goal-plan-", "")
+    : undefined;
+
+  // Query goal-specific planChat when on a goal-plan page.
+  const { data: goalPlanData } = useQuery<GoalPlanViewModel>(
+    "view:goal-plan",
+    goalPlanGoalId ? { goalId: goalPlanGoalId } : undefined,
+    { enabled: !!goalPlanGoalId },
+  );
+
   const [messages, setMessages] = useState<HomeChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -103,12 +122,39 @@ export default function Chat() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Sync messages from server on load
+  // Track chat context to detect switches between goal-plan and home.
+  const chatContextKey = goalPlanGoalId ?? "home";
+  const prevChatContextRef = useRef(chatContextKey);
+
+  // Reset messages when switching between contexts (goal ↔ home ↔ different goal).
   useEffect(() => {
-    if (dashData?.homeChatMessages) {
+    if (chatContextKey !== prevChatContextRef.current) {
+      prevChatContextRef.current = chatContextKey;
+      setMessages([]);
+      setStreamingText("");
+    }
+  }, [chatContextKey]);
+
+  // Sync messages from goal planChat when on a goal-plan page.
+  useEffect(() => {
+    if (goalPlanGoalId && goalPlanData?.planChat) {
+      setMessages(
+        goalPlanData.planChat.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+      );
+    }
+  }, [goalPlanGoalId, goalPlanData?.planChat]);
+
+  // Sync messages from home chat when NOT on a goal-plan page.
+  useEffect(() => {
+    if (!goalPlanGoalId && dashData?.homeChatMessages) {
       setMessages(dashData.homeChatMessages);
     }
-  }, [dashData?.homeChatMessages]);
+  }, [goalPlanGoalId, dashData?.homeChatMessages]);
 
   // Auto-scroll on new messages or pending card
   useEffect(() => {
@@ -148,10 +194,8 @@ export default function Chat() {
     return ctx;
   }, [currentView, dashData?.activeGoals]);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text && attachments.length === 0) return;
-    if (isStreaming) return;
+  const sendMessageText = useCallback(async (text: string) => {
+    if (!text || isStreaming) return;
 
     const userMsg: HomeChatMessage = {
       id: `temp-${Date.now()}`,
@@ -160,14 +204,8 @@ export default function Chat() {
       timestamp: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
-    setInput("");
     setIsStreaming(true);
     setStreamingText("");
-
-    // Reset textarea height
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-    }
 
     const goals = dashData?.activeGoals ?? [];
     const todayTasks = dashData?.todayTasks ?? [];
@@ -229,8 +267,6 @@ export default function Chat() {
       // best-effort
     }
 
-    setAttachments([]);
-
     try {
       await postSseStream<StreamResult>("/ai/chat/stream", payload, {
         onDelta: (text) => {
@@ -290,7 +326,36 @@ export default function Chat() {
       setIsStreaming(false);
       setStreamingText("");
     }
-  }, [input, attachments, isStreaming, messages, dashData, context, runCommand]);
+  }, [isStreaming, messages, dashData, context, runCommand]);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text && attachments.length === 0) return;
+    setInput("");
+    setAttachments([]);
+    if (inputRef.current) inputRef.current.style.height = "auto";
+    await sendMessageText(text);
+  }, [input, attachments, sendMessageText]);
+
+  // Auto-start planning conversation when chat opens on a goal-plan page
+  // with no existing plan and no chat history. Sends a single kickoff
+  // message so the AI begins its clarification cycle immediately.
+  const autoSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      isOpen &&
+      !isStreaming &&
+      context.currentPage === "goal-plan" &&
+      context.selectedGoalId &&
+      context.goalTitle &&
+      !context.selectedGoalPlan &&
+      messages.length === 0 &&
+      autoSentRef.current !== context.selectedGoalId
+    ) {
+      autoSentRef.current = context.selectedGoalId;
+      void sendMessageText(`Help me plan my goal: "${context.goalTitle}"`);
+    }
+  }, [isOpen, isStreaming, context, messages.length, sendMessageText]);
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -339,21 +404,23 @@ export default function Chat() {
         <div className="chat-panel-header">
           <span className="chat-panel-title">Chat</span>
           <div className="chat-panel-header-actions">
-            <button
-              className="btn btn-ghost chat-panel-new"
-              onClick={async () => {
-                setMessages([]);
-                await runCommand("command:clear-home-chat" as CommandKind, {});
-              }}
-              title="New chat"
-              disabled={isStreaming}
-            >
-              <Plus size={16} />
-            </button>
+            {!isGoalContext && (
+              <button
+                className="btn btn-ghost chat-panel-new"
+                onClick={async () => {
+                  setMessages([]);
+                  await runCommand("command:clear-home-chat" as CommandKind, {});
+                }}
+                title="New chat"
+                disabled={isStreaming}
+              >
+                <Plus size={16} />
+              </button>
+            )}
             <button
               className="btn btn-ghost chat-panel-close"
               onClick={async () => {
-                if (messages.length > 0) {
+                if (!isGoalContext && messages.length > 0) {
                   setMessages([]);
                   await runCommand("command:clear-home-chat" as CommandKind, {});
                 }
@@ -373,13 +440,7 @@ export default function Chat() {
               </p>
               <button
                 className="chat-goal-context-general-btn"
-                onClick={async () => {
-                  if (messages.length > 0) {
-                    setMessages([]);
-                    await runCommand("command:clear-home-chat" as CommandKind, {});
-                  }
-                  setView("tasks");
-                }}
+                onClick={() => setView("tasks")}
               >
                 General chat <ArrowRight size={12} />
               </button>

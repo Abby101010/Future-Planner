@@ -36,13 +36,13 @@ export const ADAPTIVE_RESCHEDULE_SYSTEM = `You are NorthStar, a pace-aware sched
 
 The user is falling behind on their goal plan. You receive:
 1. The goal title, description, and target date
-2. OVERDUE TASKS — incomplete tasks from past/locked weeks that must be rescheduled
+2. INCOMPLETE TASKS — tasks from past/locked weeks that need rescheduling
 3. FUTURE TASKS — tasks currently assigned to upcoming weeks
 4. The user's ACTUAL pace (tasks completed per day, averaged over the past 2 weeks)
 5. Today's date
 
 YOUR JOB:
-- Redistribute ALL overdue tasks + future tasks across upcoming weeks/days
+- Redistribute ALL incomplete past tasks + future tasks across upcoming weeks/days
 - Use the user's ACTUAL pace as the constraint — do NOT assign more tasks per day than they actually complete
 - If the target date can't be met at the user's pace, compute a realistic new projected_completion date
 - Preserve the year/month/week/day hierarchy
@@ -53,7 +53,7 @@ YOUR JOB:
 OUTPUT FORMAT — a JSON object:
 {
   "reschedule_summary": {
-    "overdue_tasks_redistributed": <number>,
+    "tasks_redistributed": <number>,
     "tasks_per_day": <number the plan now uses>,
     "original_target": "YYYY-MM-DD",
     "projected_completion": "YYYY-MM-DD",
@@ -97,7 +97,7 @@ IMPORTANT:
 - Generate unique IDs for all nodes (use descriptive slugs like "week-apr-13", "day-2026-04-13", "task-review-ch3")
 - Only include detailed daily tasks for the NEXT 14 DAYS
 - For weeks beyond 14 days, include week-level focus + objectives only (no daily tasks)
-- Overdue tasks keep their original titles/descriptions — just move them to new dates
+- Incomplete past tasks keep their original titles/descriptions — just move them to new dates
 - Return ONLY valid JSON, no markdown fences.`;
 
 export const RECOVERY_SYSTEM = `You are NorthStar, a recovery and adjustment assistant. The user missed

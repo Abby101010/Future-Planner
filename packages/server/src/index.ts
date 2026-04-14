@@ -75,7 +75,7 @@ app.use(authMiddleware);
 
 // Timezone middleware — stores the X-Timezone header (IANA timezone
 // string from the client) in AsyncLocalStorage so getEffectiveDate()
-// can compute "today" in the user's local time with a 6 AM boundary.
+// can compute "today" in the user's local time (midnight boundary).
 app.use((req, _res, next) => {
   const tz = req.header("X-Timezone") || "UTC";
   timezoneStore.run(tz, () => next());

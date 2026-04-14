@@ -48,8 +48,6 @@ interface GoalPlanViewModel {
   plan: GoalPlan | null;
   planChat: GoalPlanMessage[];
   progress: GoalPlanProgress;
-  overdueTaskCount: number;
-  needsRescheduling: boolean;
   scheduledTasks: DailyTask[];
   paceMismatch: import("@northstar/core").PaceMismatch | null;
 }
@@ -83,8 +81,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const plan = data?.plan ?? null;
   const planChat = data?.planChat ?? [];
   const progress = data?.progress ?? { total: 0, completed: 0, percent: 0 };
-  const overdueTasks = data?.overdueTaskCount ?? 0;
-  const needsRescheduling = data?.needsRescheduling ?? false;
   const paceMismatch = data?.paceMismatch ?? null;
 
   // ── Ephemeral UI state ──
@@ -100,6 +96,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const toggleChat = useStore((s) => s.toggleChat);
+  const setChatOpen = useStore((s) => s.setChatOpen);
+  const isChatOpen = useStore((s) => s.isChatOpen);
 
   // Ref-gated expansion: set to true on mount, goal change, or reschedule.
   // When plan data arrives and the flag is true, expand unlocked weeks and
@@ -124,12 +122,12 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       const yearIds = new Set<string>();
       const monthIds = new Set<string>();
       for (const yr of plan.years) {
+        yearIds.add(yr.id);
         for (const mo of yr.months) {
+          monthIds.add(mo.id);
           for (const wk of mo.weeks) {
             if (!wk.locked) {
               unlockedWeekIds.add(wk.id);
-              monthIds.add(mo.id);
-              yearIds.add(yr.id);
             }
           }
         }
@@ -142,14 +140,14 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   }, [plan]);
 
 
-  // Kick off initial plan generation the first time a pending goal
-  // renders with no plan or chat history.
+  // When a new goal has no plan yet, open the chat panel so the AI can
+  // ask clarifying questions before generating. No auto-generation.
   const [initialTriggered, setInitialTriggered] = useState(false);
   useEffect(() => {
     if (!goal || initialTriggered) return;
-    if (!plan && planChat.length === 0 && goal.status === "pending") {
+    if (!plan && planChat.length === 0) {
       setInitialTriggered(true);
-      void handleGenerateInitialPlan();
+      setChatOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal, plan, planChat.length, initialTriggered]);
@@ -158,13 +156,9 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
     !rescheduleDismissed &&
     !isRescheduling &&
     goal?.planConfirmed &&
-    (
-      (overdueTasks > 5 && needsRescheduling) ||
-      (paceMismatch && paceMismatch.severity !== "mild")
-    );
+    paceMismatch && paceMismatch.severity !== "mild";
 
   const [rescheduleResult, setRescheduleResult] = useState<{
-    overdueTasks: number;
     actualPace: number;
     summary: string | null;
   } | null>(null);
@@ -178,7 +172,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       const result = await runCommand<{
         ok: boolean;
         planUpdated: boolean;
-        overdueTasks: number;
         actualPace: number;
         summary: unknown;
       }>("command:adaptive-reschedule", { goalId: goal.id });
@@ -187,7 +180,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
         return;
       }
       setRescheduleResult({
-        overdueTasks: result?.overdueTasks ?? 0,
         actualPace: result?.actualPace ?? 0,
         summary: typeof result?.summary === "string" ? result.summary : null,
       });
@@ -200,29 +192,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
       setIsRescheduling(false);
     }
   }, [goal, plan, runCommand, refetch]);
-
-  const handleGenerateInitialPlan = useCallback(async () => {
-    if (!goal) return;
-    setLocalError(null);
-    try {
-      await runCommand("command:regenerate-goal-plan", {
-        payload: {
-          goalId: goal.id,
-          goalTitle: goal.title,
-          targetDate: goal.targetDate,
-          importance: goal.importance,
-          isHabit: goal.isHabit,
-          description: goal.description,
-        },
-      });
-      refetch();
-    } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : "Failed to generate plan",
-      );
-    }
-  }, [goal, runCommand, refetch]);
-
 
   const handleConfirmPlan = useCallback(async () => {
     if (!goal) return;
@@ -469,8 +438,8 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
             )}
           </div>
           {planChat.length > 0 && (
-            <div className="gp-chat-messages">
-              {planChat.slice(-6).map((msg) => (
+            <div className="gp-chat-messages gp-chat-messages-scrollable">
+              {planChat.map((msg) => (
                 <div key={msg.id} className={`gp-chat-msg ${msg.role}`}>
                   <div className="gp-chat-msg-avatar">
                     {msg.role === "assistant" ? <Sparkles size={14} /> : <Edit3 size={14} />}
@@ -494,22 +463,15 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
             <div className="gp-reschedule-content">
               <AlertTriangle size={16} />
               <div>
-                {paceMismatch ? (
-                  <>
-                    <strong>Falling behind pace</strong>
-                    <p>
-                      You're averaging ~{paceMismatch.actualTasksPerDay} tasks/day
-                      but this plan needs ~{paceMismatch.requiredTasksPerDay}.
-                      {paceMismatch.estimatedDelayDays > 0 &&
-                        ` Estimated ${paceMismatch.estimatedDelayDays} days late.`}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <strong>You have {overdueTasks} incomplete tasks.</strong>
-                    <p>Want me to adjust the timeline to be more realistic?</p>
-                  </>
-                )}
+                <>
+                <strong>Falling behind pace</strong>
+                <p>
+                  You're averaging ~{paceMismatch?.actualTasksPerDay} tasks/day
+                  but this plan needs ~{paceMismatch?.requiredTasksPerDay}.
+                  {(paceMismatch?.estimatedDelayDays ?? 0) > 0 &&
+                    ` Estimated ${paceMismatch?.estimatedDelayDays} days late.`}
+                </p>
+              </>
               </div>
             </div>
             <div className="gp-reschedule-actions">
@@ -541,8 +503,7 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
             <div>
               <strong>Plan adjusted</strong>
               <p>
-                Redistributed {rescheduleResult.overdueTasks} overdue task{rescheduleResult.overdueTasks === 1 ? "" : "s"} at
-                your pace of ~{rescheduleResult.actualPace} tasks/day.
+                Redistributed tasks at your pace of ~{rescheduleResult.actualPace} tasks/day.
               </p>
               {rescheduleResult.summary && (
                 <p className="gp-reschedule-summary">{String(rescheduleResult.summary)}</p>
@@ -598,19 +559,28 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           )}
         </div>
 
-        {/* Empty / retry state — plan failed, timed out, or interrupted. */}
+        {/* Empty state — no plan yet */}
         {!isGenerating && !plan && (
           <div className="gp-empty-state animate-fade-in">
-            <RefreshCw size={32} />
-            <h3>No plan yet</h3>
-            <p>The plan may not have finished generating. Hit the button below to try again.</p>
-            <button
-              className="btn btn-primary"
-              onClick={handleGenerateInitialPlan}
-            >
-              <RefreshCw size={14} />
-              Generate Plan
-            </button>
+            <MessageCircle size={32} />
+            {isChatOpen ? (
+              <>
+                <h3>Planning in progress</h3>
+                <p>Answer the questions in the chat panel. Once you're ready, the AI will generate your personalized plan.</p>
+              </>
+            ) : (
+              <>
+                <h3>No plan yet</h3>
+                <p>Open the chat to start planning. The AI will ask a few questions, then build your plan.</p>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setChatOpen(true)}
+                >
+                  <MessageCircle size={14} />
+                  Start Planning
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

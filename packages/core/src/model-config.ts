@@ -17,7 +17,7 @@ export type ModelTier = "heavy" | "medium" | "light";
 
 /** Default model for each tier */
 const TIER_DEFAULTS: Record<ModelTier, ClaudeModel> = {
-  heavy: "claude-sonnet-4-6",      // Users can upgrade to Opus
+  heavy: "claude-opus-4-6",        // Big Goal Coordinator high-effort path
   medium: "claude-sonnet-4-6",
   light: "claude-haiku-4-5-20251001",
 };
@@ -51,6 +51,11 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "gatekeeper": "light",         // signal/noise filter + priority scoring
   "time-estimator": "light",     // duration estimation + planning fallacy
   "scheduler": "light",          // calendar conflicts + 3-tier hierarchy
+
+  // ── Big Goal Coordinator ──
+  "effort-router": "light",      // Haiku classifies high/low effort
+  "goal-research": "heavy",      // Opus researches best practices, timelines
+  "goal-personalization": "light", // Haiku pulls capacity profile
 };
 
 /** User overrides stored in settings (tier → model) */

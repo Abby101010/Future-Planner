@@ -319,8 +319,10 @@ export function parseUnifiedChatResult(
 ): UnifiedChatResult {
   if (mode === "plan-edit") {
     const planResult = parseGoalPlanChatResult(text);
+    // Safety: strip any JSON that leaked into the reply text.
+    const cleanReply = stripJsonBlocks(planResult.reply);
     return {
-      reply: planResult.reply,
+      reply: cleanReply || planResult.reply,
       intent: null,
       intents: [],
       planReady: planResult.planReady,

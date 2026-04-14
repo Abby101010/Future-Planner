@@ -176,15 +176,38 @@ function buildGoalPlanSummaries(goals: Goal[], date: string) {
     .filter((g) => g.todayTasks.length > 0);
 }
 
-/** Generate daily tasks via the AI handler and persist the result. */
+/** Generate daily tasks via the AI handler and persist the result.
+ *
+ *  - `dryRun`: run the AI but don't persist — return proposals only.
+ *  - `preserveExisting`: keep completed / user-created / skipped tasks;
+ *    only replace incomplete AI-generated tasks. Feeds protected tasks
+ *    to the AI as `confirmedQuickTasks` so it generates complementary work.
+ */
 export async function generateAndPersistDailyTasks(opts: {
   date?: string;
   goals?: Goal[];
   pastLogs?: DailyLog[];
   heatmapData?: HeatmapEntry[];
   activeReminders?: Reminder[];
+  dryRun?: boolean;
+  preserveExisting?: boolean;
 }): Promise<GeneratedResult> {
   const date = opts.date ?? getEffectiveDate();
+
+  // Skip generation if vacation mode is active
+  const vacation = await repos.vacationMode.get();
+  if (vacation?.active) {
+    const inRange = !vacation.startDate || !vacation.endDate
+      || (date >= vacation.startDate && date <= vacation.endDate);
+    if (inRange) {
+      return {
+        date,
+        tasks: [],
+        adaptiveReasoning: "Vacation mode is active — no tasks generated.",
+      };
+    }
+  }
+
   const goals = opts.goals ?? [];
   const pastLogs = opts.pastLogs ?? [];
 
@@ -225,6 +248,37 @@ export async function generateAndPersistDailyTasks(opts: {
   const memory = await loadMemory(userId);
   const memoryContext = buildMemoryContext(memory, "daily");
 
+  // Always feed user-created tasks to the AI so the coordinator generates
+  // complementary work within the remaining budget. In preserveExisting
+  // mode we also protect completed/skipped tasks; in default mode we only
+  // protect explicit user-created tasks (chat, manual, pending-confirmed).
+  let confirmedQuickTasks: Array<Record<string, unknown>> = [];
+  const preExistingTasks = await repos.dailyTasks.listForDate(date);
+  {
+    const isProtected = (t: typeof preExistingTasks[number]): boolean => {
+      if (opts.preserveExisting) {
+        if (t.completed) return true;
+        const pl = t.payload as Record<string, unknown>;
+        if (pl?.skipped) return true;
+      }
+      const pl = t.payload as Record<string, unknown>;
+      return (pl?.source as string) !== "ai-generated" && pl?.source !== undefined;
+    };
+    confirmedQuickTasks = preExistingTasks
+      .filter(isProtected)
+      .map((t) => {
+        const pl = t.payload as Record<string, unknown>;
+        return {
+          title: t.title,
+          description: (pl?.description as string) ?? "",
+          durationMinutes: (pl?.durationMinutes as number) ?? 30,
+          cognitiveWeight: (pl?.cognitiveWeight as number) ?? 3,
+          priority: (pl?.priority as string) ?? "should-do",
+          category: (pl?.category as string) ?? "planning",
+        };
+      });
+  }
+
   const payload: Record<string, unknown> = {
     date,
     pastLogs,
@@ -240,7 +294,7 @@ export async function generateAndPersistDailyTasks(opts: {
       status: g.status,
       targetDate: g.targetDate,
     })),
-    confirmedQuickTasks: [],
+    confirmedQuickTasks,
     isVacationDay: false,
   };
 
@@ -319,45 +373,122 @@ export async function generateAndPersistDailyTasks(opts: {
 
   const result = (await handleAIRequest("daily-tasks", payload, memoryContext, coordinatorState)) as GeneratedResult;
 
-  // Persist
-  await repos.dailyTasks.removeForDate(date);
-  for (let i = 0; i < result.tasks.length; i++) {
-    const t = result.tasks[i];
-    await repos.dailyTasks.insert({
-      id: t.id,
+  // ── dryRun: return proposals without persisting ──
+  if (opts.dryRun) {
+    return result;
+  }
+
+  // ── Persist ──
+  if (opts.preserveExisting) {
+    // Only remove incomplete AI-generated tasks; keep everything else.
+    const existing = await repos.dailyTasks.listForDate(date);
+    const replaceableIds: string[] = [];
+    let maxProtectedOrder = -1;
+
+    for (const t of existing) {
+      const pl = t.payload as Record<string, unknown>;
+      const isProtected =
+        t.completed ||
+        !!pl?.skipped ||
+        pl?.source !== "ai-generated"; // user-created, pending-confirmed, or legacy
+      if (isProtected) {
+        if (t.orderIndex > maxProtectedOrder) maxProtectedOrder = t.orderIndex;
+      } else {
+        replaceableIds.push(t.id);
+      }
+    }
+
+    for (const id of replaceableIds) {
+      await repos.dailyTasks.remove(id);
+    }
+
+    const startOrder = maxProtectedOrder + 1;
+    for (let i = 0; i < result.tasks.length; i++) {
+      const t = result.tasks[i];
+      await repos.dailyTasks.insert({
+        id: t.id,
+        date,
+        title: t.title,
+        completed: t.completed ?? false,
+        orderIndex: startOrder + i,
+        goalId: t.goalId ?? null,
+        planNodeId: t.planNodeId ?? null,
+        source: t.goalId ? "big_goal" : "user_created",
+        payload: {
+          description: t.description,
+          durationMinutes: t.durationMinutes,
+          cognitiveWeight: t.cognitiveWeight,
+          whyToday: t.whyToday,
+          priority: t.priority,
+          isMomentumTask: t.isMomentumTask,
+          progressContribution: t.progressContribution,
+          category: t.category,
+          source: "ai-generated",
+        },
+      });
+    }
+    // Do NOT reset tasksConfirmed — plan stays locked.
+  } else {
+    // Default: wipe AI-generated tasks but preserve user-created/chat tasks.
+    // User-created tasks represent explicit user intent and should survive
+    // regeneration. They were already fed to the coordinator above so the
+    // AI generated complementary work around them.
+    const userCreatedRows = preExistingTasks.filter((t) => {
+      const pl = t.payload as Record<string, unknown>;
+      const src = pl?.source as string | undefined;
+      return src !== undefined && src !== "ai-generated";
+    });
+    const userCreatedIds = new Set(userCreatedRows.map((t) => t.id));
+
+    // Remove only AI-generated tasks (or tasks with no source — legacy)
+    for (const t of preExistingTasks) {
+      if (!userCreatedIds.has(t.id)) {
+        await repos.dailyTasks.remove(t.id);
+      }
+    }
+
+    // Insert AI-generated tasks after the preserved user-created ones
+    const startOrder = userCreatedRows.length;
+    for (let i = 0; i < result.tasks.length; i++) {
+      const t = result.tasks[i];
+      await repos.dailyTasks.insert({
+        id: t.id,
+        date,
+        title: t.title,
+        completed: t.completed ?? false,
+        orderIndex: startOrder + i,
+        goalId: t.goalId ?? null,
+        planNodeId: t.planNodeId ?? null,
+        source: t.goalId ? "big_goal" : "user_created",
+        payload: {
+          description: t.description,
+          durationMinutes: t.durationMinutes,
+          cognitiveWeight: t.cognitiveWeight,
+          whyToday: t.whyToday,
+          priority: t.priority,
+          isMomentumTask: t.isMomentumTask,
+          progressContribution: t.progressContribution,
+          category: t.category,
+          source: "ai-generated",
+        },
+      });
+    }
+
+    await repos.dailyLogs.upsert({
       date,
-      title: t.title,
-      completed: t.completed ?? false,
-      orderIndex: i,
-      goalId: t.goalId ?? null,
-      planNodeId: t.planNodeId ?? null,
       payload: {
-        description: t.description,
-        durationMinutes: t.durationMinutes,
-        cognitiveWeight: t.cognitiveWeight,
-        whyToday: t.whyToday,
-        priority: t.priority,
-        isMomentumTask: t.isMomentumTask,
-        progressContribution: t.progressContribution,
-        category: t.category,
+        id: result.id ?? `log-${date}`,
+        notificationBriefing: result.notificationBriefing ?? "",
+        adaptiveReasoning: result.adaptiveReasoning ?? "",
+        tasksConfirmed: false,
+        milestoneCelebration: result.milestoneCelebration ?? null,
+        progress: result.progress ?? null,
+        yesterdayRecap: result.yesterdayRecap ?? null,
+        encouragement: result.encouragement ?? "",
+        heatmapEntry: result.heatmapEntry ?? null,
       },
     });
   }
-
-  await repos.dailyLogs.upsert({
-    date,
-    payload: {
-      id: result.id ?? `log-${date}`,
-      notificationBriefing: result.notificationBriefing ?? "",
-      adaptiveReasoning: result.adaptiveReasoning ?? "",
-      tasksConfirmed: false,
-      milestoneCelebration: result.milestoneCelebration ?? null,
-      progress: result.progress ?? null,
-      yesterdayRecap: result.yesterdayRecap ?? null,
-      encouragement: result.encouragement ?? "",
-      heatmapEntry: result.heatmapEntry ?? null,
-    },
-  });
 
   if (result.heatmapEntry) {
     await repos.heatmap.upsert(result.heatmapEntry);

@@ -2,13 +2,18 @@
  * Task-related command handlers (daily tasks, pending tasks, defer/undo).
  */
 
-import { repos } from "./_helpers";
-import { runBudgetCheck } from "../../agents/gatekeeper";
+import type { TaskSource } from "@northstar/core";
+import { repos, runAI, invalidate, getEffectiveDate, getCurrentUserId, emitViewInvalidate } from "./_helpers";
+import { runWithUserId } from "../../middleware/requestContext";
+import { timezoneStore } from "../../dateUtils";
 import {
+  recordSignal,
   recordTaskCompleted,
   recordTaskSkipped,
   recordTaskUncompleted,
 } from "../../services/signalRecorder";
+import { routeCantComplete } from "../../coordinators/dailyPlanner/cantCompleteRouter";
+import { packageCurrentPlan, evaluateCapacity } from "../../coordinators/dailyPlanner/memoryPackager";
 
 export async function cmdCreateTask(
   body: Record<string, unknown>,
@@ -20,13 +25,20 @@ export async function cmdCreateTask(
     throw new Error("command:create-task requires args.date and args.title");
   }
   const payload = (body.payload as Record<string, unknown> | undefined) ?? {};
+  if (!payload.source) payload.source = "user-created";
+  // Derive column-level source from body or goalId
+  const source = (body.source as TaskSource | undefined)
+    ?? (body.goalId ? "big_goal" : "user_created");
   const existing = await repos.dailyTasks.listForDate(date);
   await repos.dailyTasks.insert({
     id,
     date,
     title,
+    goalId: (body.goalId as string | undefined) ?? null,
+    planNodeId: (body.planNodeId as string | undefined) ?? null,
     completed: false,
     orderIndex: existing.length,
+    source,
     payload,
   });
   return { ok: true, taskId: id };
@@ -66,6 +78,17 @@ export async function cmdToggleTask(
         recordTaskUncompleted(task.title);
       }
     }
+
+    // Big goal auto-completion: when a big_goal task is completed,
+    // recalculate goal progress and auto-complete if all tasks are done.
+    if (task && task.source === "big_goal" && task.goalId && next) {
+      try {
+        await recalcGoalProgress(task.goalId);
+      } catch (err) {
+        console.warn("[toggle-task] goal progress recalc failed:", err);
+      }
+    }
+
     return { ok: true, taskId, completed: next };
   }
 
@@ -79,6 +102,29 @@ export async function cmdToggleTask(
       completed: nowCompleted,
       completedAt: nowCompleted ? new Date().toISOString() : null,
     });
+
+    // Sync linked daily_task if one exists (bidirectional sync)
+    try {
+      const linkedTask = await repos.dailyTasks.findByPlanNodeId(taskId);
+      if (linkedTask && linkedTask.completed !== nowCompleted) {
+        await repos.dailyTasks.update(linkedTask.id, {
+          completed: nowCompleted,
+          completedAt: nowCompleted ? new Date().toISOString() : null,
+        });
+      }
+    } catch (err) {
+      console.warn("[toggle-task] failed to sync linked daily task:", err);
+    }
+
+    // Recalculate goal progress when toggling a plan node
+    if (planNode.goalId) {
+      try {
+        await recalcGoalProgress(planNode.goalId);
+      } catch (err) {
+        console.warn("[toggle-task] goal progress recalc failed:", err);
+      }
+    }
+
     return { ok: true, taskId, completed: nowCompleted };
   }
 
@@ -180,8 +226,9 @@ export async function cmdConfirmPendingTask(
   // Mark the pending task as confirmed.
   await repos.pendingTasks.updateStatus(pendingId, "confirmed");
 
-  // Read the pending task to extract its analysis, then insert a real
-  // daily task so it shows up in the Tasks page.
+  // Read the pending task to extract its analysis, then route through
+  // the Daily Planner Coordinator (memory packager) so the task is
+  // properly integrated into the day's plan with capacity checks.
   const pending = await repos.pendingTasks.get(pendingId);
   if (pending) {
     const pl = pending.payload;
@@ -196,55 +243,45 @@ export async function cmdConfirmPendingTask(
       reasoning?: string;
     } | null;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = getEffectiveDate();
     const date = analysis?.suggestedDate || today;
+    const weight = analysis?.cognitiveWeight ?? 3;
+    const minutes = analysis?.durationMinutes ?? 30;
 
-    const existing = await repos.dailyTasks.listForDate(date);
-    const newWeight = analysis?.cognitiveWeight ?? 3;
+    // Route through the Daily Planner's memory packager —
+    // same path as cmdAddTaskToPlan. This evaluates cognitive budget,
+    // time budget, and slot count before inserting.
+    const pkg = await packageCurrentPlan(date);
+    const capacity = evaluateCapacity(pkg, weight, minutes);
 
-    const budget = runBudgetCheck(
-      existing.map((t) => ({
-        cognitiveWeight: (t.payload as Record<string, unknown>)?.cognitiveWeight as number | undefined,
-        durationMinutes: (t.payload as Record<string, unknown>)?.durationMinutes as number | undefined,
-      })),
-      newWeight,
-    );
-
-    if (budget.overBudget && body.force !== true) {
-      const lowestTask = existing
-        .filter((t) => !t.completed)
-        .sort((a, b) =>
-          ((a.payload as Record<string, unknown>)?.cognitiveWeight as number ?? 3) -
-          ((b.payload as Record<string, unknown>)?.cognitiveWeight as number ?? 3),
-        )[0];
+    if (!capacity.ok && body.force !== true) {
       return {
         ok: false,
-        budgetExceeded: true,
-        budget,
-        lowestTask: lowestTask
-          ? { id: lowestTask.id, title: lowestTask.title, cognitiveWeight: (lowestTask.payload as Record<string, unknown>)?.cognitiveWeight as number ?? 3 }
-          : null,
+        overBudget: true,
+        reason: capacity.reason,
+        deferCandidates: capacity.deferCandidates,
         pendingId,
       };
     }
 
-    const orderIndex = existing.length;
-
+    // Fits (or forced) — insert through the planner
     await repos.dailyTasks.insert({
       id: crypto.randomUUID(),
       date,
       title: analysis?.title || (pl.userInput as string) || pending.title || "Untitled task",
       completed: false,
-      orderIndex,
+      orderIndex: pkg.existingTasks.length,
+      source: "user_created",
       payload: {
         description: analysis?.description || "",
-        durationMinutes: analysis?.durationMinutes ?? 30,
-        cognitiveWeight: newWeight,
+        durationMinutes: minutes,
+        cognitiveWeight: weight,
         priority: analysis?.priority || "should-do",
         category: analysis?.category || "planning",
         whyToday: analysis?.reasoning || "",
-        source: "pending-task",
+        source: "chat-confirmed",
         pendingTaskId: pendingId,
+        addedMidDay: true,
       },
     });
   }
@@ -270,6 +307,9 @@ export async function cmdCreatePendingTask(
   const userInput = body.userInput as string | undefined;
   const analysis = body.analysis as Record<string, unknown> | undefined;
   const status = (body.status as string) ?? "ready";
+  // Chat-resolved date: the AI already determined the date from user input
+  // (defaults to today when no date was mentioned).
+  const chatDate = body.suggestedDate as string | undefined;
   if (!id || !userInput) {
     throw new Error(
       "command:create-pending-task requires args.id and args.userInput",
@@ -280,8 +320,94 @@ export async function cmdCreatePendingTask(
     source: "home-chat",
     title: (analysis?.title as string) ?? userInput,
     status: status as "ready" | "pending" | "analyzing",
-    payload: { userInput, analysis: analysis ?? null },
+    payload: { userInput, analysis: analysis ?? null, suggestedDate: chatDate ?? null },
   });
+
+  // If the task was created as "analyzing", trigger the AI analysis in the
+  // background. When done, update the pending task to "ready" with the
+  // analysis and invalidate the dashboard so the card refreshes.
+  if (status === "analyzing" && !analysis) {
+    const taskId = id;
+    const input = userInput;
+    const resolvedDate = chatDate; // preserve across async boundary
+    // Capture request-scoped context before the async boundary
+    const userId = getCurrentUserId();
+    const tz = timezoneStore.getStore() || "UTC";
+    setImmediate(() => {
+      runWithUserId(userId, () =>
+        timezoneStore.run(tz, async () => {
+          try {
+            const today = getEffectiveDate();
+            const targetDate = resolvedDate || today;
+            const [todayTasks, goals] = await Promise.all([
+              repos.dailyTasks.listForDate(targetDate),
+              repos.goals.list(),
+            ]);
+            const result = (await runAI(
+              "analyze-quick-task",
+              {
+                userInput: input,
+                suggestedDate: targetDate,
+                existingTasks: todayTasks.map((t) => ({
+                  title: t.title,
+                  cognitiveWeight: (t.payload.cognitiveWeight as number) ?? 3,
+                  durationMinutes: (t.payload.durationMinutes as number) ?? 30,
+                  priority: (t.payload.priority as string) ?? "should-do",
+                })),
+                goals: goals.map((g) => ({ title: g.title, scope: g.scope })),
+              },
+              "daily",
+            )) as Record<string, unknown> | null;
+
+            if (result) {
+              // Normalize the AI response keys to camelCase for the frontend.
+              // Use chat-resolved date as the authoritative date — only fall
+              // back to the AI's suggestion if no date was provided by chat.
+              const normalized = {
+                title: result.title ?? input,
+                description: result.description ?? "",
+                suggestedDate: targetDate,
+                durationMinutes:
+                  result.duration_minutes ?? result.durationMinutes ?? 30,
+                cognitiveWeight:
+                  result.cognitive_weight ?? result.cognitiveWeight ?? 3,
+                priority: result.priority ?? "should-do",
+                category: result.category ?? "planning",
+                reasoning: result.reasoning ?? "",
+              };
+
+              // Store in pool: update pending task to "ready" with the
+              // analysis. The task sits here until the user clicks Refresh,
+              // which triggers the scenario router to integrate it.
+              await repos.pendingTasks.insert({
+                id: taskId,
+                source: "home-chat",
+                title: (normalized.title as string) ?? input,
+                status: "ready",
+                payload: {
+                  userInput: input,
+                  analysis: normalized,
+                  suggestedDate: targetDate,
+                },
+              });
+
+              // Invalidate tasks view so the Refresh badge count updates
+              emitViewInvalidate(userId, {
+                viewKinds: ["view:tasks", "view:dashboard"],
+              });
+            }
+          } catch (err) {
+            console.warn(
+              "[cmdCreatePendingTask] background analysis failed for",
+              taskId,
+              err,
+            );
+          }
+        }),
+      );
+    });
+  }
+
   return { ok: true, id };
 }
 
@@ -454,5 +580,243 @@ export async function cmdDismissNudge(
   const nudgeId = body.nudgeId as string | undefined;
   if (!nudgeId) throw new Error("command:dismiss-nudge requires args.nudgeId");
   await repos.nudges.dismiss(nudgeId);
+
+  // Record nudge feedback as a behavioral signal when provided
+  const feedback = body.feedback as string | undefined;
+  if (feedback) {
+    const isPositive = feedback === "helpful" || feedback === "good";
+    recordSignal(
+      isPositive ? "positive_feedback" : "negative_feedback",
+      "nudge",
+      `${nudgeId}:${feedback}`,
+    );
+  }
+
   return { ok: true, nudgeId };
+}
+
+// ── Big Goal auto-completion helper ──────────────────────────
+
+/**
+ * Recalculate a goal's progress from its plan nodes.
+ * If all task-type nodes are completed → auto-complete the goal.
+ */
+async function recalcGoalProgress(goalId: string): Promise<void> {
+  const nodes = await repos.goalPlan.listForGoal(goalId);
+  const taskNodes = nodes.filter((n) => n.nodeType === "task");
+  if (taskNodes.length === 0) return;
+
+  const completedCount = taskNodes.filter(
+    (n) => Boolean(n.payload.completed),
+  ).length;
+  const percent = Math.round((completedCount / taskNodes.length) * 100);
+
+  if (percent >= 100) {
+    // All tasks done — auto-complete the goal
+    await repos.goals.updateStatus(goalId, "completed", 100);
+  } else {
+    await repos.goals.updateProgress(goalId, percent);
+  }
+}
+
+// ── Can't-Complete flow ──────────────────────────────────────
+
+export async function cmdCantCompleteTask(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  if (!taskId) throw new Error("command:cant-complete-task requires args.taskId");
+  const reason = body.reason as string | undefined;
+
+  const result = await routeCantComplete({ taskId, reason });
+
+  // Include extra view invalidations based on the action
+  const _invalidateExtra: string[] = ["view:tasks"];
+  if (result.action === "big_goal_reevaluate" && result.task.goalId) {
+    _invalidateExtra.push("view:goal-plan");
+  }
+
+  return { ...result, _invalidateExtra };
+}
+
+// ── Add-Task-To-Plan (mid-day addition with memory packaging) ─
+
+export async function cmdAddTaskToPlan(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const date = body.date as string | undefined;
+  const title = body.title as string | undefined;
+  if (!date || !title) {
+    throw new Error("command:add-task-to-plan requires args.date and args.title");
+  }
+
+  const weight = (body.cognitiveWeight as number | undefined) ?? 3;
+  const minutes = (body.durationMinutes as number | undefined) ?? 30;
+
+  // Package current plan and evaluate capacity
+  const pkg = await packageCurrentPlan(date);
+  const capacity = evaluateCapacity(pkg, weight, minutes);
+
+  if (!capacity.ok && body.force !== true) {
+    return {
+      ok: false,
+      overBudget: true,
+      reason: capacity.reason,
+      deferCandidates: capacity.deferCandidates,
+    };
+  }
+
+  // Fits (or forced) — insert the task
+  const id = (body.id as string | undefined) ?? crypto.randomUUID();
+  const source = (body.source as TaskSource | undefined) ?? "user_created";
+  const payload = (body.payload as Record<string, unknown> | undefined) ?? {};
+  payload.cognitiveWeight = weight;
+  payload.durationMinutes = minutes;
+  if (body.priority) payload.priority = body.priority;
+  if (body.category) payload.category = body.category;
+  payload.addedMidDay = true;
+
+  await repos.dailyTasks.insert({
+    id,
+    date,
+    title,
+    goalId: (body.goalId as string | undefined) ?? null,
+    planNodeId: (body.planNodeId as string | undefined) ?? null,
+    completed: false,
+    orderIndex: pkg.existingTasks.length,
+    source,
+    payload,
+  });
+
+  return { ok: true, taskId: id, budget: pkg.budget };
+}
+
+// ── Reschedule flow (replaces the overdue concept) ────────────
+
+/**
+ * Move an incomplete past task to a new date. Runs a budget check on
+ * the target day; if over budget returns `budgetExceeded` with a swap
+ * suggestion so the UI can ask the user what to remove.
+ *
+ * Logs the reschedule in the task's payload for history.
+ */
+export async function cmdRescheduleTask(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  const targetDate = body.targetDate as string | undefined;
+  const force = body.force as boolean | undefined;
+  if (!taskId) throw new Error("command:reschedule-task requires args.taskId");
+  if (!targetDate) throw new Error("command:reschedule-task requires args.targetDate");
+
+  const task = await repos.dailyTasks.get(taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+
+  const originalDate = task.date;
+  const pl = task.payload as Record<string, unknown>;
+  const weight = (pl.cognitiveWeight as number) ?? 3;
+  const minutes = (pl.durationMinutes as number) ?? 30;
+
+  // Budget check on target day (unless force=true, meaning user already
+  // confirmed a swap on the client side).
+  if (!force) {
+    const targetTasks = await repos.dailyTasks.listForDate(targetDate);
+    const activeTasks = targetTasks.filter((t) => {
+      if (t.completed) return false;
+      const p = t.payload as Record<string, unknown>;
+      return !p?.skipped;
+    });
+    const currentWeight = activeTasks.reduce(
+      (s, t) => s + ((t.payload as Record<string, unknown>).cognitiveWeight as number ?? 3), 0,
+    );
+    const maxWeight = 12; // COGNITIVE_BUDGET.MAX_DAILY_WEIGHT
+    if (currentWeight + weight > maxWeight) {
+      // Find lowest-priority task to suggest swapping
+      const sorted = [...activeTasks].sort((a, b) =>
+        deferScore({
+          priority: ((b.payload as Record<string, unknown>).priority as string) ?? "should-do",
+          cognitiveWeight: ((b.payload as Record<string, unknown>).cognitiveWeight as number) ?? 3,
+        }) -
+        deferScore({
+          priority: ((a.payload as Record<string, unknown>).priority as string) ?? "should-do",
+          cognitiveWeight: ((a.payload as Record<string, unknown>).cognitiveWeight as number) ?? 3,
+        }),
+      );
+      const swapCandidate = sorted[0];
+      return {
+        ok: false,
+        budgetExceeded: true,
+        swapSuggestion: swapCandidate
+          ? {
+              id: swapCandidate.id,
+              title: swapCandidate.title,
+              cognitiveWeight: ((swapCandidate.payload as Record<string, unknown>).cognitiveWeight as number) ?? 3,
+            }
+          : null,
+      };
+    }
+  }
+
+  // Build reschedule history log entry
+  const history = (Array.isArray(pl.rescheduleHistory) ? pl.rescheduleHistory : []) as Array<Record<string, unknown>>;
+  history.push({
+    from: originalDate,
+    to: targetDate,
+    at: new Date().toISOString(),
+  });
+  const rescheduleCount = ((pl.rescheduleCount as number) ?? 0) + 1;
+
+  // Move the task to the target date
+  const targetTasks = await repos.dailyTasks.listForDate(targetDate);
+  await repos.dailyTasks.update(taskId, {
+    date: targetDate,
+    orderIndex: targetTasks.length,
+    payload: {
+      rescheduleHistory: history,
+      rescheduleCount,
+      rescheduledFrom: originalDate,
+    },
+  });
+
+  return { ok: true, taskId, from: originalDate, to: targetDate };
+}
+
+/**
+ * Snooze a reschedule card — the task stays on its original day but
+ * the card won't re-appear until tomorrow. If the user ignores again,
+ * the card resurfaces (one-day snooze).
+ */
+export async function cmdSnoozeReschedule(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  if (!taskId) throw new Error("command:snooze-reschedule requires args.taskId");
+
+  const task = await repos.dailyTasks.get(taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+
+  // Set snooze until tomorrow
+  const tomorrow = tomorrowOf(new Date().toISOString().split("T")[0]);
+  await repos.dailyTasks.update(taskId, {
+    payload: { rescheduleSnoozeUntil: tomorrow },
+  });
+
+  return { ok: true, taskId, snoozedUntil: tomorrow };
+}
+
+/**
+ * Permanently dismiss a reschedule card — the task is marked as
+ * skipped so it won't resurface.
+ */
+export async function cmdDismissReschedule(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  if (!taskId) throw new Error("command:dismiss-reschedule requires args.taskId");
+
+  await repos.dailyTasks.update(taskId, {
+    payload: { rescheduleDismissed: true, skipped: true },
+  });
+
+  return { ok: true, taskId };
 }

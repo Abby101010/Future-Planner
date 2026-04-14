@@ -31,8 +31,6 @@ export interface TimeBlock {
 export interface UserSettings {
   enableNewsFeed: boolean;
   dailyReminderTime?: string;
-  /** HH:MM when the server should auto-generate today's daily tasks (default "06:00"). */
-  dailyTaskRefreshTime?: string;
   theme: "light" | "dark" | "system";
   language: "en" | "zh";
   apiKey?: string;
@@ -199,6 +197,9 @@ export interface DailyLog {
   createdAt: string;
 }
 
+/** Where a task originated — drives CRUD lifecycle behavior */
+export type TaskSource = "big_goal" | "user_created" | "calendar" | "repeating_goal";
+
 export interface DailyTask {
   id: string;
   title: string;
@@ -216,6 +217,8 @@ export interface DailyTask {
   actualMinutes?: number;   // actual time spent (from timer)
   snoozedCount?: number;    // how many times this task was snoozed
   skipped?: boolean;        // user explicitly skipped this task
+  /** Where this task came from — determines lifecycle behavior (CRUD, completion, can't-complete routing) */
+  source?: TaskSource;
   /** Source goal when this task was picked from a big-goal plan tree. */
   goalId?: string | null;
   /** Source GoalPlanTask.id when this task was picked from a plan. */
@@ -698,7 +701,6 @@ export interface PaceMismatch {
   goalTitle: string;
   planTasksPerDay: number;
   actualTasksPerDay: number;
-  overdueTasks: number;
   totalPlanTasks: number;
   completedPlanTasks: number;
   remainingTasks: number;

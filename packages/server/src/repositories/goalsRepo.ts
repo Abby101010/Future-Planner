@@ -9,10 +9,11 @@
  * No business logic lives here — pure CRUD.
  */
 
-import type { Goal, GoalImportance, GoalScope, GoalType } from "@northstar/core";
+import type { Goal, GoalImportance, GoalPlan, GoalScope, GoalType } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
+import { normalizePlan } from "./goalPlanRepo";
 
 interface GoalRow {
   id: string;
@@ -69,6 +70,7 @@ function rowToGoal(r: GoalRow): Goal {
 /** Extract the jsonb "payload" blob from a Goal — i.e. everything that does
  *  NOT round-trip through a typed column. */
 function goalToPayload(g: Goal): Record<string, unknown> {
+  if (g.plan) normalizePlan(g.plan as GoalPlan);
   return {
     planChat: g.planChat ?? [],
     plan: g.plan ?? null,
@@ -159,6 +161,23 @@ export async function updateProgress(
         set progress_percent = $3, updated_at = now()
       where user_id = $1 and id = $2`,
     [userId, id, Math.max(0, Math.min(100, Math.round(percent)))],
+  );
+}
+
+export async function updateStatus(
+  id: string,
+  status: string,
+  progressPercent?: number,
+): Promise<void> {
+  const userId = requireUserId();
+  const extra = progressPercent !== undefined
+    ? `, progress_percent = ${Math.max(0, Math.min(100, Math.round(progressPercent)))}`
+    : "";
+  await query(
+    `update goals
+        set status = $3${extra}, updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, id, status],
   );
 }
 

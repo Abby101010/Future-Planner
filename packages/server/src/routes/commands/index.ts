@@ -22,6 +22,8 @@ export {
   cmdRescheduleTask,
   cmdSnoozeReschedule,
   cmdDismissReschedule,
+  cmdCantCompleteTask,
+  cmdAddTaskToPlan,
   deferScore,
   tomorrowOf,
 } from "./tasks";
@@ -30,6 +32,7 @@ export {
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
   cmdConfirmDailyTasks,
+  cmdRefreshDailyPlan,
   cmdRegenerateDailyTasks,
   cmdAdaptiveReschedule,
   cmdAdjustAllOverloadedPlans,
@@ -50,6 +53,7 @@ export {
   cmdSaveMonthlyContext,
   cmdDeleteMonthlyContext,
   cmdUpdateSettings,
+  cmdSetVacationMode,
   cmdCompleteOnboarding,
   cmdResetData,
 } from "./settings";

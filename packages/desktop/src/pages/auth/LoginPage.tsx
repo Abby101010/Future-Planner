@@ -125,20 +125,16 @@ export default function LoginPage() {
     setSuccess(null);
     startLoading(0);
 
-    try {
-      // Use deep-link flow only in packaged Electron (not dev mode).
-      // In dev mode the Electron window can redirect to Google directly,
-      // just like a regular browser tab.
-      const useDeepLink =
-        !!window.electronAuth && !window.location.hostname.includes("localhost");
+    // Redirect URL that Supabase will redirect to after Google auth.
+    // We intercept this in the popup before it actually loads.
+    const redirectTo = "http://localhost/auth/callback";
 
+    try {
       const { data, error: err } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          skipBrowserRedirect: useDeepLink,
-          redirectTo: useDeepLink
-            ? "northstar://auth/callback"
-            : window.location.origin,
+          skipBrowserRedirect: true,
+          redirectTo,
         },
       });
 
@@ -148,11 +144,26 @@ export default function LoginPage() {
         return;
       }
 
-      if (useDeepLink && data.url) {
-        window.electronAuth!.openExternal(data.url);
+      if (!data.url) {
+        setError(t.auth.errorGeneric);
+        stopLoading();
+        return;
       }
-      // Otherwise the current page navigates to Google automatically.
-      // On return, detectSessionInUrl + onAuthStateChange handle the rest.
+
+      // In Electron: open an in-app popup window for the OAuth flow.
+      // In browser (dev): open in current window as a fallback.
+      if (window.electronAuth?.oauthPopup) {
+        const code = await window.electronAuth.oauthPopup(data.url, redirectTo);
+        if (code) {
+          await supabase.auth.exchangeCodeForSession(code);
+        } else {
+          // User closed the popup without completing auth.
+          stopLoading();
+        }
+      } else {
+        // Fallback for non-Electron (shouldn't happen in production).
+        window.location.href = data.url;
+      }
     } catch {
       setError(t.auth.errorGeneric);
       stopLoading();

@@ -56,9 +56,15 @@ export async function list(date?: string): Promise<Reminder[]> {
 
 export async function listActive(): Promise<Reminder[]> {
   const userId = requireUserId();
+  // For repeating reminders, treat them as active even if acknowledged
+  // today — they reset each day. A repeating reminder is "active" if:
+  //   (a) it was never acknowledged, OR
+  //   (b) it has a repeat schedule (daily/weekly/monthly)
+  // The view layer filters by day-of-week / day-of-month as needed.
   const rows = await query<ReminderRow>(
     `select * from reminders
-      where user_id = $1 and acknowledged = false
+      where user_id = $1
+        and (acknowledged = false or repeat is not null)
       order by reminder_time`,
     [userId],
   );

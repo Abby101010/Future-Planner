@@ -400,6 +400,13 @@
   gap: 4px;
 }
 
+.gp-month-empty {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Week level */
 .gp-week {
   background: rgba(255, 255, 255, 0.2);

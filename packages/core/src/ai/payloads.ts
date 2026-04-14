@@ -41,6 +41,7 @@ export interface GenerateGoalPlanPayload extends EnrichedPayload {
 }
 
 export interface GoalPlanChatPayload extends EnrichedPayload {
+  goalId?: string;
   goalTitle: string;
   targetDate: string;
   importance: string;
@@ -74,7 +75,7 @@ export interface HomeChatPayload extends EnrichedPayload {
   todayTasks?: LooseRow[];
   activeReminders?: LooseRow[];
   attachments?: LooseRow[];
-  /** Caller-supplied effective "today" (6 AM boundary + timezone). When
+  /** Caller-supplied effective "today" (midnight boundary + timezone). When
    *  absent, the parser falls back to UTC — prefer always passing this
    *  from the server so reminder/event dates land on the same day the
    *  TasksView filters on. */

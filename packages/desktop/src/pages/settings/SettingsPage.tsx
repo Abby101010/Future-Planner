@@ -50,6 +50,62 @@ import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
 import "./SettingsPage.css";
 
+const TIMEZONE_GROUPS = [
+  {
+    label: "Americas",
+    zones: [
+      { value: "America/New_York", label: "Eastern Time (New York)" },
+      { value: "America/Chicago", label: "Central Time (Chicago)" },
+      { value: "America/Denver", label: "Mountain Time (Denver)" },
+      { value: "America/Los_Angeles", label: "Pacific Time (Los Angeles)" },
+      { value: "America/Anchorage", label: "Alaska Time" },
+      { value: "Pacific/Honolulu", label: "Hawaii Time" },
+      { value: "America/Toronto", label: "Eastern Time (Toronto)" },
+      { value: "America/Vancouver", label: "Pacific Time (Vancouver)" },
+      { value: "America/Mexico_City", label: "Mexico City" },
+      { value: "America/Sao_Paulo", label: "Sao Paulo" },
+      { value: "America/Buenos_Aires", label: "Buenos Aires" },
+    ],
+  },
+  {
+    label: "Europe",
+    zones: [
+      { value: "Europe/London", label: "London (GMT/BST)" },
+      { value: "Europe/Paris", label: "Paris / Berlin / Rome" },
+      { value: "Europe/Moscow", label: "Moscow" },
+      { value: "Europe/Istanbul", label: "Istanbul" },
+      { value: "Europe/Amsterdam", label: "Amsterdam" },
+      { value: "Europe/Madrid", label: "Madrid" },
+    ],
+  },
+  {
+    label: "Asia & Pacific",
+    zones: [
+      { value: "Asia/Shanghai", label: "China Standard Time (Beijing/Shanghai)" },
+      { value: "Asia/Hong_Kong", label: "Hong Kong" },
+      { value: "Asia/Tokyo", label: "Japan Standard Time (Tokyo)" },
+      { value: "Asia/Seoul", label: "Korea Standard Time (Seoul)" },
+      { value: "Asia/Singapore", label: "Singapore" },
+      { value: "Asia/Kolkata", label: "India Standard Time" },
+      { value: "Asia/Dubai", label: "Dubai" },
+      { value: "Australia/Sydney", label: "Sydney" },
+      { value: "Australia/Melbourne", label: "Melbourne" },
+      { value: "Australia/Perth", label: "Perth" },
+      { value: "Pacific/Auckland", label: "Auckland" },
+    ],
+  },
+  {
+    label: "Africa & Middle East",
+    zones: [
+      { value: "Africa/Cairo", label: "Cairo" },
+      { value: "Africa/Johannesburg", label: "Johannesburg" },
+      { value: "Africa/Lagos", label: "Lagos" },
+      { value: "Asia/Jerusalem", label: "Jerusalem" },
+      { value: "Asia/Riyadh", label: "Riyadh" },
+    ],
+  },
+];
+
 // MUST match packages/server/src/views/settingsView.ts
 interface SettingsView {
   user: UserProfile | null;
@@ -68,6 +124,10 @@ export default function SettingsPage() {
 
   const [reflecting, setReflecting] = useState(false);
   const [reflectResult, setReflectResult] = useState<string | null>(null);
+
+  // ── Timezone state ──
+  const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [timezoneSaved, setTimezoneSaved] = useState(false);
 
   // ── Memory summary (served via repo, not a view) ──
   const [memorySummary, setMemorySummary] = useState<MemorySummary | null>(null);
@@ -333,23 +393,6 @@ export default function SettingsPage() {
             </label>
           </div>
 
-          <div className="toggle-row" style={{ marginTop: "var(--space-md)" }}>
-            <div className="toggle-text">
-              <span className="toggle-label">Daily task refresh time</span>
-              <span className="toggle-desc">
-                When your daily tasks auto-generate each day
-              </span>
-            </div>
-            <input
-              type="time"
-              className="input input-sm"
-              value={settings?.dailyTaskRefreshTime ?? "06:00"}
-              onChange={(e) =>
-                handleUpdateSettings({ dailyTaskRefreshTime: e.target.value })
-              }
-              style={{ width: 110 }}
-            />
-          </div>
         </section>
 
         {/* Calendar & Integrations */}
@@ -628,6 +671,53 @@ export default function SettingsPage() {
                 <option key={opt.value} value={opt.value}>
                   {opt.nativeLabel} ({opt.label})
                 </option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        {/* Timezone */}
+        <section className="settings-section card animate-fade-in">
+          <div className="settings-section-header">
+            <Clock size={18} />
+            <h3>Timezone</h3>
+          </div>
+          <p className="settings-desc">
+            Your local timezone controls when tasks are generated and how times
+            are displayed.
+            {timezoneSaved && <span className="settings-saved-inline"> Saved!</span>}
+          </p>
+          <div className="toggle-row">
+            <div className="toggle-info">
+              <Globe size={16} />
+              <div>
+                <span className="toggle-label">Local timezone</span>
+                <span className="toggle-desc">
+                  Detected: {detectedTimezone}
+                </span>
+              </div>
+            </div>
+            <select
+              className="input settings-language-select"
+              value={user?.timezone || detectedTimezone}
+              onChange={async (e) => {
+                await run("command:update-settings", {
+                  settings: {},
+                  user: { timezone: e.target.value },
+                });
+                setTimezoneSaved(true);
+                setTimeout(() => setTimezoneSaved(false), 2000);
+                refetch();
+              }}
+            >
+              {TIMEZONE_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.zones.map((z) => (
+                    <option key={z.value} value={z.value}>
+                      {z.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>

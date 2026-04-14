@@ -38,6 +38,11 @@ export async function cmdUpdateSettings(
 ): Promise<unknown> {
   const patch = (body.settings as Partial<UserSettings>) ?? {};
   await repos.users.updateSettings(patch);
+  // Also accept user-profile-level patches (e.g. timezone)
+  const userPatch = body.user as Record<string, unknown> | undefined;
+  if (userPatch?.timezone && typeof userPatch.timezone === "string") {
+    await repos.users.updatePayload({ timezone: userPatch.timezone });
+  }
   return { ok: true };
 }
 
@@ -75,6 +80,22 @@ export async function cmdCompleteOnboarding(
   return { ok: true };
 }
 
+export async function cmdSetVacationMode(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const active = body.active as boolean | undefined;
+  if (active === undefined) {
+    throw new Error("command:set-vacation-mode requires args.active");
+  }
+  await repos.vacationMode.upsert({
+    active,
+    startDate: (body.startDate as string | undefined) ?? null,
+    endDate: (body.endDate as string | undefined) ?? null,
+    reason: (body.reason as string | undefined) ?? null,
+  });
+  return { ok: true, active };
+}
+
 export async function cmdResetData(): Promise<unknown> {
   const userId = getCurrentUserId();
   const pool = getPool();
@@ -82,6 +103,7 @@ export async function cmdResetData(): Promise<unknown> {
   try {
     await client.query("begin");
     // Per-entity tables first so FKs (if any) clear cleanly.
+    // Every user-scoped table. schema_migrations is infra — never clear it.
     const tables = [
       "goal_plan_nodes",
       "daily_tasks",
@@ -89,9 +111,20 @@ export async function cmdResetData(): Promise<unknown> {
       "pending_tasks",
       "heatmap_entries",
       "home_chat_messages",
+      "chat_attachments",
+      "chat_sessions",
       "conversations",
       "nudges",
+      "reminders",
+      "memory_signals",
+      "memory_facts",
+      "memory_meta",
+      "memory_preferences",
+      "memory_snooze_records",
+      "memory_task_timings",
+      "monthly_contexts",
       "behavior_profile_entries",
+      "job_queue",
       "vacation_mode",
       "goals",
       "roadmap",

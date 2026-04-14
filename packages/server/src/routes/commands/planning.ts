@@ -137,108 +137,25 @@ export async function cmdConfirmDailyTasks(
   return { ok: true, date: today };
 }
 
+/**
+ * Unified Refresh — routes to the appropriate scenario based on current state.
+ * Replaces the old Suggest / Plan my day / Generate distinction.
+ */
+export async function cmdRefreshDailyPlan(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const { routeRefresh } = await import(
+    "../../coordinators/dailyPlanner/scenarios"
+  );
+  const date = (body.date as string) || getEffectiveDate();
+  return routeRefresh(date);
+}
+
+/** @deprecated — delegate to cmdRefreshDailyPlan for backward compat */
 export async function cmdRegenerateDailyTasks(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const today = (body.date as string) || getEffectiveDate();
-  const rangeStart = getEffectiveDaysAgo(90);
-
-  // Check whether tasks have been confirmed (plan is locked).
-  const todayLog = await repos.dailyLogs.get(today);
-  const isConfirmed =
-    (todayLog?.payload as Record<string, unknown>)?.tasksConfirmed === true;
-
-  const [goals, logs, tasks, heatmapData, activeReminders] =
-    await Promise.all([
-      repos.goals.list(),
-      repos.dailyLogs.list(rangeStart, today),
-      repos.dailyTasks.listForDateRange(rangeStart, today),
-      repos.heatmap.listRange(rangeStart, today),
-      repos.reminders.listActive(),
-    ]);
-
-  const tasksByDate = new Map<string, typeof tasks>();
-  for (const t of tasks) {
-    const arr = tasksByDate.get(t.date) ?? [];
-    arr.push(t);
-    tasksByDate.set(t.date, arr);
-  }
-  const pastLogs = logs
-    .filter((l) => l.date !== today)
-    .map((l) => {
-      const dayTasks = tasksByDate.get(l.date) ?? [];
-      return {
-        date: l.date,
-        tasks: dayTasks.map((dt) => ({
-          id: dt.id,
-          title: dt.title,
-          completed: dt.completed,
-          skipped: false,
-        })),
-      };
-    })
-    .slice(0, 14);
-
-  if (isConfirmed) {
-    // ── Post-confirmation: return proposals, don't persist ──
-    const result = await generateAndPersistDailyTasks({
-      date: today,
-      goals,
-      pastLogs: pastLogs as any,
-      heatmapData,
-      activeReminders,
-      dryRun: true,
-      preserveExisting: true, // so confirmedQuickTasks are populated
-    });
-
-    const proposals = (result.tasks ?? []).map((t) => ({
-      id: t.id,
-      title: t.title,
-      description: t.description,
-      durationMinutes: t.durationMinutes,
-      cognitiveWeight: t.cognitiveWeight,
-      priority: t.priority,
-      category: t.category,
-      whyToday: t.whyToday,
-      goalId: t.goalId,
-      planNodeId: t.planNodeId,
-    }));
-
-    return { ok: true, date: today, mode: "confirmed", proposals };
-  }
-
-  // ── Pre-confirmation: full wipe-and-replace ──
-  // Save completed/skipped state before regeneration
-  const existingTasks = await repos.dailyTasks.listForDateRange(today, today);
-  const completedNodes = new Set<string>();
-  const completedTitles = new Set<string>();
-  for (const t of existingTasks) {
-    if (t.completed) {
-      if (t.planNodeId) completedNodes.add(t.planNodeId);
-      completedTitles.add(t.title.toLowerCase());
-    }
-  }
-
-  await generateAndPersistDailyTasks({
-    date: today,
-    goals,
-    pastLogs: pastLogs as any,
-    heatmapData,
-    activeReminders,
-  });
-
-  // Restore completed state: re-mark tasks that were completed before
-  const freshTasks = await repos.dailyTasks.listForDateRange(today, today);
-  for (const t of freshTasks) {
-    const wasCompleted =
-      (t.planNodeId && completedNodes.has(t.planNodeId)) ||
-      completedTitles.has(t.title.toLowerCase());
-    if (wasCompleted && !t.completed) {
-      await repos.dailyTasks.update(t.id, { completed: true });
-    }
-  }
-
-  return { ok: true, date: today, mode: "proposal", taskCount: freshTasks.length };
+  return cmdRefreshDailyPlan(body);
 }
 
 export async function cmdAdaptiveReschedule(
@@ -521,6 +438,7 @@ export async function cmdGenerateBonusTask(
     orderIndex: existing.length,
     goalId: bonus.goalId ?? null,
     planNodeId: bonus.planNodeId ?? null,
+    source: bonus.goalId ? "big_goal" : "user_created",
     payload: {
       description: bonus.description,
       durationMinutes: bonus.durationMinutes,
@@ -604,6 +522,7 @@ export async function cmdAcceptTaskProposal(
     orderIndex: existing.length,
     goalId: (proposal.goalId as string) ?? null,
     planNodeId: (proposal.planNodeId as string) ?? null,
+    source: (proposal.goalId as string) ? "big_goal" : "user_created",
     payload: {
       description: (proposal.description as string) ?? "",
       durationMinutes: (proposal.durationMinutes as number) ?? 30,

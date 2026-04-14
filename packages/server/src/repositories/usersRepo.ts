@@ -69,6 +69,7 @@ function rowToProfile(r: UserRow): UserProfile {
     currentRole: extras.currentRole as string | undefined,
     education: extras.education as string | undefined,
     location: extras.location as string | undefined,
+    timezone: extras.timezone as string | undefined,
     context: extras.context as string | undefined,
     timeAvailable: extras.timeAvailable as string | undefined,
     constraints: extras.constraints as string | undefined,
@@ -82,6 +83,7 @@ function profileToPayload(p: UserProfile): Record<string, unknown> {
     currentRole: p.currentRole,
     education: p.education,
     location: p.location,
+    timezone: p.timezone,
     context: p.context,
     timeAvailable: p.timeAvailable,
     constraints: p.constraints,
@@ -187,6 +189,18 @@ export async function updateDeviceIntegrations(
        device_integrations = excluded.device_integrations,
        updated_at = now()`,
     [userId, JSON.stringify(integrations)],
+  );
+}
+
+/** Merge a partial object into the payload jsonb column — no read-modify-write. */
+export async function updatePayload(
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update users set payload = coalesce(payload, '{}'::jsonb) || $2::jsonb, updated_at = now()
+     where user_id = $1`,
+    [userId, JSON.stringify(patch)],
   );
 }
 

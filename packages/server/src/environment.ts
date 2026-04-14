@@ -179,9 +179,10 @@ export async function enrichWithEnvironment<
 
   const lines: string[] = ["ENVIRONMENT:"];
 
-  // Time context
+  // Time context — format in the USER's timezone, not the server's (UTC on Fly)
   const localDate = new Date(env.localTime);
   const timeStr = localDate.toLocaleTimeString("en-US", {
+    timeZone: env.timezone || "UTC",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,

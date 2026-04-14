@@ -134,3 +134,38 @@ export async function remove(id: string): Promise<void> {
 }
 
 export { remove as delete_ };
+
+// ── Pool queries ────────────────────────────────────────────
+
+const POOLED_WHERE = `
+  user_id = $1
+  AND status = 'ready'
+  AND (
+    payload->>'suggestedDate' = $2
+    OR payload->'analysis'->>'suggestedDate' = $2
+    OR (payload->>'suggestedDate' IS NULL AND payload->'analysis'->>'suggestedDate' IS NULL)
+  )`;
+
+/** Tasks in the "ready" pool for a given target date (or with no date). */
+export async function listPooledForDate(
+  targetDate: string,
+): Promise<PendingTaskRecord[]> {
+  const userId = requireUserId();
+  const rows = await query<PendingTaskRow>(
+    `select * from pending_tasks where ${POOLED_WHERE} order by created_at asc`,
+    [userId, targetDate],
+  );
+  return rows.map(rowToRecord);
+}
+
+/** Count of pooled tasks for the Refresh button badge. */
+export async function countPooledForDate(
+  targetDate: string,
+): Promise<number> {
+  const userId = requireUserId();
+  const rows = await query<{ count: string }>(
+    `select count(*)::text as count from pending_tasks where ${POOLED_WHERE}`,
+    [userId, targetDate],
+  );
+  return parseInt(rows[0]?.count ?? "0", 10);
+}

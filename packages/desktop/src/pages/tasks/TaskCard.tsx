@@ -1,4 +1,4 @@
-import { Check, Clock, SkipForward, Trash2 } from "lucide-react";
+import { Check, Clock, SkipForward, Trash2, Ban } from "lucide-react";
 import { useT } from "../../i18n";
 import type { DailyTask } from "@northstar/core";
 
@@ -11,6 +11,9 @@ interface Props {
    *  next to skip. Left optional so callers that don't need destructive
    *  actions (archived views, read-only lists) can skip it. */
   onDelete?: () => void;
+  /** Optional can't-complete handler. Shows a "Can't do" button that
+   *  routes to the can't-complete flow (reschedule or big goal reevaluation). */
+  onCantComplete?: () => void;
   /** Whether the parent selection-mode checkbox is shown. Selected rows
    *  get a highlighted border so the user sees what will be bulk-deleted. */
   selected?: boolean;
@@ -27,6 +30,7 @@ export default function TaskCard({
   onToggle,
   onSkip,
   onDelete,
+  onCantComplete,
   selected,
   onToggleSelect,
   selectMode,
@@ -88,6 +92,16 @@ export default function TaskCard({
             <button className="btn btn-ghost btn-xs task-action-btn task-action-skip" onClick={onSkip}>
               <SkipForward size={12} /> {t.dashboard.skip}
             </button>
+            {onCantComplete && (
+              <button
+                className="btn btn-ghost btn-xs task-action-btn task-action-cant"
+                onClick={onCantComplete}
+                aria-label="can't complete"
+                title="Can't complete this task"
+              >
+                <Ban size={12} /> Can't do
+              </button>
+            )}
             {onDelete && (
               <button
                 className="btn btn-ghost btn-xs task-action-btn task-action-delete"

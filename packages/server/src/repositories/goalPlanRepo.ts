@@ -12,6 +12,7 @@
  * All queries are user_id-scoped via getCurrentUserId() and parameterized.
  */
 
+import { randomUUID } from "node:crypto";
 import type {
   GoalPlan,
   GoalPlanMilestone,
@@ -24,6 +25,11 @@ import type {
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
+
+/** Generate a short random hex ID with a prefix (e.g. "week-a3f7c912"). */
+function genId(prefix: string): string {
+  return `${prefix}-${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+}
 
 export type GoalPlanNodeType =
   | "milestone"
@@ -288,6 +294,71 @@ export function flattenPlan(goalId: string, plan: GoalPlan): GoalPlanNode[] {
   return out;
 }
 
+/** Ensure every node in the plan tree has required fields so downstream
+ *  code never hits undefined.toLowerCase() or similar. Also generates IDs
+ *  for nodes missing them (AI sometimes omits them), normalizes snake_case
+ *  fields from the AI, and defaults numeric/boolean fields. Mutates the
+ *  plan in place and returns it for convenience. */
+export function normalizePlan(plan: GoalPlan): GoalPlan {
+  if (!plan) return plan;
+  if (!Array.isArray(plan.milestones)) plan.milestones = [];
+  if (!Array.isArray(plan.years)) plan.years = [];
+
+  for (const ms of plan.milestones) {
+    ms.id = ms.id || genId("ms");
+    ms.title = ms.title ?? "";
+    ms.description = ms.description ?? "";
+    ms.targetDate = ms.targetDate ?? "";
+    ms.completed = Boolean(ms.completed);
+  }
+
+  for (const yr of plan.years) {
+    yr.id = yr.id || genId("year");
+    yr.label = yr.label ?? "";
+    yr.objective = yr.objective ?? "";
+    if (!Array.isArray(yr.months)) yr.months = [];
+    for (const mo of yr.months) {
+      mo.id = mo.id || genId("month");
+      mo.label = mo.label ?? "";
+      mo.objective = mo.objective ?? "";
+      if (!Array.isArray(mo.weeks)) mo.weeks = [];
+      for (const wk of mo.weeks) {
+        wk.id = wk.id || genId("week");
+        wk.label = wk.label ?? "";
+        wk.objective = wk.objective ?? "";
+        if (!Array.isArray(wk.days)) wk.days = [];
+        // Default locked: weeks with tasks are unlocked, empty weeks are locked
+        if (wk.locked === undefined || wk.locked === null) {
+          const hasTasks = wk.days.some(
+            (d) => Array.isArray(d.tasks) && d.tasks.length > 0,
+          );
+          wk.locked = !hasTasks;
+        }
+        for (const dy of wk.days) {
+          dy.id = dy.id || genId("day");
+          dy.label = dy.label ?? "";
+          if (!Array.isArray(dy.tasks)) dy.tasks = [];
+          for (const t of dy.tasks) {
+            t.id = t.id || genId("task");
+            t.title = t.title ?? "";
+            t.description = t.description ?? "";
+            t.completed = Boolean(t.completed);
+            // Handle snake_case fields the AI might produce
+            const raw = t as unknown as Record<string, unknown>;
+            if (!t.durationMinutes && raw.duration_minutes) {
+              t.durationMinutes = raw.duration_minutes as number;
+            }
+            t.durationMinutes = t.durationMinutes || 30;
+            t.priority = t.priority ?? "should-do";
+            t.category = t.category ?? "planning";
+          }
+        }
+      }
+    }
+  }
+  return plan;
+}
+
 /** Replace all nodes for a goal with the flattened representation of
  *  `plan`. Used by regenerate-goal-plan: wipes the old tree and writes
  *  the new one under the same goal. */
@@ -295,6 +366,7 @@ export async function replacePlan(
   goalId: string,
   plan: GoalPlan,
 ): Promise<void> {
+  normalizePlan(plan);
   await deleteForGoal(goalId);
   const nodes = flattenPlan(goalId, plan);
   if (nodes.length > 0) {

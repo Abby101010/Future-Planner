@@ -12,6 +12,13 @@ contextBridge.exposeInMainWorld("electronAuth", {
   /** Open a URL in the system browser (used for OAuth). */
   openExternal: (url: string) => ipcRenderer.invoke("auth:open-external", url),
 
+  /**
+   * Open an in-app popup window for OAuth.  Returns the auth code extracted
+   * from the final redirect URL, or null if the user closed the popup.
+   */
+  oauthPopup: (url: string, redirectMatch: string): Promise<string | null> =>
+    ipcRenderer.invoke("auth:oauth-popup", url, redirectMatch),
+
   /** Listen for deep-link URLs forwarded from the main process. */
   onDeepLink: (callback: (url: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, url: string) =>

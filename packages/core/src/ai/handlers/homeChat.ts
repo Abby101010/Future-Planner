@@ -127,6 +127,8 @@ interface PendingTaskShape {
   analysis: null;
   status: "analyzing";
   createdAt: string;
+  /** Date the AI resolved from user input (defaults to today). */
+  suggestedDate?: string;
 }
 
 // ── JSON extraction ──────────────────────────────────────
@@ -497,7 +499,7 @@ function parseSingleIntent(
 ): HomeChatIntent | null {
   const nowIso = () => new Date().toISOString();
   // Prefer the caller's effective "today" (server computes it via the
-  // 6 AM day-boundary + timezone), falling back to UTC if unavailable.
+  // midnight day-boundary + timezone), falling back to UTC if unavailable.
   const effectiveToday = todayDate ?? nowIso().split("T")[0];
 
   if (parsed.is_event) {
@@ -590,6 +592,7 @@ function parseSingleIntent(
       analysis: null,
       status: "analyzing",
       createdAt: nowIso(),
+      suggestedDate: asString(parsed.task_date) || effectiveToday,
     };
     return { kind: "task", pendingTask };
   }

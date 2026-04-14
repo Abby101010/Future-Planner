@@ -109,6 +109,7 @@ export async function dispatchChatIntent(
           id: pt.id ?? crypto.randomUUID(),
           userInput: pt.userInput,
           status: "analyzing",
+          suggestedDate: pt.suggestedDate ?? todayDate,
         });
       }
       break;

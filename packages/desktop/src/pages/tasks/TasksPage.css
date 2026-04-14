@@ -547,6 +547,69 @@
   gap: 2px;
 }
 
+/* ── Reschedule cards ── */
+
+.reschedule-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.reschedule-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reschedule-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.reschedule-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reschedule-card-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.reschedule-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.reschedule-count-badge {
+  color: var(--orange, #f59e0b);
+  font-weight: 500;
+}
+
+.reschedule-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.reschedule-card-actions .input {
+  width: 140px;
+  font-size: 12px;
+}
+
 .tasks-header-right {
   display: flex;
   align-items: center;
@@ -657,4 +720,21 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
+}
+
+/* ── Refresh button badge ── */
+.refresh-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--neon-orange, #f59e0b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 4px;
 }

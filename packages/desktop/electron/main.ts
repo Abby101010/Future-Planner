@@ -131,6 +131,65 @@ ipcMain.handle("auth:open-external", (_event, url: string) => {
   shell.openExternal(url);
 });
 
+// IPC: open an in-app OAuth popup — stays inside the Electron app instead of
+// launching the system browser.  Returns the auth code extracted from the
+// final redirect URL so the renderer can exchange it for a session.
+ipcMain.handle(
+  "auth:oauth-popup",
+  (_event, url: string, redirectMatch: string) => {
+    return new Promise<string | null>((resolve) => {
+      const popup = new BrowserWindow({
+        width: 500,
+        height: 700,
+        parent: mainWindow ?? undefined,
+        modal: true,
+        show: false,
+        title: "Sign in",
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+
+      popup.once("ready-to-show", () => popup.show());
+
+      let resolved = false;
+      const tryExtractCode = (navUrl: string) => {
+        if (resolved) return;
+        try {
+          const parsed = new URL(navUrl);
+          if (navUrl.startsWith(redirectMatch)) {
+            const code = parsed.searchParams.get("code");
+            if (code) {
+              resolved = true;
+              popup.close();
+              resolve(code);
+            }
+          }
+        } catch {
+          // ignore malformed URLs
+        }
+      };
+
+      popup.webContents.on("will-navigate", (_e, navUrl) =>
+        tryExtractCode(navUrl),
+      );
+      popup.webContents.on("will-redirect", (_e, navUrl) =>
+        tryExtractCode(navUrl),
+      );
+      popup.webContents.on("did-navigate", (_e, navUrl) =>
+        tryExtractCode(navUrl),
+      );
+
+      popup.on("closed", () => {
+        if (!resolved) resolve(null);
+      });
+
+      popup.loadURL(url);
+    });
+  },
+);
+
 app.whenReady().then(async () => {
   // Grant geolocation permission so the renderer can collect GPS
   // coordinates for weather-aware task scheduling.

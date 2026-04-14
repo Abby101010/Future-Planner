@@ -81,17 +81,23 @@ export default function GoalPlanHierarchy({
 
                   {expandedMonths.has(month.id) && (
                     <div className="gp-month-body">
-                      {(month.weeks ?? []).map((week) => (
-                        <GoalPlanWeekCard
-                          key={week.id}
-                          week={week}
-                          isExpanded={expandedWeeks.has(week.id)}
-                          onToggle={() => onToggleWeek(week.id)}
-                          onToggleTask={onToggleTask}
-                          lang={lang}
-                          t={t}
-                        />
-                      ))}
+                      {(month.weeks ?? []).length > 0 ? (
+                        (month.weeks ?? []).map((week) => (
+                          <GoalPlanWeekCard
+                            key={week.id}
+                            week={week}
+                            isExpanded={expandedWeeks.has(week.id)}
+                            onToggle={() => onToggleWeek(week.id)}
+                            onToggleTask={onToggleTask}
+                            lang={lang}
+                            t={t}
+                          />
+                        ))
+                      ) : (
+                        <div className="gp-month-empty">
+                          Weeks will appear here as the plan progresses.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

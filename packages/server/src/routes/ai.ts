@@ -256,6 +256,7 @@ aiRouter.post(
           orderIndex: i,
           goalId: t.goalId ?? null,
           planNodeId: t.planNodeId ?? null,
+          source: t.goalId ? "big_goal" : "user_created",
           payload: {
             description: t.description,
             durationMinutes: t.durationMinutes,

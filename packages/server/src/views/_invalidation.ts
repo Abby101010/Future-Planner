@@ -61,7 +61,7 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:update-task": ["view:dashboard", "view:tasks", "view:calendar", "view:goal-plan"],
   "command:confirm-pending-task": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:reject-pending-task": ["view:dashboard", "view:tasks"],
-  "command:create-pending-task": ["view:dashboard"],
+  "command:create-pending-task": ["view:dashboard", "view:tasks"],
   "command:upsert-reminder": ["view:dashboard", "view:tasks", "view:settings"],
   "command:acknowledge-reminder": ["view:dashboard", "view:tasks", "view:settings"],
   "command:delete-reminder": ["view:dashboard", "view:tasks", "view:settings"],
@@ -136,5 +136,25 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:dismiss-nudge": [
     "view:dashboard",
     "view:tasks",
+  ],
+  "command:cant-complete-task": [
+    "view:dashboard",
+    "view:tasks",
+    "view:goal-plan",
+  ],
+  "command:add-task-to-plan": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+  ],
+  "command:refresh-daily-plan": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+  ],
+  "command:set-vacation-mode": [
+    "view:dashboard",
+    "view:tasks",
+    "view:settings",
   ],
 };

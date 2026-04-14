@@ -25,6 +25,7 @@ import { handlePaceCheck } from "./handlers/paceCheck";
 import { handleAnalyzeQuickTask } from "./handlers/analyzeQuickTask";
 import { handleNewsBriefing } from "./handlers/newsBriefing";
 import { getEffectiveDate } from "../dateUtils";
+import { loadProjectContext } from "../coordinators/bigGoal/projectAgentContext";
 
 // Agnostic handlers — live in @northstar/core/handlers (server-only subpath).
 // They pull in @anthropic-ai/sdk + node:crypto, so they must NOT come from
@@ -187,8 +188,41 @@ export async function handleAIRequestDirect(
       return handlePaceCheck(client, p as AIPayloadMap["pace-check"], memoryContext);
     case "classify-goal":
       return handleClassifyGoal(client, p as AIPayloadMap["classify-goal"], memoryContext);
-    case "goal-plan-chat":
-      return handleGoalPlanChat(client, p as AIPayloadMap["goal-plan-chat"], memoryContext);
+    case "goal-plan-chat": {
+      const gpcPayload = p as AIPayloadMap["goal-plan-chat"];
+      // Inject Project Agent Context (research, personalization, decisions)
+      // from prior planning sessions so follow-up chats are context-aware.
+      let enrichedMemory = memoryContext;
+      if (gpcPayload.goalId) {
+        try {
+          const projCtx = await loadProjectContext(gpcPayload.goalId);
+          if (projCtx) {
+            const parts: string[] = [];
+            if (projCtx.research) {
+              parts.push(`RESEARCH CONTEXT: ${projCtx.research.summary}`);
+              const f = projCtx.research.findings;
+              if (f) {
+                if (f.bestPractices?.length) parts.push(`Best practices: ${f.bestPractices.join("; ")}`);
+                if (f.keyMilestones?.length) parts.push(`Key milestones: ${f.keyMilestones.join("; ")}`);
+                if (f.commonPitfalls?.length) parts.push(`Watch out for: ${f.commonPitfalls.join("; ")}`);
+              }
+            }
+            if (projCtx.personalization) {
+              parts.push(`USER CAPACITY: avg ${projCtx.personalization.avgTasksPerDay} tasks/day, ${Math.round(projCtx.personalization.completionRate * 100)}% completion rate, overwhelm risk: ${projCtx.personalization.overwhelmRisk}, trend: ${projCtx.personalization.trend}`);
+            }
+            if (projCtx.decisions?.length) {
+              parts.push(`PRIOR DECISIONS: ${projCtx.decisions.join("; ")}`);
+            }
+            if (parts.length > 0) {
+              enrichedMemory = `${memoryContext}\n\nPROJECT AGENT CONTEXT (from prior planning session):\n${parts.join("\n")}`;
+            }
+          }
+        } catch {
+          // Project context loading is best-effort
+        }
+      }
+      return handleGoalPlanChat(client, gpcPayload, enrichedMemory);
+    }
     case "goal-plan-edit":
       return handleGoalPlanEdit(client, p as AIPayloadMap["goal-plan-edit"], memoryContext);
     case "generate-goal-plan":
@@ -198,7 +232,7 @@ export async function handleAIRequestDirect(
     case "analyze-monthly-context":
       return handleAnalyzeMonthlyContext(client, p as AIPayloadMap["analyze-monthly-context"], memoryContext);
     case "home-chat": {
-      // Stamp effective "today" (6 AM boundary + TZ) so reminder/event
+      // Stamp effective "today" (midnight boundary + TZ) so reminder/event
       // intents parsed from the chat reply land on the same calendar
       // day tasksView.ts filters against.
       const homePayload = p as AIPayloadMap["home-chat"];

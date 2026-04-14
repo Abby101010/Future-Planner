@@ -87,6 +87,12 @@ INTEGRATION RULES:
 - Big goal tasks form the core focus of the day.
 - If the user is on VACATION (vacation_mode is active), only show light everyday tasks
   and repeating obligations. No big goal tasks.
+- REMINDERS ARE OUTSIDE THE COGNITIVE BUDGET. Reminders are user-set notifications
+  (e.g. "take medicine at 9am") — they are NOT tasks and do NOT count toward the
+  2-5 task limit, the cognitive weight budget, or the duration budget. The app always
+  displays reminders in their own section regardless of how many tasks exist. When
+  generating tasks, schedule around reminder times but do NOT reduce the task count
+  or weight budget because reminders exist.
 
 ═══ MULTI-GOAL ROTATION (Fair Progress Distribution) ═══
 
@@ -98,7 +104,7 @@ When the user has MORE big goals with tasks today than can fit in the cognitive 
    that got attention recently and boost goals that haven't had a task in 2+ days.
 3. Each goal should get at least 1 task every 2-3 days to maintain momentum across all.
 4. When forced to choose, prefer: (a) goals closer to their deadline, (b) goals with
-   overdue tasks, (c) goals that haven't been worked on recently.
+   incomplete tasks from past days, (c) goals that haven't been worked on recently.
 5. NEVER stack all tasks from one goal. Variety prevents tunnel vision and keeps all
    goals progressing.
 

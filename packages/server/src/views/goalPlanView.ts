@@ -2,15 +2,8 @@
  *
  * Per-page aggregate for GoalPlanPage. Takes a goalId, returns the
  * hierarchical plan reconstructed from goal_plan_nodes, the goal
- * itself, the plan-chat messages, a small set of progress/overdue
- * computations, and the calendar events that might be needed for
- * reallocation decisions.
- *
- * Computed server-side (client stays zero-logic):
- *   - taskCount / completedCount / percent
- *   - overdueTaskCount (tasks whose parent day is in the past and
- *     that are not yet complete)
- *   - needsRescheduling (boolean: > 0 overdue AND not dismissed)
+ * itself, the plan-chat messages, progress computations, and the
+ * calendar events that might be needed for reallocation decisions.
  */
 
 import * as repos from "../repositories";
@@ -40,43 +33,11 @@ export interface GoalPlanView {
   plan: GoalPlan | null;
   planChat: GoalPlanMessage[];
   progress: GoalPlanProgress;
-  /** Number of incomplete tasks that sit on a day before today. */
-  overdueTaskCount: number;
-  /** True when there are overdue tasks AND the user hasn't dismissed
-   *  the reschedule banner yet. */
-  needsRescheduling: boolean;
   /** Scheduled tasks over the plan's date range — GoalPlanPage passes
    *  these into the reallocate flow. Empty array when no plan exists. */
   scheduledTasks: DailyTask[];
   /** Pace mismatch for this specific goal (null if on track). */
   paceMismatch: PaceMismatch | null;
-}
-
-function isDateBefore(dateStr: string, today: string): boolean {
-  if (!dateStr) return false;
-  return dateStr.localeCompare(today) < 0;
-}
-
-function computeOverdueFromPlan(plan: GoalPlan, today: string): number {
-  let overdue = 0;
-  for (const yr of plan.years ?? []) {
-    for (const mo of yr.months) {
-      for (const wk of mo.weeks) {
-        for (const dy of wk.days) {
-          // day.label can be "Mon" / "2026-04-10" / "Apr 10" — we can't
-          // reliably parse free-form labels, so we rely on the week
-          // being locked as a cheap proxy. If the week is locked AND a
-          // task is incomplete we count it overdue.
-          if (!wk.locked) continue;
-          for (const tk of dy.tasks) {
-            if (!tk.completed) overdue++;
-          }
-        }
-      }
-    }
-  }
-  void today;
-  return overdue;
 }
 
 function computePlanProgress(plan: GoalPlan | null): GoalPlanProgress {
@@ -120,8 +81,6 @@ export async function resolveGoalPlanView(
       plan: null,
       planChat: [],
       progress: { total: 0, completed: 0, percent: 0 },
-      overdueTaskCount: 0,
-      needsRescheduling: false,
       scheduledTasks: [],
       paceMismatch: null,
     };
@@ -134,16 +93,42 @@ export async function resolveGoalPlanView(
   const planNodes = await repos.goalPlan.listForGoal(goalId);
   const reconstructed =
     planNodes.length > 0 ? repos.goalPlan.reconstructPlan(planNodes) : null;
-  const plan: GoalPlan | null =
+  let plan: GoalPlan | null =
     reconstructed && (reconstructed.years.length > 0 || reconstructed.milestones.length > 0)
       ? reconstructed
       : (goal.plan ?? null);
 
+  // Self-heal: if the reconstructed plan looks broken (months with no weeks,
+  // tasks with 0 duration) but the inline goal.plan has data, re-normalize
+  // and re-persist. This repairs plans created before normalizePlan was fixed.
+  if (plan && goal.plan && Array.isArray(goal.plan.years)) {
+    const hasBrokenWeeks = plan.years.some((yr) =>
+      yr.months.some((mo) => mo.weeks.length === 0),
+    );
+    const hasBrokenDurations = plan.years.some((yr) =>
+      yr.months.some((mo) =>
+        mo.weeks.some((wk) =>
+          wk.days.some((dy) =>
+            dy.tasks.some((t) => !t.durationMinutes),
+          ),
+        ),
+      ),
+    );
+    if (hasBrokenWeeks || hasBrokenDurations) {
+      try {
+        console.log(`[goalPlanView] self-healing plan for goal ${goalId}`);
+        const healed = repos.goalPlan.normalizePlan(goal.plan);
+        await repos.goalPlan.replacePlan(goalId, healed);
+        await repos.goals.upsert({ ...goal, plan: healed });
+        plan = healed;
+      } catch (err) {
+        console.warn(`[goalPlanView] self-heal failed for ${goalId}:`, err);
+      }
+    }
+  }
+
   const progress = computePlanProgress(plan);
   const today = todayISO();
-  const overdueTaskCount = plan ? computeOverdueFromPlan(plan, today) : 0;
-  const needsRescheduling =
-    overdueTaskCount > 0 && !goal.rescheduleBannerDismissed;
 
   // Scheduled tasks: widest range we can cheaply pull — from today
   // through the goal's target date (or 90d out if no target date).
@@ -194,8 +179,6 @@ export async function resolveGoalPlanView(
     plan,
     planChat: goal.planChat ?? [],
     progress,
-    overdueTaskCount,
-    needsRescheduling,
     scheduledTasks,
     paceMismatch,
   };

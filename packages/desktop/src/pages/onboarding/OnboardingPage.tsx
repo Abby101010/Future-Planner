@@ -284,8 +284,8 @@ export default function OnboardingPage() {
             </h2>
             <p className="onboarding-step-desc">
               {language === "zh"
-                ? "我们会根据你的本地时间来安排任务，每天6点刷新。"
-                : "We'll schedule tasks based on your local time, with days refreshing at 6 AM."}
+                ? "我们会根据你的本地时间来安排任务，每天午夜刷新。"
+                : "We'll schedule tasks based on your local time, with days refreshing at midnight."}
             </p>
 
             {currentTimePreview && (

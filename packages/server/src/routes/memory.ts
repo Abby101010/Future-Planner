@@ -174,26 +174,62 @@ memoryRouter.post(
 memoryRouter.post(
   "/summary",
   asyncHandler(async (req, res) => {
-    const [{ count: signalCount }] = await query<{ count: string }>(
-      `select count(*)::text as count from memory_signals where user_id = $1`,
-      [req.userId],
-    );
-    const meta = await query<{
-      last_reflection_at: string | null;
-      reflection_count: number;
-    }>(
-      `select last_reflection_at, reflection_count
-         from memory_meta where user_id = $1`,
-      [req.userId],
-    );
+    const [
+      [{ count: signalCount }],
+      [{ count: factCount }],
+      [{ count: prefCount }],
+      highFacts,
+      topPrefs,
+      meta,
+    ] = await Promise.all([
+      query<{ count: string }>(
+        `select count(*)::text as count from memory_signals where user_id = $1`,
+        [req.userId],
+      ),
+      query<{ count: string }>(
+        `select count(*)::text as count from memory_facts where user_id = $1`,
+        [req.userId],
+      ),
+      query<{ count: string }>(
+        `select count(*)::text as count from memory_preferences where user_id = $1`,
+        [req.userId],
+      ),
+      query<{ fact: string; confidence: number; source: string }>(
+        `select fact, confidence, source from memory_facts
+         where user_id = $1 and confidence >= 0.7
+         order by confidence desc limit 10`,
+        [req.userId],
+      ),
+      query<{ preference: string; weight: number }>(
+        `select preference, weight from memory_preferences
+         where user_id = $1
+         order by weight desc limit 10`,
+        [req.userId],
+      ),
+      query<{
+        last_reflection_at: string | null;
+        reflection_count: number;
+      }>(
+        `select last_reflection_at, reflection_count
+           from memory_meta where user_id = $1`,
+        [req.userId],
+      ),
+    ]);
     res.json({
       ok: true,
       data: {
-        totalFacts: 0,
-        totalPreferences: 0,
+        totalFacts: Number(factCount) || 0,
+        totalPreferences: Number(prefCount) || 0,
         totalSignals: Number(signalCount) || 0,
-        highConfidenceFacts: [],
-        topPreferences: [],
+        highConfidenceFacts: highFacts.map((f) => ({
+          fact: f.fact,
+          confidence: f.confidence,
+          source: f.source,
+        })),
+        topPreferences: topPrefs.map((p) => ({
+          preference: p.preference,
+          weight: p.weight,
+        })),
         lastReflection: meta[0]?.last_reflection_at ?? null,
         reflectionCount: meta[0]?.reflection_count ?? 0,
       },

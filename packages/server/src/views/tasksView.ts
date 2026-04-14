@@ -22,7 +22,6 @@ import type {
 } from "@northstar/core";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import { hydrateDailyLog, nudgeToContextual } from "./_mappers";
-import { generateAndPersistDailyTasks } from "../services/dailyTaskGeneration";
 import { detectPaceMismatches, type PaceMismatch } from "../services/paceDetection";
 import { loadMemory, computeCapacityProfile } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
@@ -105,6 +104,12 @@ export interface TasksView {
   allTasksCompleted: boolean;
   /** Goals with too many overdue tasks — triggers the overload banner. */
   overloadedGoals: OverloadedGoalSummary[];
+  /** True when the user has at least one active goal. */
+  hasGoals: boolean;
+  /** True when today already has a plan (log exists with tasks). */
+  hasTodayPlan: boolean;
+  /** Number of tasks in the pending pool awaiting integration on refresh. */
+  pooledTaskCount: number;
 }
 
 export interface OverloadedGoalSummary {
@@ -158,6 +163,7 @@ function dayMatchesToday(
   today: string,
   weekLabel?: string,
 ): boolean {
+  if (!rawLabel) return false;
   const label = rawLabel.toLowerCase().trim();
   if (!label) return false;
   const d = new Date(`${today}T00:00:00`);
@@ -362,8 +368,8 @@ export async function resolveTasksView(): Promise<TasksView> {
     activeReminders,
     nudges,
     vacationState,
-    userProfile,
     pendingRescheduleRaw,
+    pooledTaskCount,
   ] = await Promise.all([
     repos.goals.list(),
     repos.dailyLogs.list(rangeStart, today),
@@ -372,8 +378,8 @@ export async function resolveTasksView(): Promise<TasksView> {
     repos.reminders.listActive(),
     repos.nudges.list(true),
     repos.vacationMode.get(),
-    repos.users.get(),
     repos.dailyTasks.listPendingReschedule(today),
+    repos.pendingTasks.countPooledForDate(today),
   ]);
 
   // Group tasks by date for cheap hydration.
@@ -388,46 +394,11 @@ export async function resolveTasksView(): Promise<TasksView> {
     .map((log) => hydrateDailyLog(log, tasksByDate.get(log.date) ?? []))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  let todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
+  const todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
 
-  // Auto-generate daily tasks if: no log for today, goals exist,
-  // current time is past the user's dailyTaskRefreshTime, and we're
-  // NOT in the quiet window (1 AM – 6 AM). No plan should generate
-  // between 1 AM and 6 AM — the user's day is over.
-  if (!todayLog && goals.length > 0) {
-    const refreshTime = userProfile?.settings?.dailyTaskRefreshTime ?? "06:00";
-    const now = new Date();
-    const wallHour = now.getHours();
-    const [rh, rm] = refreshTime.split(":").map(Number);
-    const refreshMinutes = (rh || 0) * 60 + (rm || 0);
-    const nowMinutes = wallHour * 60 + now.getMinutes();
-    const inQuietWindow = wallHour >= 1 && wallHour < 6;
-    if (!inQuietWindow && nowMinutes >= refreshMinutes) {
-      try {
-        await generateAndPersistDailyTasks({
-          date: today,
-          goals,
-          pastLogs: hydratedLogs.slice(0, 14),
-          heatmapData,
-          activeReminders,
-        });
-        // Re-fetch the newly created tasks and log so this response
-        // includes them (avoids requiring a second round-trip).
-        const freshTasks = await repos.dailyTasks.listForDateRange(today, today);
-        const freshLogs = await repos.dailyLogs.list(today, today);
-        // Replace (not append) today's tasks to avoid duplicates when
-        // the initial tasksInRange already contained rows for today.
-        tasksByDate.set(today, freshTasks);
-        if (freshLogs.length > 0) {
-          const freshLog = hydrateDailyLog(freshLogs[0], tasksByDate.get(today) ?? []);
-          hydratedLogs = [freshLog, ...hydratedLogs];
-          todayLog = freshLog;
-        }
-      } catch (err) {
-        console.warn("[tasksView] auto-generation failed:", err);
-      }
-    }
-  }
+  // No auto-generation — the user must click Refresh to generate tasks.
+  // The TasksPage shows an empty state with a Refresh button when no
+  // tasks exist for today.
 
   const todayDow = new Date(today + "T00:00:00").getDay();
   const todayDom = new Date(today + "T00:00:00").getDate();
@@ -498,6 +469,7 @@ export async function resolveTasksView(): Promise<TasksView> {
         title: ot.title,
         completed: false,
         orderIndex: 0,
+        source: "big_goal",
         payload: {
           description: ot.description ?? "",
           durationMinutes: ot.durationMinutes,
@@ -693,6 +665,10 @@ export async function resolveTasksView(): Promise<TasksView> {
     overloadedGoals.sort((a, b) => b.overdueCount - a.overdueCount);
   }
 
+  const activeGoals = goals.filter(
+    (g) => g.status !== "archived" && g.status !== "completed",
+  );
+
   return {
     todayDate: today,
     todayLog,
@@ -712,5 +688,8 @@ export async function resolveTasksView(): Promise<TasksView> {
     weeklyReviewDue,
     allTasksCompleted,
     overloadedGoals,
+    hasGoals: activeGoals.length > 0,
+    hasTodayPlan: todayLog !== null && (todayLog.tasks?.length ?? 0) > 0,
+    pooledTaskCount,
   };
 }

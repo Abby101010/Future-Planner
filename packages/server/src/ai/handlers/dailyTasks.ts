@@ -187,7 +187,7 @@ CAPACITY PROFILE (computed from user's behavioral history):
         : r.reminderTime;
       return `  - "${r.title}" at ${time}${r.repeat ? ` (repeats ${r.repeat})` : ""}${r.description ? ` — ${r.description}` : ""}`;
     });
-    remindersBlock = `\nACTIVE REMINDERS TODAY (user-set — do NOT schedule tasks that conflict with these time slots, and DO surface them if the user asks what's on their plate):\n${lines.join("\n")}`;
+    remindersBlock = `\nACTIVE REMINDERS TODAY (user-set notifications — OUTSIDE the cognitive budget. These do NOT count as tasks, do NOT reduce your task count, and do NOT consume cognitive weight or duration budget. Schedule tasks AROUND these times but generate the full 2-5 tasks as normal):\n${lines.join("\n")}`;
   }
 
   // Build goal plan tasks block (what's scheduled for today across all goals).
@@ -337,6 +337,7 @@ IMPORTANT REMINDERS:
 - You MUST generate between 2 and 5 tasks. Not 6, not 10, not 15. Between 2 and 5.
 - Total cognitive_weight across ALL tasks MUST be ≤ ${capacityProfile.capacityBudget}.
 - Total duration MUST be ≤ ${Math.round(todayFreeMinutes * 0.8)} minutes (80% of available time).
+- ACTIVE REMINDERS do NOT count as tasks and do NOT consume cognitive weight or duration budget. Always generate the full recommended task count regardless of how many reminders exist.
 - If there are CONFIRMED QUICK TASKS, include them in the count (they are pre-approved).
 - If there are EVERYDAY TASKS, slot them into gaps — don't let them hang unfinished.
 - REPEATING EVENTS are non-negotiable time blocks. Include them and schedule around them.${isVacationDay ? "\n- VACATION DAY: Only light everyday tasks and mandatory repeating events. No big goal work." : ""}

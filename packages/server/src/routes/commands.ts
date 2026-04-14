@@ -38,9 +38,12 @@ import {
   cmdRescheduleTask,
   cmdSnoozeReschedule,
   cmdDismissReschedule,
+  cmdCantCompleteTask,
+  cmdAddTaskToPlan,
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
   cmdConfirmDailyTasks,
+  cmdRefreshDailyPlan,
   cmdRegenerateDailyTasks,
   cmdAdaptiveReschedule,
   cmdAdjustAllOverloadedPlans,
@@ -56,6 +59,7 @@ import {
   cmdSaveMonthlyContext,
   cmdDeleteMonthlyContext,
   cmdUpdateSettings,
+  cmdSetVacationMode,
   cmdCompleteOnboarding,
   cmdResetData,
 } from "./commands/index";
@@ -172,6 +176,9 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:confirm-daily-tasks":
         result = await cmdConfirmDailyTasks(body);
         break;
+      case "command:refresh-daily-plan":
+        result = await cmdRefreshDailyPlan(body);
+        break;
       case "command:regenerate-daily-tasks":
         result = await cmdRegenerateDailyTasks(body);
         break;
@@ -192,6 +199,15 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:dismiss-nudge":
         result = await cmdDismissNudge(body);
+        break;
+      case "command:cant-complete-task":
+        result = await cmdCantCompleteTask(body);
+        break;
+      case "command:add-task-to-plan":
+        result = await cmdAddTaskToPlan(body);
+        break;
+      case "command:set-vacation-mode":
+        result = await cmdSetVacationMode(body);
         break;
       default: {
         // Unknown slug: the URL didn't match any known command. 404 with

@@ -33,7 +33,7 @@ import {
 import { useT } from "../../i18n";
 import { shouldAutoReflect, triggerReflection } from "../../services/memory";
 import Heatmap from "./Heatmap";
-// RecoveryModal removed — missed tasks are now handled by reschedule cards
+import RecoveryModal from "./RecoveryModal";
 import MilestoneCelebration from "./MilestoneCelebration";
 import BigGoalProgress from "./BigGoalProgress";
 import ReminderList from "./ReminderList";
@@ -114,6 +114,9 @@ interface TasksView {
   paceMismatches: PaceMismatch[];
   allTasksCompleted?: boolean;
   overloadedGoals?: Array<{ goalId: string; goalTitle: string; overdueCount: number }>;
+  hasGoals?: boolean;
+  hasTodayPlan?: boolean;
+  pooledTaskCount?: number;
 }
 
 const setVacationMode = (
@@ -161,6 +164,12 @@ export default function TasksPage() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [generatingBonus, setGeneratingBonus] = useState(false);
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+  const [cantCompleteTask, setCantCompleteTask] = useState<{
+    id: string;
+    title: string;
+    source?: string;
+    goalId?: string | null;
+  } | null>(null);
   const deferCheckedRef = useRef<string | null>(null);
 
   // Derived view-data shortcuts.
@@ -281,6 +290,15 @@ export default function TasksPage() {
     refetch();
   };
 
+  const handleCantComplete = (task: DailyTask) => {
+    setCantCompleteTask({
+      id: task.id,
+      title: task.title,
+      source: task.source,
+      goalId: task.goalId,
+    });
+  };
+
   const handleDeleteTask = async (taskId: string) => {
     if (!window.confirm("Delete this task?")) return;
     await run("command:delete-task", { taskId });
@@ -363,10 +381,23 @@ export default function TasksPage() {
   return (
     <div className="tasks-page">
       {/* Celebration overlay */}
+      {/* Celebration overlay */}
       {showCelebration && todayLog?.milestoneCelebration && (
         <MilestoneCelebration
           celebration={todayLog.milestoneCelebration}
           onClose={() => setShowCelebration(false)}
+        />
+      )}
+
+      {/* Can't-complete modal */}
+      {cantCompleteTask && (
+        <RecoveryModal
+          task={cantCompleteTask}
+          onClose={() => setCantCompleteTask(null)}
+          onDone={() => {
+            setCantCompleteTask(null);
+            refetch();
+          }}
         />
       )}
 
@@ -696,7 +727,7 @@ export default function TasksPage() {
                 onClick={async () => {
                   setRefreshing(true);
                   try {
-                    await run("command:regenerate-daily-tasks", {
+                    await run("command:refresh-daily-plan", {
                       date: data?.todayDate,
                     });
                     refetch();
@@ -762,23 +793,20 @@ export default function TasksPage() {
                     </>
                   )}
                   <button
-                    className="btn btn-ghost btn-sm"
+                    className="btn btn-primary btn-sm"
                     onClick={async () => {
                       setRefreshing(true);
                       try {
                         const res = await run<{
-                          mode?: string;
-                          proposals?: Array<Record<string, unknown>>;
-                        }>("command:regenerate-daily-tasks", {
+                          scenario?: string;
+                          bonusSuggestions?: Array<Record<string, unknown>>;
+                        }>("command:refresh-daily-plan", {
                           date: data?.todayDate,
                         });
-                        if (res?.mode === "confirmed" && res.proposals) {
-                          // Post-confirmation: show proposals as cards
-                          setProposals(res.proposals);
-                        } else {
-                          // Pre-confirmation: full regeneration happened
-                          refetch();
+                        if (res?.scenario === "bonus-suggest" && res.bonusSuggestions) {
+                          setProposals(res.bonusSuggestions);
                         }
+                        refetch();
                       } catch {
                         refetch();
                       } finally {
@@ -786,14 +814,17 @@ export default function TasksPage() {
                       }
                     }}
                     disabled={refreshing}
-                    title="Suggest new tasks (keeps your current tasks)"
+                    title="Refresh daily plan"
                   >
                     {refreshing ? (
                       <Loader2 size={14} className="spin" />
                     ) : (
-                      <Sparkles size={14} />
+                      <RefreshCw size={14} />
                     )}
-                    Suggest
+                    Refresh
+                    {(data?.pooledTaskCount ?? 0) > 0 && (
+                      <span className="refresh-badge">{data!.pooledTaskCount}</span>
+                    )}
                   </button>
                 </>
               )}
@@ -817,6 +848,7 @@ export default function TasksPage() {
                     }
                     onToggle={() => handleToggleTask(task.id)}
                     onSkip={() => handleSkipTask(task.id)}
+                    onCantComplete={() => handleCantComplete(task)}
                     onDelete={() => handleDeleteTask(task.id)}
                     selected={selectedIds.has(task.id)}
                     onToggleSelect={() => toggleSelectTask(task.id)}
@@ -874,6 +906,7 @@ export default function TasksPage() {
                     isOneThing={false}
                     onToggle={() => handleToggleTask(task.id)}
                     onSkip={() => handleSkipTask(task.id)}
+                    onCantComplete={() => handleCantComplete(task)}
                     onDelete={() => handleDeleteTask(task.id)}
                     selected={selectedIds.has(task.id)}
                     onToggleSelect={() => toggleSelectTask(task.id)}
@@ -902,6 +935,7 @@ export default function TasksPage() {
                     }
                     onToggle={() => handleToggleTask(task.id)}
                     onSkip={() => handleSkipTask(task.id)}
+                    onCantComplete={() => handleCantComplete(task)}
                     onDelete={() => handleDeleteTask(task.id)}
                     selected={selectedIds.has(task.id)}
                     onToggleSelect={() => toggleSelectTask(task.id)}
@@ -914,8 +948,15 @@ export default function TasksPage() {
           )}
 
           {allTodayTasks.length === 0 && pendingGoalTasks.length === 0 && (
-            <div className="tasks-empty">
-              <p>{t.dashboard.noTasks}</p>
+            <div className="tasks-empty plan-my-day-cta">
+              <Calendar size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
+              <p style={{ fontWeight: 500, marginBottom: 4 }}>No plan for today yet</p>
+              <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 12 }}>
+                Click Refresh to generate your daily plan
+                {(data?.pooledTaskCount ?? 0) > 0
+                  ? ` — ${data!.pooledTaskCount} queued task${data!.pooledTaskCount === 1 ? "" : "s"} ready`
+                  : ""}
+              </p>
             </div>
           )}
 

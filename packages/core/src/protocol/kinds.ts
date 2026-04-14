@@ -43,13 +43,17 @@ export type CommandKind =
   | "command:adaptive-reschedule"
   | "command:adjust-all-overloaded-plans"
   | "command:regenerate-daily-tasks"
+  | "command:refresh-daily-plan"
   | "command:confirm-daily-tasks"
   | "command:generate-bonus-task"
   | "command:accept-task-proposal"
   | "command:reschedule-task"
   | "command:snooze-reschedule"
   | "command:dismiss-reschedule"
-  | "command:dismiss-nudge";
+  | "command:dismiss-nudge"
+  | "command:cant-complete-task"
+  | "command:add-task-to-plan"
+  | "command:set-vacation-mode";
 
 export type EventKind =
   | "ai:stream-start"

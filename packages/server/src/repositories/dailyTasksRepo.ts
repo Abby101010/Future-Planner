@@ -12,7 +12,7 @@
  * will join them manually when building a DailyLog.
  */
 
-import type { DailyTask } from "@northstar/core";
+import type { DailyTask, TaskSource } from "@northstar/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
@@ -29,6 +29,8 @@ export interface DailyTaskRecord {
   completed: boolean;
   completedAt: string | null;
   orderIndex: number;
+  /** Where this task originated — drives CRUD lifecycle branching. */
+  source: TaskSource;
   /** All variable-shape DailyTask fields live here. */
   payload: Record<string, unknown>;
   createdAt: string;
@@ -45,6 +47,7 @@ interface DailyTaskRow {
   completed: boolean;
   completed_at: string | null;
   order_index: number;
+  source: string;
   payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
@@ -60,6 +63,7 @@ function rowToTask(r: DailyTaskRow): DailyTaskRecord {
     completed: r.completed,
     completedAt: r.completed_at,
     orderIndex: r.order_index,
+    source: (r.source as TaskSource) ?? "user_created",
     payload: parseJson(r.payload),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -109,17 +113,21 @@ export interface InsertDailyTaskInput {
   completed?: boolean;
   completedAt?: string | null;
   orderIndex?: number;
+  source?: TaskSource;
   payload?: Record<string, unknown>;
 }
 
 export async function insert(task: InsertDailyTaskInput): Promise<void> {
   const userId = requireUserId();
+  // Derive source from context if not explicitly set
+  const source: TaskSource = task.source
+    ?? (task.goalId ? "big_goal" : "user_created");
   await query(
     `insert into daily_tasks (
        id, user_id, log_date, goal_id, plan_node_id, title,
-       completed, completed_at, order_index, payload, updated_at
+       completed, completed_at, order_index, source, payload, updated_at
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, now()
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, now()
      )`,
     [
       task.id,
@@ -131,6 +139,7 @@ export async function insert(task: InsertDailyTaskInput): Promise<void> {
       task.completed ?? false,
       task.completedAt ?? null,
       task.orderIndex ?? 0,
+      source,
       JSON.stringify(task.payload ?? {}),
     ],
   );
@@ -255,6 +264,21 @@ export async function listPendingReschedule(
       if (typeof pl.rescheduleSnoozeUntil === "string" && pl.rescheduleSnoozeUntil > today) return false;
       return true;
     });
+}
+
+/** Find a daily_task linked to a specific plan node ID. Returns the
+ *  first match (there should only be one) or null. */
+export async function findByPlanNodeId(
+  planNodeId: string,
+): Promise<DailyTaskRecord | null> {
+  const userId = requireUserId();
+  const rows = await query<DailyTaskRow>(
+    `select * from daily_tasks
+      where user_id = $1 and plan_node_id = $2
+      limit 1`,
+    [userId, planNodeId],
+  );
+  return rows.length > 0 ? rowToTask(rows[0]) : null;
 }
 
 // Re-export canonical "delete" name since it's a reserved word.
