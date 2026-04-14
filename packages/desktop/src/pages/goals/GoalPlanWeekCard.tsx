@@ -1,4 +1,4 @@
-import { Lock, ChevronDown, ChevronRight, CheckCircle2, Clock } from "lucide-react";
+import { Lock, ChevronDown, ChevronRight, CheckCircle2, Clock, Circle } from "lucide-react";
 import type { GoalPlanWeek } from "@northstar/core";
 
 interface Props {
@@ -6,7 +6,7 @@ interface Props {
   weekIndex: number;
   isExpanded: boolean;
   onToggle: () => void;
-  onToggleTask: (weekId: string, dayId: string, taskId: string) => void;
+  onToggleTask?: (weekId: string, dayId: string, taskId: string) => void;
   lang: string;
   t: any;
 }
@@ -93,11 +93,8 @@ export default function GoalPlanWeekCard({
                     key={task.id}
                     className={`gp-task ${task.completed ? "completed" : ""}`}
                   >
-                    <div
-                      className={`gp-task-check ${task.completed ? "checked" : ""}`}
-                      onClick={() => onToggleTask(week.id, day.id, task.id)}
-                    >
-                      {task.completed && <CheckCircle2 size={14} />}
+                    <div className={`gp-task-status ${task.completed ? "checked" : ""}`}>
+                      {task.completed ? <CheckCircle2 size={14} /> : <Circle size={14} />}
                     </div>
                     <div className="gp-task-info">
                       <span className="gp-task-title">{task.title}</span>

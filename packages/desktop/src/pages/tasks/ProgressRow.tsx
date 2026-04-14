@@ -36,27 +36,27 @@ export default function ProgressRow({
 
       <div className="progress-card">
         <div className="progress-card-label">
-          <Flame size={14} />
-          {t.dashboard.milestone}
+          <Check size={14} />
+          {t.dashboard.today}
         </div>
         <div className="progress-card-value">
-          {todayLog.progress.milestonePercent.toFixed(1)}%
+          {completedCount}/{totalCount}
         </div>
         <div className="progress-bar">
           <div
             className="progress-bar-fill green"
-            style={{ width: `${todayLog.progress.milestonePercent}%` }}
+            style={{ width: `${completionRate}%` }}
           />
         </div>
       </div>
 
       <div className="progress-card">
         <div className="progress-card-label">
-          <Check size={14} />
-          {t.dashboard.today}
+          <Flame size={14} />
+          {t.dashboard.milestone}
         </div>
         <div className="progress-card-value">
-          {completedCount}/{totalCount}
+          {completionRate.toFixed(1)}%
         </div>
         <div className="progress-bar">
           <div

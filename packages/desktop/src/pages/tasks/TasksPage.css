@@ -743,6 +743,54 @@
   gap: var(--space-sm);
 }
 
+/* ── Completed tasks section ── */
+.completed-divider span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.completed-tasks-list {
+  opacity: 0.6;
+}
+
+.completed-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.completed-task-check {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.completed-task-title {
+  flex: 1;
+  font-size: 13px;
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.completed-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 /* ── Skip confirmation row ── */
 .skip-confirm-row {
   display: flex;

@@ -535,28 +535,19 @@
   opacity: 0.5;
 }
 
-.gp-task-check {
+.gp-task-status {
   width: 18px;
   height: 18px;
-  border-radius: var(--radius-full);
-  border: 2px solid var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   flex-shrink: 0;
   margin-top: 2px;
-  transition: all var(--transition-fast);
+  color: var(--text-muted);
 }
 
-.gp-task-check:hover {
-  border-color: var(--accent);
-}
-
-.gp-task-check.checked {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
+.gp-task-status.checked {
+  color: var(--accent);
 }
 
 .gp-task-info {

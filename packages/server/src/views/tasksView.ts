@@ -521,6 +521,25 @@ export async function resolveTasksView(): Promise<TasksView> {
 
   const todayProgress = computeTodayProgress(todayLog, pendingGoalTasks);
 
+  // Dynamically compute overallPercent and milestonePercent from real data
+  // instead of relying on static AI-generated values in the daily log.
+  const bigGoalProgress = computeBigGoalProgress(goals);
+  if (todayLog) {
+    // Overall: weighted average of all big goal completion percentages
+    if (bigGoalProgress.length > 0) {
+      const totalTasks = bigGoalProgress.reduce((s, g) => s + g.total, 0);
+      const completedTasks = bigGoalProgress.reduce((s, g) => s + g.completed, 0);
+      todayLog.progress = {
+        ...todayLog.progress,
+        overallPercent: totalTasks > 0
+          ? Math.round((completedTasks / totalTasks) * 1000) / 10
+          : 0,
+        // Milestone: today's task completion rate
+        milestonePercent: todayProgress.ratePercent,
+      };
+    }
+  }
+
   // Pace mismatch detection: compare user's actual task rate against plan assumptions
   let paceMismatches: PaceMismatch[] = [];
   let overloadAdvisories: OverloadAdvisory[] = [];
@@ -700,7 +719,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     dailyLogs: hydratedLogs,
     heatmapData,
     goals,
-    bigGoalProgress: computeBigGoalProgress(goals),
+    bigGoalProgress,
     activeReminders,
     todayReminders,
     overdueReminders,

@@ -450,8 +450,12 @@ export default function TasksPage() {
     }
   }
 
+  // Separate completed tasks into their own section
+  const completedTasks = allTodayTasks.filter((t) => t.completed);
+  const activeTasks = allTodayTasks.filter((t) => !t.completed);
+
   // Goal-sourced: has goalId or planNodeId
-  const goalTasks = allTodayTasks.filter(
+  const goalTasks = activeTasks.filter(
     (t) => t.goalId || t.planNodeId,
   );
   // Calendar-sourced: category hint or progressContribution mentions calendar.
@@ -461,11 +465,11 @@ export default function TasksPage() {
     (t.progressContribution?.toLowerCase().includes("calendar") ||
       t.whyToday?.toLowerCase().includes("calendar"));
   // Exclude skipped calendar tasks — if the event was canceled the task is dead.
-  const calendarTasks = allTodayTasks.filter(
+  const calendarTasks = activeTasks.filter(
     (t) => isCalendarSourced(t) && !t.skipped,
   );
   // Everything else = general tasks (also exclude skipped calendar tasks entirely)
-  const generalTasks = allTodayTasks.filter(
+  const generalTasks = activeTasks.filter(
     (t) =>
       !goalTasks.includes(t) && !calendarTasks.includes(t) && !isCalendarSourced(t),
   );
@@ -905,7 +909,7 @@ export default function TasksPage() {
                 </>
               ) : (
                 <>
-                  {allTodayTasks.length > 0 && (
+                  {activeTasks.length > 0 && (
                     <>
                       <button
                         className="btn btn-ghost btn-sm"
@@ -1084,7 +1088,7 @@ export default function TasksPage() {
             </>
           )}
 
-          {allTodayTasks.length === 0 && pendingGoalTasks.length === 0 && (
+          {activeTasks.length === 0 && completedTasks.length === 0 && pendingGoalTasks.length === 0 && (
             <div className="tasks-empty plan-my-day-cta">
               <Calendar size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
               <p style={{ fontWeight: 500, marginBottom: 4 }}>No plan for today yet</p>
@@ -1215,6 +1219,32 @@ export default function TasksPage() {
                 Bonus task
               </button>
             </div>
+          )}
+
+          {/* ── Completed Tasks ── */}
+          {completedTasks.length > 0 && (
+            <>
+              <div className="tasks-source-divider completed-divider">
+                <span><Check size={14} /> Completed ({completedTasks.length})</span>
+              </div>
+              <div className="tasks-list completed-tasks-list">
+                {completedTasks.map((task, i) => (
+                  <div key={`done-${task.id}-${i}`} className="completed-task-row">
+                    <div className="completed-task-check">
+                      <Check size={14} />
+                    </div>
+                    <span className="completed-task-title">{task.title}</span>
+                    <span className="completed-task-meta">
+                      <Clock size={11} />
+                      {task.durationMinutes}m
+                    </span>
+                    {task.goalId && (
+                      <span className="badge badge-source">{goalTitleFor(task.goalId)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </section>
         )}
