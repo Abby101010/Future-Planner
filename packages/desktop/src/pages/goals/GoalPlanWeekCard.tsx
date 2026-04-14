@@ -3,6 +3,7 @@ import type { GoalPlanWeek } from "@northstar/core";
 
 interface Props {
   week: GoalPlanWeek;
+  weekIndex: number;
   isExpanded: boolean;
   onToggle: () => void;
   onToggleTask: (weekId: string, dayId: string, taskId: string) => void;
@@ -10,20 +11,42 @@ interface Props {
   t: any;
 }
 
+// ── Display formatting ──
+
+const SHORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const WEEKDAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+/** Format an ISO date label "2026-04-14" → "Monday, Apr 14" for display.
+ *  Returns the raw label if it isn't an ISO date (shouldn't happen after
+ *  normalizePlan, but defensive). */
+function formatDayLabel(label: string): string {
+  if (!label || !label.trim()) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+    const d = new Date(label + "T12:00:00");
+    if (!isNaN(d.getTime())) {
+      return `${WEEKDAY_NAMES[d.getDay()]}, ${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}`;
+    }
+  }
+  return label;
+}
+
 export default function GoalPlanWeekCard({
   week,
+  weekIndex,
   isExpanded,
   onToggle,
   onToggleTask,
   t,
 }: Props) {
+  const weekLabel = week.label || `Week ${weekIndex + 1}`;
+
   if (week.locked) {
     return (
       <div className="gp-week locked">
         <div className="gp-week-header locked-header">
           <div className="gp-level-left">
             <Lock size={14} className="gp-lock-icon" />
-            <span className="gp-level-label">{week.label}</span>
+            <span className="gp-level-label">{weekLabel}</span>
           </div>
           <span className="gp-locked-hint">{t.goalPlan.lockedHint}</span>
         </div>
@@ -45,7 +68,7 @@ export default function GoalPlanWeekCard({
         <button className="gp-week-header" onClick={onToggle}>
           <div className="gp-level-left">
             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <span className="gp-level-label">{week.label}</span>
+            <span className="gp-level-label">{weekLabel}</span>
           </div>
           <div className="gp-week-right">
             <span className="gp-level-objective">{week.objective}</span>
@@ -60,7 +83,7 @@ export default function GoalPlanWeekCard({
         <div className="gp-week-body animate-slide-up">
           {days.map((day) => (
             <div key={day.id} className="gp-day">
-              <div className="gp-day-label">{day.label}</div>
+              <div className="gp-day-label">{formatDayLabel(day.label)}</div>
               <div className="gp-day-tasks">
                 {(day.tasks ?? []).map((task) => (
                   <div

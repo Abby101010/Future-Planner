@@ -36,7 +36,7 @@ export default function GoalPlanHierarchy({
 
   return (
     <section className="gp-hierarchy animate-slide-up">
-      {plan.years.map((year) => (
+      {plan.years.map((year, yearIndex) => (
         <div key={year.id} className="gp-year">
           <div className="gp-year-header-row">
             <button
@@ -50,7 +50,7 @@ export default function GoalPlanHierarchy({
                   <ChevronRight size={16} />
                 )}
                 <Calendar size={16} className="gp-level-icon year-icon" />
-                <span className="gp-level-label">{year.label}</span>
+                <span className="gp-level-label">{year.label || `Year ${yearIndex + 1}`}</span>
               </div>
               <span className="gp-level-objective">{year.objective}</span>
             </button>
@@ -58,7 +58,7 @@ export default function GoalPlanHierarchy({
 
           {expandedYears.has(year.id) && (
             <div className="gp-year-body">
-              {(year.months ?? []).map((month) => (
+              {(year.months ?? []).map((month, monthIndex) => (
                 <div key={month.id} className="gp-month">
                   <div className="gp-month-header-row">
                     <button
@@ -71,7 +71,7 @@ export default function GoalPlanHierarchy({
                         ) : (
                           <ChevronRight size={14} />
                         )}
-                        <span className="gp-level-label">{month.label}</span>
+                        <span className="gp-level-label">{month.label || `Month ${monthIndex + 1}`}</span>
                       </div>
                       <span className="gp-level-objective">
                         {month.objective}
@@ -82,10 +82,11 @@ export default function GoalPlanHierarchy({
                   {expandedMonths.has(month.id) && (
                     <div className="gp-month-body">
                       {(month.weeks ?? []).length > 0 ? (
-                        (month.weeks ?? []).map((week) => (
+                        (month.weeks ?? []).map((week, weekIndex) => (
                           <GoalPlanWeekCard
                             key={week.id}
                             week={week}
+                            weekIndex={weekIndex}
                             isExpanded={expandedWeeks.has(week.id)}
                             onToggle={() => onToggleWeek(week.id)}
                             onToggleTask={onToggleTask}
