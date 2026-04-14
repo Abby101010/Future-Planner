@@ -73,9 +73,9 @@ export async function cmdToggleTask(
       const category = (pl?.category as string) ?? "planning";
       const duration = (pl?.durationMinutes as number) ?? undefined;
       if (next) {
-        recordTaskCompleted(task.title, category, duration);
+        await recordTaskCompleted(task.title, category, duration);
       } else {
-        recordTaskUncompleted(task.title);
+        await recordTaskUncompleted(task.title);
       }
     }
 
@@ -148,7 +148,7 @@ export async function cmdSkipTask(
   if (isSkipped) {
     const pl = task.payload as Record<string, unknown>;
     const category = (pl?.category as string) ?? "planning";
-    recordTaskSkipped(task.title, category);
+    await recordTaskSkipped(task.title, category);
   }
   return { ok: true, taskId, skipped: isSkipped };
 }
@@ -585,7 +585,7 @@ export async function cmdDismissNudge(
   const feedback = body.feedback as string | undefined;
   if (feedback) {
     const isPositive = feedback === "helpful" || feedback === "good";
-    recordSignal(
+    await recordSignal(
       isPositive ? "positive_feedback" : "negative_feedback",
       "nudge",
       `${nudgeId}:${feedback}`,

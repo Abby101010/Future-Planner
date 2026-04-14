@@ -8,4 +8,7 @@ interface ElectronAuth {
 
 interface Window {
   electronAuth?: ElectronAuth;
+  electronNotifications?: {
+    show(title: string, body: string): Promise<void>;
+  };
 }

@@ -43,6 +43,7 @@ export async function recordSignal(
        VALUES ($1, $2, $3, $4, $5, now())`,
       [randomUUID(), userId, type, context, value],
     );
+    console.log("[signalRecorder] recorded:", type, context.slice(0, 60));
   } catch (err) {
     console.warn("[signalRecorder] failed to record signal:", type, err);
   }

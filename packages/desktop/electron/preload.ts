@@ -8,6 +8,12 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+/* ── Notification bridge ── */
+contextBridge.exposeInMainWorld("electronNotifications", {
+  show: (title: string, body: string) =>
+    ipcRenderer.invoke("notification:show", title, body),
+});
+
 contextBridge.exposeInMainWorld("electronAuth", {
   /** Open a URL in the system browser (used for OAuth). */
   openExternal: (url: string) => ipcRenderer.invoke("auth:open-external", url),

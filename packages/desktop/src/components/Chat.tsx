@@ -41,6 +41,30 @@ import type {
 } from "@northstar/core";
 import "./Chat.css";
 
+/** Strip JSON envelope from an assistant message.
+ *  Handles: entire-response JSON `{"reply":"..."}`, trailing JSON after
+ *  conversational text, and markdown-fenced JSON blocks. */
+function stripJsonEnvelope(text: string): string {
+  if (!text) return text;
+  const trimmed = text.trim();
+  // If the entire message is a JSON envelope with a "reply" field, extract it
+  if (trimmed.startsWith("{") && trimmed.includes('"reply"')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed.reply === "string") return parsed.reply;
+    } catch { /* not valid JSON, try other strategies */ }
+  }
+  // Strip a trailing JSON block after conversational text
+  const jsonStart = trimmed.indexOf('\n{');
+  if (jsonStart >= 0) {
+    const candidate = trimmed.slice(jsonStart + 1).trim();
+    if (candidate.startsWith('{') && candidate.includes('"reply"')) {
+      return trimmed.slice(0, jsonStart).trim();
+    }
+  }
+  return text;
+}
+
 interface GoalPlanViewModel {
   planChat: GoalPlanMessage[];
   plan: GoalPlan | null;
@@ -95,7 +119,7 @@ export default function Chat() {
     : undefined;
 
   // Query goal-specific planChat when on a goal-plan page.
-  const { data: goalPlanData } = useQuery<GoalPlanViewModel>(
+  const { data: goalPlanData, refetch: refetchGoalPlan } = useQuery<GoalPlanViewModel>(
     "view:goal-plan",
     goalPlanGoalId ? { goalId: goalPlanGoalId } : undefined,
     { enabled: !!goalPlanGoalId },
@@ -136,13 +160,18 @@ export default function Chat() {
   }, [chatContextKey]);
 
   // Sync messages from goal planChat when on a goal-plan page.
+  // Sanitize assistant messages: strip any JSON envelope that leaked into
+  // the stored content (from earlier bugs where the AI response wasn't
+  // properly parsed before persistence).
+  // Only sync when the server has messages — avoids overwriting pending
+  // local messages (e.g. from auto-trigger) with an empty planChat.
   useEffect(() => {
-    if (goalPlanGoalId && goalPlanData?.planChat) {
+    if (goalPlanGoalId && goalPlanData?.planChat && goalPlanData.planChat.length > 0) {
       setMessages(
         goalPlanData.planChat.map((m) => ({
           id: m.id,
           role: m.role,
-          content: m.content,
+          content: m.role === "assistant" ? stripJsonEnvelope(m.content) : m.content,
           timestamp: m.timestamp,
         })),
       );
@@ -185,14 +214,17 @@ export default function Chat() {
         ctx.importance = goal.importance;
         ctx.isHabit = goal.isHabit;
         ctx.description = goal.description;
-        if (goal.plan) {
-          ctx.selectedGoalPlan = goal.plan as unknown as Record<string, unknown>;
-        }
+      }
+      // Prefer the fresh plan from the goal-plan view query (auto-refreshes
+      // on invalidation) over the dashboard's potentially stale copy.
+      const freshPlan = goalPlanData?.plan ?? goal?.plan;
+      if (freshPlan) {
+        ctx.selectedGoalPlan = freshPlan as unknown as Record<string, unknown>;
       }
     }
 
     return ctx;
-  }, [currentView, dashData?.activeGoals]);
+  }, [currentView, dashData?.activeGoals, goalPlanData?.plan]);
 
   const sendMessageText = useCallback(async (text: string) => {
     if (!text || isStreaming) return;
@@ -283,6 +315,14 @@ export default function Chat() {
           setStreamingText("");
           setIsStreaming(false);
 
+          // If the server applied a plan change, force-refetch the goal
+          // plan view so the UI updates immediately. The WebSocket
+          // invalidation should also trigger this, but explicitly refetching
+          // here ensures we don't rely on the WS timing.
+          if (result.planReady || result.planPatch || result.plan) {
+            setTimeout(() => refetchGoalPlan(), 300);
+          }
+
           // Dispatch intents if any
           if (result.intents && result.intents.length > 0) {
             for (const rawIntent of result.intents) {
@@ -310,10 +350,23 @@ export default function Chat() {
         },
         onError: (msg) => {
           console.error("[Chat] stream error:", msg);
+          const isCreditError = /credit|balance|billing|too low|insufficient|quota/i.test(msg);
+          const isRateLimit = /rate.limit|too many requests|429/i.test(msg);
+          const isOverloaded = /overloaded|529|capacity/i.test(msg);
+          let content: string;
+          if (isCreditError) {
+            content = "You've run out of AI credits. Please purchase more to continue using this feature.";
+          } else if (isRateLimit) {
+            content = "Too many requests — please wait a moment and try again.";
+          } else if (isOverloaded) {
+            content = "The AI service is currently overloaded. Please try again in a few minutes.";
+          } else {
+            content = `Sorry, something went wrong: ${msg}`;
+          }
           const errorMsg: HomeChatMessage = {
             id: `err-${Date.now()}`,
             role: "assistant",
-            content: "Sorry, something went wrong. Please try again.",
+            content,
             timestamp: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, errorMsg]);
@@ -323,6 +376,18 @@ export default function Chat() {
       });
     } catch (err) {
       console.error("[Chat] stream failed:", err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isCreditError = /credit|balance|billing|too low|insufficient|quota/i.test(errMsg);
+      const errorContent = isCreditError
+        ? "You've run out of AI credits. Please purchase more to continue using this feature."
+        : `Sorry, something went wrong: ${errMsg}`;
+      const errorMsg: HomeChatMessage = {
+        id: `err-${Date.now()}`,
+        role: "assistant",
+        content: errorContent,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
       setIsStreaming(false);
       setStreamingText("");
     }
@@ -467,13 +532,20 @@ export default function Chat() {
               </div>
             </div>
           ))}
-          {isStreaming && streamingText && (
-            <div className="chat-msg chat-msg-assistant">
-              <div className="chat-bubble">
-                <ReactMarkdown>{streamingText}</ReactMarkdown>
+          {isStreaming && streamingText && (() => {
+            // In plan-edit mode, strip any JSON that leaked into the stream
+            const display = context.currentPage === "goal-plan"
+              ? stripJsonEnvelope(streamingText)
+              : streamingText;
+            if (!display) return null;
+            return (
+              <div className="chat-msg chat-msg-assistant">
+                <div className="chat-bubble">
+                  <ReactMarkdown>{display}</ReactMarkdown>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           {isStreaming && !streamingText && (
             <div className="chat-msg chat-msg-assistant">
               <div className="chat-bubble chat-loading">

@@ -12,7 +12,7 @@
    No IPC handlers are registered here anymore.
    ────────────────────────────────────────────────────────── */
 
-import { app, BrowserWindow, session, shell, ipcMain } from "electron";
+import { app, BrowserWindow, Notification, session, shell, ipcMain } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { initAutoUpdater } from "./auto-updater";
@@ -124,6 +124,13 @@ app.on("open-url", (event, url) => {
 app.on("second-instance", (_event, commandLine) => {
   const url = commandLine.find((arg) => arg.startsWith(`${PROTOCOL}://`));
   if (url) handleDeepLink(url);
+});
+
+// IPC: show a native OS notification (used for reminder alerts)
+ipcMain.handle("notification:show", (_event, title: string, body: string) => {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
 });
 
 // IPC: let the renderer open URLs in the system browser (for OAuth)

@@ -386,6 +386,31 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
           onBack={() => setView("planning")}
         />
 
+        {/* Notes section — directly below the goal header */}
+        <div className="gp-notes">
+          <div className="gp-notes-header" onClick={() => setShowNotes(!showNotes)}>
+            <FileText size={16} />
+            <h3>Notes</h3>
+            {showNotes ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </div>
+          {showNotes && (
+            <div className="gp-notes-body">
+              <textarea
+                className="input gp-notes-textarea"
+                placeholder="Add your thoughts, research, links, or anything related to this goal..."
+                value={notesValue}
+                onChange={(e) => {
+                  setNotesValue(e.target.value);
+                  setNotesSaved(false);
+                }}
+                onBlur={handleSaveNotes}
+                rows={6}
+              />
+              {notesSaved && <span className="gp-notes-saved">Saved</span>}
+            </div>
+          )}
+        </div>
+
         {errorMessage && (
           <div className="gp-error animate-fade-in">
             <AlertTriangle size={16} />
@@ -533,31 +558,6 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
             </div>
           </div>
         )}
-
-        {/* Notes section */}
-        <div className="gp-notes animate-slide-up">
-          <div className="gp-notes-header" onClick={() => setShowNotes(!showNotes)}>
-            <FileText size={16} />
-            <h3>Notes</h3>
-            {showNotes ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </div>
-          {showNotes && (
-            <div className="gp-notes-body">
-              <textarea
-                className="input gp-notes-textarea"
-                placeholder="Add your thoughts, research, links, or anything related to this goal..."
-                value={notesValue}
-                onChange={(e) => {
-                  setNotesValue(e.target.value);
-                  setNotesSaved(false);
-                }}
-                onBlur={handleSaveNotes}
-                rows={6}
-              />
-              {notesSaved && <span className="gp-notes-saved">Saved</span>}
-            </div>
-          )}
-        </div>
 
         {/* Empty state — no plan yet */}
         {!isGenerating && !plan && (

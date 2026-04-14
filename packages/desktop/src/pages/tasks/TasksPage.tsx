@@ -56,6 +56,7 @@ import type {
 } from "@northstar/core";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
+import { useReminderNotifications, useOverdueNotification } from "../../hooks/useReminderNotifications";
 import "../../styles/tasks-shared.css";
 import "./TasksPage.css";
 
@@ -117,6 +118,7 @@ interface TasksView {
   hasGoals?: boolean;
   hasTodayPlan?: boolean;
   pooledTaskCount?: number;
+  overdueReminders?: Reminder[];
 }
 
 const setVacationMode = (
@@ -178,6 +180,11 @@ export default function TasksPage() {
   // Calendar events are now unified as tasks — no separate events list.
   const vacationMode = data?.vacationMode ?? null;
   const reminders = data?.todayReminders ?? [];
+  const overdueReminders = data?.overdueReminders ?? [];
+
+  // Fire native OS notifications for due / overdue reminders
+  useReminderNotifications(reminders);
+  useOverdueNotification(overdueReminders);
   const bigGoalProgressRows = (data?.bigGoalProgress ?? []).map((r) => ({
     title: r.title,
     total: r.total,
@@ -474,6 +481,28 @@ export default function TasksPage() {
 
         {/* ── Big Goal Progress Summary ── */}
         <BigGoalProgress rows={bigGoalProgressRows} />
+
+        {/* ── Overdue Reminders (past-date, unacknowledged) ── */}
+        <ReminderList
+          reminders={overdueReminders}
+          variant="overdue"
+          onAcknowledge={async (id) => {
+            await run("command:acknowledge-reminder", { reminderId: id });
+            refetch();
+          }}
+          onDelete={async (id) => {
+            await run("command:delete-reminder", { reminderId: id });
+            refetch();
+          }}
+          onEdit={async (r) => {
+            await run("command:upsert-reminder", { reminder: r });
+            refetch();
+          }}
+          onBulkDelete={async (ids) => {
+            await run("command:delete-reminders-batch", { reminderIds: ids });
+            refetch();
+          }}
+        />
 
         {/* ── Reminders (always visible, above tasks) ── */}
         <ReminderList

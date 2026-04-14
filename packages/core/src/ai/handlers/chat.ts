@@ -40,7 +40,7 @@ export interface UnifiedChatResult {
 
 function summarizePlanForChat(
   plan: Record<string, unknown>,
-  bodyWeekBudget = 2,
+  bodyWeekBudget = 8,
 ): string {
   const milestones = (plan.milestones || []) as Array<Record<string, unknown>>;
   const years = (plan.years || []) as Array<Record<string, unknown>>;
@@ -210,7 +210,10 @@ export function buildUnifiedChatRequest(
     ? `\n${payload._schedulingContextFormatted}\n`
     : "";
 
+  const todayLine = `Today: ${payload.todayDate ?? new Date().toISOString().split("T")[0]}`;
+
   let contextBlock = `USER CONTEXT:
+${todayLine}
 ${environmentBlock}${schedulingBlock}Goals:
 ${goalsSummary}
 
@@ -297,7 +300,10 @@ ${remindersSummary}`;
     messages.push({ role: "user", content: userInput });
   }
 
-  const maxTokens = mode === "plan-edit" ? 4096 : 512;
+  // Plan-edit mode needs room for full plan JSON (milestones + years +
+  // months + 2 weeks of daily tasks). 4096 caused truncation on complex
+  // goals — match the dedicated generate-goal-plan handler's 8192.
+  const maxTokens = mode === "plan-edit" ? 8192 : 512;
   const modelTask = mode === "plan-edit" ? "goal-plan-chat" : "home-chat";
 
   return {

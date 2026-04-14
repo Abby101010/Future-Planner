@@ -1,4 +1,4 @@
-import { Bell, Check, Pencil, Trash2, X, CheckSquare } from "lucide-react";
+import { AlertTriangle, Bell, Check, Pencil, Trash2, X, CheckSquare } from "lucide-react";
 import { useState } from "react";
 import type { Reminder } from "@northstar/core";
 import { toLocalDatetimeInput } from "../../utils/dateFormat";
@@ -9,6 +9,7 @@ interface Props {
   onDelete?: (id: string) => void;
   onEdit?: (reminder: Reminder) => void;
   onBulkDelete?: (ids: string[]) => void;
+  variant?: "today" | "overdue";
 }
 
 export default function ReminderList({
@@ -17,6 +18,7 @@ export default function ReminderList({
   onDelete,
   onEdit,
   onBulkDelete,
+  variant = "today",
 }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -60,10 +62,10 @@ export default function ReminderList({
   if (reminders.length === 0) return null;
 
   return (
-    <section className="reminders-section animate-slide-up">
+    <section className={`reminders-section animate-slide-up${variant === "overdue" ? " reminders-section-overdue" : ""}`}>
       <div className="reminders-header">
-        <Bell size={14} />
-        <span>Reminders</span>
+        {variant === "overdue" ? <AlertTriangle size={14} /> : <Bell size={14} />}
+        <span>{variant === "overdue" ? "Overdue" : "Reminders"}</span>
         <span className="reminders-count">{reminders.length}</span>
         {onBulkDelete && (
           <div className="reminders-header-actions">
@@ -146,6 +148,9 @@ export default function ReminderList({
                     )}
                   </div>
                   <div className="reminder-card-title">{reminder.title}</div>
+                  {variant === "overdue" && (
+                    <span className="reminder-card-date">from {reminder.date}</span>
+                  )}
                   {reminder.description && (
                     <div className="reminder-card-desc">{reminder.description}</div>
                   )}

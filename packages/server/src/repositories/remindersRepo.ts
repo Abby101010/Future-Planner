@@ -111,20 +111,31 @@ export async function upsert(reminder: Reminder): Promise<void> {
 
 export async function acknowledge(id: string): Promise<void> {
   const userId = requireUserId();
-  await query(
+  const result = await query<{ id: string }>(
     `update reminders
         set acknowledged = true, acknowledged_at = now()
-      where user_id = $1 and id = $2`,
+      where user_id = $1 and id = $2
+      returning id`,
     [userId, id],
   );
+  if (result.length === 0) {
+    console.warn("[remindersRepo] acknowledge: no row matched", { id, userId });
+  } else {
+    console.log("[remindersRepo] acknowledged reminder", id);
+  }
 }
 
 export async function remove(id: string): Promise<void> {
   const userId = requireUserId();
-  await query(`delete from reminders where user_id = $1 and id = $2`, [
-    userId,
-    id,
-  ]);
+  const result = await query<{ id: string }>(
+    `delete from reminders where user_id = $1 and id = $2 returning id`,
+    [userId, id],
+  );
+  if (result.length === 0) {
+    console.warn("[remindersRepo] remove: no row matched", { id, userId });
+  } else {
+    console.log("[remindersRepo] deleted reminder", id);
+  }
 }
 
 export { remove as delete_ };

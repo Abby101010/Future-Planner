@@ -347,6 +347,27 @@
   color: var(--text-muted);
 }
 
+.reminder-card-date {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── Overdue reminders variant ── */
+.reminders-section-overdue .reminders-header {
+  color: var(--neon-orange, #f97316);
+}
+.reminders-section-overdue .reminders-count {
+  background: rgba(var(--neon-orange-raw, 249, 115, 22), 0.12);
+  color: var(--neon-orange, #f97316);
+}
+.reminders-section-overdue .reminder-card {
+  border-color: rgba(var(--neon-orange-raw, 249, 115, 22), 0.25);
+}
+.reminders-section-overdue .reminder-card-glow {
+  background: var(--neon-orange, #f97316);
+  box-shadow: 0 0 8px rgba(var(--neon-orange-raw, 249, 115, 22), 0.3);
+}
+
 .reminder-acknowledge-btn {
   display: flex;
   align-items: center;

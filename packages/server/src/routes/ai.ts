@@ -657,6 +657,31 @@ aiRouter.post(
     await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
 
     const isGoalPlanMode = payload.context?.currentPage === "goal-plan";
+
+    // For goal-plan mode, always use the freshest plan from DB rather
+    // than relying on the client's potentially stale copy. This ensures
+    // the AI sees all current task IDs and durations.
+    const goalId = typeof payload.goalId === "string" ? payload.goalId : "";
+    if (isGoalPlanMode && goalId && payload.context) {
+      try {
+        const planNodes = await repos.goalPlan.listForGoal(goalId);
+        if (planNodes.length > 0) {
+          const freshPlan = repos.goalPlan.reconstructPlan(planNodes);
+          if (freshPlan.years.length > 0 || freshPlan.milestones.length > 0) {
+            payload.context.selectedGoalPlan = freshPlan as unknown as Record<string, unknown>;
+          }
+        }
+        if (!payload.context.selectedGoalPlan) {
+          const goal = await repos.goals.get(goalId);
+          if (goal?.plan) {
+            payload.context.selectedGoalPlan = goal.plan as unknown as Record<string, unknown>;
+          }
+        }
+      } catch (err) {
+        console.warn("[ai/chat/stream] failed to load fresh plan for context:", err);
+      }
+    }
+
     const memory = await loadMemory(req.userId);
     const memoryContext = buildMemoryContext(memory, isGoalPlanMode ? "planning" : "general");
     const request = buildUnifiedChatRequest(payload, memoryContext);
@@ -704,18 +729,44 @@ aiRouter.post(
       });
 
       let fullText = "";
+      // In plan-edit mode the LLM wraps its response in a JSON envelope
+      // ({reply, planPatch, …}) that is machine-readable only. Stop
+      // streaming deltas once the JSON envelope starts so the client never
+      // sees raw JSON — only the conversational preamble (if any).
+      let suppressDeltas = false;
       stream.on("text", (chunk: string) => {
         fullText += chunk;
-        send("delta", { text: chunk });
+        if (isGoalPlanMode && !suppressDeltas) {
+          if (/\{\s*"reply"/.test(fullText)) {
+            suppressDeltas = true;
+            return;
+          }
+          // If the very first non-whitespace char is {, the entire output is JSON
+          if (fullText.trimStart().startsWith("{")) {
+            suppressDeltas = true;
+            return;
+          }
+        }
+        if (!suppressDeltas) {
+          send("delta", { text: chunk });
+        }
       });
 
       await stream.finalMessage();
+      console.log("[ai/chat/stream] mode=%s, raw LLM output (first 1000):", request.mode, fullText.slice(0, 1000));
       const result = parseUnifiedChatResult(
         fullText,
         request.mode,
         payload.userInput,
         payload.todayDate,
       );
+      console.log("[ai/chat/stream] parsed result:", {
+        replyLen: result.reply?.length ?? 0,
+        planReady: result.planReady,
+        hasPlan: !!result.plan,
+        hasPlanPatch: !!result.planPatch,
+        planPatchPreview: result.planPatch ? JSON.stringify(result.planPatch).slice(0, 500) : null,
+      });
 
       // Persist assistant reply for home-style chat
       let assistantMessageId = randomUUID();
@@ -768,15 +819,41 @@ aiRouter.post(
             if (!nextPlan) nextPlan = goal.plan ?? null;
 
             if (result.planReady && result.plan && Array.isArray((result.plan as { years?: unknown }).years)) {
+              console.log("[ai/chat/stream] FULL PLAN GENERATED — persisting");
               const planObj = result.plan as unknown as GoalPlan;
               await repos.goalPlan.replacePlan(goalId, planObj);
               nextPlan = planObj;
               planReplaced = true;
+              // Mark goal as confirmed + active so the UI stops showing
+              // "planning in progress" and the dashboard reflects the plan.
+              goal.planConfirmed = true;
+              if (goal.status === "pending" || goal.status === "planning") {
+                goal.status = "active" as typeof goal.status;
+              }
             } else if (result.planPatch && nextPlan) {
+              console.log("[ai/chat/stream] APPLYING PLAN PATCH");
+              console.log("[ai/chat/stream] planPatch:", JSON.stringify(result.planPatch).slice(0, 2000));
               const patched = applyPlanPatch(nextPlan, result.planPatch);
+              // Log task durations before/after to verify patch applied
+              const tasksBefore = nextPlan.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days?.flatMap(d => d.tasks?.map(t => ({ id: t.id, title: t.title, dur: t.durationMinutes })) ?? []) ?? []) ?? []) ?? []) ?? [];
+              const tasksAfter = patched.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days?.flatMap(d => d.tasks?.map(t => ({ id: t.id, title: t.title, dur: t.durationMinutes })) ?? []) ?? []) ?? []) ?? []) ?? [];
+              console.log("[ai/chat/stream] tasks before:", tasksBefore.slice(0, 20));
+              console.log("[ai/chat/stream] tasks after:", tasksAfter.slice(0, 20));
               await repos.goalPlan.replacePlan(goalId, patched);
               nextPlan = patched;
               planReplaced = true;
+            } else {
+              // Log why no plan change happened — critical for diagnosing
+              // "planning in progress" stuck states.
+              if (result.planReady && !result.plan) {
+                console.error("[ai/chat/stream] AI set planReady=true but plan is null — likely JSON truncation. fullText length:", fullText.length);
+              }
+              console.log("[ai/chat/stream] NO PLAN CHANGE:", {
+                hasPlanPatch: !!result.planPatch,
+                hasNextPlan: !!nextPlan,
+                planReady: result.planReady,
+                hasPlan: !!result.plan,
+              });
             }
 
             await repos.goals.upsert({ ...goal, planChat: nextChat, plan: nextPlan });

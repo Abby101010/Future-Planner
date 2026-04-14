@@ -376,7 +376,10 @@ export function buildHomeChatRequest(
     ? `\n${schedulingContextFormatted}\n`
     : "";
 
+  const todayLine = `Today: ${payload.todayDate ?? new Date().toISOString().split("T")[0]}`;
+
   const contextBlock = `USER CONTEXT:
+${todayLine}
 ${environmentBlock}${schedulingBlock}Goals:
 ${goalsSummary}
 

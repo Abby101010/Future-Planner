@@ -86,6 +86,8 @@ export interface TasksView {
   bigGoalProgress: BigGoalProgress[];
   activeReminders: Reminder[];
   todayReminders: Reminder[];
+  /** One-time reminders from past dates that were never acknowledged. */
+  overdueReminders: Reminder[];
   recentNudges: ContextualNudge[];
   vacationMode: TasksVacationMode;
   totalIncompleteTasks: number;
@@ -418,6 +420,11 @@ export async function resolveTasksView(): Promise<TasksView> {
     })
     .sort((a, b) => a.reminderTime.localeCompare(b.reminderTime));
 
+  // One-time reminders from past dates that were never acknowledged.
+  const overdueReminders = activeReminders
+    .filter((r) => r.repeat === null && !r.acknowledged && r.date < today)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.reminderTime.localeCompare(b.reminderTime));
+
   const totalIncompleteTasks = hydratedLogs.reduce(
     (sum, log) => sum + log.tasks.filter((t) => !t.completed && !t.skipped).length,
     0,
@@ -678,6 +685,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     bigGoalProgress: computeBigGoalProgress(goals),
     activeReminders,
     todayReminders,
+    overdueReminders,
     recentNudges: nudges.map(nudgeToContextual),
     vacationMode,
     totalIncompleteTasks,

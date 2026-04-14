@@ -194,14 +194,14 @@ memoryRouter.post(
         `select count(*)::text as count from memory_preferences where user_id = $1`,
         [req.userId],
       ),
-      query<{ fact: string; confidence: number; source: string }>(
-        `select fact, confidence, source from memory_facts
+      query<{ category: string; key: string; value: string; confidence: number; source: string }>(
+        `select category, key, value, confidence, source from memory_facts
          where user_id = $1 and confidence >= 0.7
          order by confidence desc limit 10`,
         [req.userId],
       ),
-      query<{ preference: string; weight: number }>(
-        `select preference, weight from memory_preferences
+      query<{ text: string; weight: number }>(
+        `select text, weight from memory_preferences
          where user_id = $1
          order by weight desc limit 10`,
         [req.userId],
@@ -222,13 +222,13 @@ memoryRouter.post(
         totalPreferences: Number(prefCount) || 0,
         totalSignals: Number(signalCount) || 0,
         highConfidenceFacts: highFacts.map((f) => ({
-          fact: f.fact,
-          confidence: f.confidence,
-          source: f.source,
+          category: f.category,
+          key: f.key,
+          value: f.value,
         })),
         topPreferences: topPrefs.map((p) => ({
-          preference: p.preference,
-          weight: p.weight,
+          text: p.text,
+          sentiment: (p.weight > 0 ? "positive" : p.weight < 0 ? "negative" : "neutral") as "positive" | "negative" | "neutral",
         })),
         lastReflection: meta[0]?.last_reflection_at ?? null,
         reflectionCount: meta[0]?.reflection_count ?? 0,

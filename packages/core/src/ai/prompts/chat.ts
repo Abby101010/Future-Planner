@@ -2,7 +2,15 @@
  *
  * Replaces separate HOME_CHAT_SYSTEM and GOAL_PLAN_CHAT_SYSTEM with a
  * single prompt assembled from sections based on the current page context.
+ *
+ * Goal-plan mode uses the full GOAL_PLAN_CHAT_SYSTEM prompt (from
+ * goalPlan.ts) directly — it has detailed JSON envelope, patching, and
+ * example instructions that the AI needs to reliably produce structured
+ * output.  The condensed PLAN_REFINEMENT section is kept for reference
+ * but no longer used at runtime.
  */
+
+import { GOAL_PLAN_CHAT_SYSTEM } from "./goalPlan.js";
 
 // ── Base personality ────────────────────────────────────────
 
@@ -228,16 +236,19 @@ export interface ChatPromptContext {
 }
 
 export function buildUnifiedChatPrompt(context: ChatPromptContext): string {
-  let prompt = BASE;
-
+  // Goal-plan mode gets the full GOAL_PLAN_CHAT_SYSTEM prompt which has
+  // detailed JSON envelope instructions, patching rules, and examples.
+  // Using BASE here would conflict — BASE says "NEVER show raw JSON" which
+  // causes the AI to skip the JSON envelope entirely, breaking plan patches.
   if (context.currentPage === "goal-plan") {
-    prompt += PLAN_REFINEMENT;
-  } else {
-    prompt += ENTITY_CREATION;
-    prompt += ENTITY_MANAGEMENT;
-    prompt += OVERLOAD_PROTECTION;
-    prompt += CONTEXT_AWARENESS;
+    return GOAL_PLAN_CHAT_SYSTEM;
   }
+
+  let prompt = BASE;
+  prompt += ENTITY_CREATION;
+  prompt += ENTITY_MANAGEMENT;
+  prompt += OVERLOAD_PROTECTION;
+  prompt += CONTEXT_AWARENESS;
 
   if (context.weeklyReviewDue) {
     prompt += WEEKLY_REVIEW;
