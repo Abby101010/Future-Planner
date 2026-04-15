@@ -76,6 +76,22 @@ export interface PendingReschedule {
   suggestedDateLabel: string;
 }
 
+/** A task recommended for deferral when today exceeds the cognitive budget.
+ *  Shown in a confirmation card — NO auto-move, user decides. */
+export interface OverflowRecommendation {
+  taskId: string;
+  title: string;
+  cognitiveWeight: number;
+  durationMinutes: number;
+  priority: string;
+  source: string;
+  goalId: string | null;
+  goalTitle?: string;
+  /** Lightest upcoming day to defer to. */
+  suggestedDate: string;
+  suggestedDateLabel: string;
+}
+
 export interface TasksView {
   todayDate: string;
   todayLog: DailyLog | null;
@@ -114,6 +130,16 @@ export interface TasksView {
   hasTodayPlan: boolean;
   /** Number of tasks in the pending pool awaiting integration on refresh. */
   pooledTaskCount: number;
+  /** Tasks recommended for deferral when today exceeds cognitive budget.
+   *  Empty = not overloaded. UI shows a confirmation card, no auto-move. */
+  overflowRecommendations: OverflowRecommendation[];
+  /** Budget summary shown alongside overflow recommendations. */
+  todayBudget?: {
+    totalWeight: number;
+    maxWeight: number;
+    totalTasks: number;
+    maxTasks: number;
+  };
 }
 
 export interface OverloadedGoalSummary {
@@ -412,7 +438,24 @@ export async function resolveTasksView(): Promise<TasksView> {
     .map((log) => hydrateDailyLog(log, tasksByDate.get(log.date) ?? []))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  const todayLog = hydratedLogs.find((l) => l.date === today) ?? null;
+  const todayLogRaw = hydratedLogs.find((l) => l.date === today) ?? null;
+
+  // Defense-in-depth: if daily_tasks exist for today but no daily_log
+  // row was found, create a minimal log on the fly and hydrate it.
+  // This self-heals ghost-task states from write paths (reschedule,
+  // defer, pool-integration) that added tasks without a log entry.
+  let resolvedTodayLog = todayLogRaw;
+  if (!resolvedTodayLog) {
+    const todayTaskRecords = tasksByDate.get(today) ?? [];
+    if (todayTaskRecords.length > 0) {
+      await repos.dailyLogs.ensureExists(today);
+      const freshLog = await repos.dailyLogs.get(today);
+      if (freshLog) {
+        resolvedTodayLog = hydrateDailyLog(freshLog, todayTaskRecords);
+        hydratedLogs = [resolvedTodayLog, ...hydratedLogs];
+      }
+    }
+  }
 
   // No auto-generation — the user must click Refresh to generate tasks.
   // The TasksPage shows an empty state with a Refresh button when no
@@ -473,7 +516,7 @@ export async function resolveTasksView(): Promise<TasksView> {
   }
 
   const pgResult = computePendingGoalTasks(
-    goals, todayLog, today, existingPlanNodeKeys,
+    goals, resolvedTodayLog, today, existingPlanNodeKeys,
   );
 
   // Plan-tree tasks are NOT shown directly in "Today". The AI daily
@@ -530,21 +573,21 @@ export async function resolveTasksView(): Promise<TasksView> {
   console.debug(
     `[tasksView] ${pendingGoalTasks.length} pending goal tasks, ` +
     `${pgResult.overduePlanTasks.length} overdue plan tasks materialized, ` +
-    `todayLog has ${todayLog?.tasks.length ?? 0} tasks`,
+    `todayLog has ${resolvedTodayLog?.tasks.length ?? 0} tasks`,
   );
 
-  const todayProgress = computeTodayProgress(todayLog, pendingGoalTasks);
+  const todayProgress = computeTodayProgress(resolvedTodayLog, pendingGoalTasks);
 
   // Dynamically compute overallPercent and milestonePercent from real data
   // instead of relying on static AI-generated values in the daily log.
   const bigGoalProgress = computeBigGoalProgress(goals);
-  if (todayLog) {
+  if (resolvedTodayLog) {
     // Overall: weighted average of all big goal completion percentages
     if (bigGoalProgress.length > 0) {
       const totalTasks = bigGoalProgress.reduce((s, g) => s + g.total, 0);
       const completedTasks = bigGoalProgress.reduce((s, g) => s + g.completed, 0);
-      todayLog.progress = {
-        ...todayLog.progress,
+      resolvedTodayLog.progress = {
+        ...resolvedTodayLog.progress,
         overallPercent: totalTasks > 0
           ? Math.round((completedTasks / totalTasks) * 1000) / 10
           : 0,
@@ -557,6 +600,8 @@ export async function resolveTasksView(): Promise<TasksView> {
   // Pace mismatch detection: compare user's actual task rate against plan assumptions
   let paceMismatches: PaceMismatch[] = [];
   let overloadAdvisories: OverloadAdvisory[] = [];
+  let effectiveMaxWeight = 12; // default; overridden by capacity profile below
+  let effectiveMaxTasks = 5;
   try {
     const userId = getCurrentUserId();
     const [memory, userProfile] = await Promise.all([loadMemory(userId), repos.users.get()]);
@@ -565,6 +610,8 @@ export async function resolveTasksView(): Promise<TasksView> {
       tasks: l.tasks.map((t) => ({ completed: t.completed, skipped: !!t.skipped })),
     }));
     const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay(), undefined, userProfile?.weeklyAvailability);
+    effectiveMaxWeight = capacity.capacityBudget;
+    effectiveMaxTasks = capacity.maxDailyTasks ?? 5;
     paceMismatches = detectPaceMismatches(goals, capacity.avgTasksCompletedPerDay, today);
 
     // Cross-goal overload detection
@@ -619,7 +666,7 @@ export async function resolveTasksView(): Promise<TasksView> {
   // All tasks completed — triggers bonus task prompt on the client.
   // Exclude bonus tasks from this check: they're optional extras that
   // shouldn't prevent the "all done" state from showing.
-  const todayTasks = todayLog?.tasks ?? [];
+  const todayTasks = resolvedTodayLog?.tasks ?? [];
   const nonBonusTasks = todayTasks.filter((t) => !isBonusTask(t));
   const allTasksCompleted =
     nonBonusTasks.length > 0 &&
@@ -654,7 +701,7 @@ export async function resolveTasksView(): Promise<TasksView> {
     loadByDate.set(ft.date, (loadByDate.get(ft.date) ?? 0) + cw);
   }
   // Also count today's load so we can potentially suggest today if very light
-  const todayCogLoad = (todayLog?.tasks ?? []).reduce(
+  const todayCogLoad = (resolvedTodayLog?.tasks ?? []).reduce(
     (s, t) => s + (t.completed || t.skipped ? 0 : ((t as unknown as Record<string, unknown>).cognitiveWeight as number ?? 3)),
     0,
   );
@@ -726,13 +773,74 @@ export async function resolveTasksView(): Promise<TasksView> {
     overloadedGoals.sort((a, b) => b.overdueCount - a.overdueCount);
   }
 
+  // Overflow analysis: check if today's active tasks exceed the cognitive
+  // budget. If so, recommend tasks to defer. Advisory only — no auto-move.
+  const activeTodayForOverflow = todayTasks.filter(
+    (t) => !t.completed && !t.skipped,
+  );
+  const todayTotalWeight = activeTodayForOverflow.reduce(
+    (s, t) => s + ((t as unknown as Record<string, unknown>).cognitiveWeight as number ?? 3), 0,
+  );
+  const todayActiveCount = activeTodayForOverflow.length;
+  const isOverBudget =
+    todayTotalWeight > effectiveMaxWeight || todayActiveCount > effectiveMaxTasks;
+
+  let overflowRecommendations: OverflowRecommendation[] = [];
+  let todayBudget: TasksView["todayBudget"];
+  if (isOverBudget && resolvedTodayLog) {
+    // Sort: bonus first, then should-do, then must-do. Exclude big_goal tasks.
+    const priRank = (p: string) =>
+      p === "must-do" ? 0 : p === "should-do" ? 1 : 2;
+    const candidates = activeTodayForOverflow
+      .filter((t) => t.source !== "big_goal")
+      .sort((a, b) => {
+        const diff = priRank(b.priority) - priRank(a.priority);
+        if (diff !== 0) return diff;
+        return ((a as unknown as Record<string, unknown>).cognitiveWeight as number ?? 3) -
+               ((b as unknown as Record<string, unknown>).cognitiveWeight as number ?? 3);
+      });
+
+    let remainWeight = todayTotalWeight;
+    let remainCount = todayActiveCount;
+    const minKeep = 2;
+
+    for (const c of candidates) {
+      if (remainWeight <= effectiveMaxWeight && remainCount <= effectiveMaxTasks) break;
+      if (remainCount <= minKeep) break;
+      const cw = (c as unknown as Record<string, unknown>).cognitiveWeight as number ?? 3;
+      const dm = c.durationMinutes ?? 30;
+      const suggested = pickSuggestedDate(cw);
+      overflowRecommendations.push({
+        taskId: c.id,
+        title: c.title,
+        cognitiveWeight: cw,
+        durationMinutes: dm,
+        priority: c.priority,
+        source: c.source ?? "user_created",
+        goalId: c.goalId ?? null,
+        goalTitle: c.goalId ? goalMap.get(c.goalId) : undefined,
+        suggestedDate: suggested,
+        suggestedDateLabel: formatSuggestedLabel(suggested),
+      });
+      remainWeight -= cw;
+      remainCount -= 1;
+    }
+
+    todayBudget = {
+      totalWeight: todayTotalWeight,
+      maxWeight: effectiveMaxWeight,
+      totalTasks: todayActiveCount,
+      maxTasks: effectiveMaxTasks,
+    };
+  }
+
   const activeGoals = goals.filter(
     (g) => g.status !== "archived" && g.status !== "completed",
   );
 
   return {
     todayDate: today,
-    todayLog,
+    todayLog: resolvedTodayLog,
     dailyLogs: hydratedLogs,
     heatmapData,
     goals,
@@ -752,7 +860,9 @@ export async function resolveTasksView(): Promise<TasksView> {
     overloadedGoals,
     overloadAdvisories,
     hasGoals: activeGoals.length > 0,
-    hasTodayPlan: todayLog !== null && (todayLog.tasks?.length ?? 0) > 0,
+    hasTodayPlan: resolvedTodayLog !== null && (resolvedTodayLog.tasks?.length ?? 0) > 0,
     pooledTaskCount,
+    overflowRecommendations,
+    todayBudget,
   };
 }

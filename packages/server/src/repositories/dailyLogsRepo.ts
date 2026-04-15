@@ -141,6 +141,23 @@ export async function upsert(log: {
   );
 }
 
+/**
+ * Guarantee a daily_logs row exists for the given date. If one already
+ * exists this is a no-op (ON CONFLICT DO NOTHING keeps existing data).
+ * Used by code paths that write daily_tasks without going through
+ * scenarioCollectAndSchedule, which is the only scenario that calls
+ * the full `upsert`.
+ */
+export async function ensureExists(date: string): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `INSERT INTO daily_logs (user_id, log_date, payload, updated_at)
+     VALUES ($1, $2, '{"autoCreated":true}'::jsonb, now())
+     ON CONFLICT (user_id, log_date) DO NOTHING`,
+    [userId, date],
+  );
+}
+
 export async function remove(date: string): Promise<void> {
   const userId = requireUserId();
   await query(

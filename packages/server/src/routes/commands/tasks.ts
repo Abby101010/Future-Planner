@@ -42,6 +42,7 @@ export async function cmdCreateTask(
     source,
     payload,
   });
+  await repos.dailyLogs.ensureExists(date);
   return { ok: true, taskId: id };
 }
 
@@ -306,6 +307,7 @@ export async function cmdConfirmPendingTask(
         addedMidDay: true,
       },
     });
+    await repos.dailyLogs.ensureExists(date);
   }
 
   return { ok: true, pendingId };
@@ -469,6 +471,9 @@ export async function cmdDeferOverflow(
   const maxWeight = (body.maxWeight as number | undefined) ?? 12;
   const maxTasks = (body.maxTasks as number | undefined) ?? 5;
   const maxMinutes = (body.maxMinutes as number | undefined) ?? 180;
+  // Per-task target dates from the confirmation card. Falls back to
+  // tomorrowOf(date) for tasks without a specific target.
+  const taskTargets = (body.taskTargets as Record<string, string> | undefined) ?? {};
 
   const tasks = await repos.dailyTasks.listForDate(date);
   // Only consider un-completed, un-skipped, non-big-goal tasks for deferral.
@@ -477,7 +482,10 @@ export async function cmdDeferOverflow(
     if (t.completed) return false;
     const pl = t.payload as Record<string, unknown>;
     if (pl?.skipped) return false;
-    if (pl?.source === "big_goal") return false;
+    // Check the DB column (t.source), NOT payload.source. Coordinator-
+    // inserted goal plan tasks have source="big_goal" on the column but
+    // payload.source is undefined or "plan-materialized".
+    if (t.source === "big_goal") return false;
     return true;
   });
 
@@ -531,7 +539,7 @@ export async function cmdDeferOverflow(
       currentCount > maxTasks;
     if (!stillOver) break;
 
-    const toDate = tomorrowOf(date);
+    const toDate = taskTargets[t.id] ?? tomorrowOf(date);
     // Remember the ORIGINAL date on the first defer. If payload already
     // carries a deferredFrom, keep it so repeated bumps still point
     // back to the source day.
@@ -546,6 +554,7 @@ export async function cmdDeferOverflow(
       orderIndex: existingForTarget.length,
       payload: { deferredFrom },
     });
+    await repos.dailyLogs.ensureExists(toDate);
 
     moves.push({
       taskId: t.id,
@@ -712,6 +721,7 @@ export async function cmdAddTaskToPlan(
     source,
     payload,
   });
+  await repos.dailyLogs.ensureExists(date);
 
   return { ok: true, taskId: id, budget: pkg.budget };
 }
@@ -802,6 +812,9 @@ export async function cmdRescheduleTask(
       rescheduledFrom: originalDate,
     },
   });
+
+  // Ensure the target date has a daily_log so the view surfaces the moved task.
+  await repos.dailyLogs.ensureExists(targetDate);
 
   // Sync the goal plan tree so GoalPlanPage timeline reflects the move
   if (task.planNodeId && task.goalId) {

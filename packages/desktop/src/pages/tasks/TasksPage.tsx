@@ -10,7 +10,7 @@
    / AllTasksSection so those components keep their current contract.
    ────────────────────────────────────────────────────────── */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   Flame,
   RefreshCw,
@@ -20,7 +20,6 @@ import {
   Loader2,
   Trash2,
   CheckSquare,
-  Undo2,
   Calendar,
   Clock,
   Check,
@@ -43,6 +42,7 @@ import TaskCard from "./TaskCard";
 import GoalTaskCard from "./GoalTaskCard";
 import PaceBanner from "./PaceBanner";
 import OverloadBanner from "./OverloadBanner";
+import OverflowConfirmationCard from "./OverflowConfirmationCard";
 import AgentProgress from "../goals/AgentProgress";
 import "./PaceBanner.css";
 import type {
@@ -119,6 +119,24 @@ interface TasksView {
   hasTodayPlan?: boolean;
   pooledTaskCount?: number;
   overdueReminders?: Reminder[];
+  overflowRecommendations?: Array<{
+    taskId: string;
+    title: string;
+    cognitiveWeight: number;
+    durationMinutes: number;
+    priority: string;
+    source: string;
+    goalId: string | null;
+    goalTitle?: string;
+    suggestedDate: string;
+    suggestedDateLabel: string;
+  }>;
+  todayBudget?: {
+    totalWeight: number;
+    maxWeight: number;
+    totalTasks: number;
+    maxTasks: number;
+  };
 }
 
 const setVacationMode = (
@@ -158,9 +176,6 @@ export default function TasksPage() {
   const [vacEndDate, setVacEndDate] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [deferMoves, setDeferMoves] = useState<
-    Array<{ taskId: string; title: string; fromDate: string; toDate: string }>
-  >([]);
   const [confirming, setConfirming] = useState(false);
   const [proposals, setProposals] = useState<Array<Record<string, unknown>>>([]);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -174,8 +189,6 @@ export default function TasksPage() {
     source?: string;
     goalId?: string | null;
   } | null>(null);
-  const deferCheckedRef = useRef<string | null>(null);
-
   // Derived view-data shortcuts.
   const goals: Goal[] = data?.goals ?? [];
   const heatmapData = data?.heatmapData ?? [];
@@ -221,32 +234,6 @@ export default function TasksPage() {
       setShowCelebration(true);
     }
   }, [todayLog?.milestoneCelebration]);
-
-  // Cognitive overload: auto-defer once per today-date on load.
-  useEffect(() => {
-    const todayDate = data?.todayDate;
-    if (!todayDate) return;
-    if (deferCheckedRef.current === todayDate) return;
-    deferCheckedRef.current = todayDate;
-    (async () => {
-      try {
-        const res = await run<{
-          moves: Array<{
-            taskId: string;
-            title: string;
-            fromDate: string;
-            toDate: string;
-          }>;
-        }>("command:defer-overflow", { date: todayDate });
-        if (res?.moves && res.moves.length > 0) {
-          setDeferMoves(res.moves);
-          refetch();
-        }
-      } catch {
-        // silent — overload defer is best-effort
-      }
-    })();
-  }, [data?.todayDate, run, refetch]);
 
   // ── Loading / error states ──
   if (loading && !data) {
@@ -427,13 +414,6 @@ export default function TasksPage() {
     await run("command:delete-tasks-for-date", { date: data?.todayDate });
     setSelectedIds(new Set());
     setSelectMode(false);
-    refetch();
-  };
-
-  const handleUndoDefer = async () => {
-    if (!data?.todayDate || deferMoves.length === 0) return;
-    await run("command:undo-defer", { date: data.todayDate });
-    setDeferMoves([]);
     refetch();
   };
 
@@ -621,31 +601,14 @@ export default function TasksPage() {
           }}
         />
 
-        {/* ── Cognitive overload banner ── */}
-        {deferMoves.length > 0 && (
-          <div className="overload-banner animate-fade-in">
-            <div className="overload-banner-head">
-              <AlertTriangle size={16} />
-              <strong>
-                Today was overloaded — I moved {deferMoves.length} task
-                {deferMoves.length === 1 ? "" : "s"} to make room.
-              </strong>
-              <button
-                className="btn btn-ghost btn-xs"
-                onClick={handleUndoDefer}
-                title="Restore moved tasks"
-              >
-                <Undo2 size={12} /> Undo all
-              </button>
-            </div>
-            <ul className="overload-banner-list">
-              {deferMoves.map((m) => (
-                <li key={m.taskId}>
-                  • {m.title} → {m.toDate}
-                </li>
-              ))}
-            </ul>
-          </div>
+        {/* ── Overflow confirmation card (replaces auto-defer) ── */}
+        {(data?.overflowRecommendations ?? []).length > 0 && data?.todayBudget && (
+          <OverflowConfirmationCard
+            recommendations={data.overflowRecommendations!}
+            budget={data.todayBudget}
+            date={data.todayDate}
+            onResolved={refetch}
+          />
         )}
 
         {/* ── Overload banner (too many reschedule tasks) ── */}

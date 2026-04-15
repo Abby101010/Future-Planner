@@ -440,6 +440,11 @@ async function scenarioPoolIntegration(
     }
   }
 
+  // Ensure a daily_log exists so the view surfaces the integrated tasks.
+  if (integrated > 0) {
+    await repos.dailyLogs.ensureExists(today);
+  }
+
   return {
     ok: true,
     scenario: "pool-integration",
@@ -542,6 +547,11 @@ async function scenarioBonusSuggest(
         planNodeId: gpt.id,
       });
     }
+  }
+
+  // Ensure a daily_log exists so the view surfaces the auto-inserted tasks.
+  if (autoInserted > 0) {
+    await repos.dailyLogs.ensureExists(today);
   }
 
   return {
