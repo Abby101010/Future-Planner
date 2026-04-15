@@ -100,6 +100,7 @@ interface StreamResult {
   planReady: boolean;
   plan: Record<string, unknown> | null;
   planPatch: Record<string, unknown> | null;
+  replan?: boolean;
   userMessageId?: string;
   assistantMessageId?: string;
 }
@@ -323,11 +324,11 @@ export default function Chat() {
           setStreamingText("");
           setIsStreaming(false);
 
-          // If the server applied a plan change, force-refetch the goal
-          // plan view so the UI updates immediately. The WebSocket
-          // invalidation should also trigger this, but explicitly refetching
-          // here ensures we don't rely on the WS timing.
-          if (result.planReady || result.planPatch || result.plan) {
+          // If the server applied a plan change (including a full replan),
+          // force-refetch the goal plan view so the UI updates immediately.
+          // The WebSocket invalidation should also trigger this, but
+          // explicitly refetching here ensures we don't rely on WS timing.
+          if (result.planReady || result.planPatch || result.plan || result.replan) {
             setTimeout(() => refetchGoalPlan(), 300);
           }
 

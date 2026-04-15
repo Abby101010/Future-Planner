@@ -97,6 +97,11 @@ export interface GoalPlanChatResult {
   planReady: boolean;
   plan: Record<string, unknown> | null;
   planPatch: Record<string, unknown> | null;
+  /** True when the AI wants the server to dispatch a full replan via the
+   *  dedicated goal plan generator (better quality than in-chat generation). */
+  replan: boolean;
+  /** ISO date the user confirmed for the new target, or null to keep current. */
+  newTargetDate: string | null;
 }
 
 /**
@@ -267,6 +272,9 @@ export function parseGoalPlanChatResult(text: string): GoalPlanChatResult {
         parsed.planPatch && typeof parsed.planPatch === "object"
           ? (parsed.planPatch as Record<string, unknown>)
           : null,
+      replan: Boolean(parsed.replan),
+      newTargetDate:
+        typeof parsed.newTargetDate === "string" ? parsed.newTargetDate : null,
     };
   }
 
@@ -278,6 +286,8 @@ export function parseGoalPlanChatResult(text: string): GoalPlanChatResult {
     planReady: false,
     plan: null,
     planPatch: null,
+    replan: false,
+    newTargetDate: null,
   };
 }
 

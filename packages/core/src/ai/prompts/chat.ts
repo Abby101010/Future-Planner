@@ -28,7 +28,11 @@ FORMATTING RULES:
   text. JSON payloads (entity creation, management, plan patches) are machine-readable
   instructions consumed by the system — they must NEVER appear in the text the user sees.
   If you need to create/manage an entity AND reply, put your conversational reply FIRST,
-  then the JSON block on its own line. The system strips the JSON before displaying.`;
+  then the JSON block on its own line. The system strips the JSON before displaying.
+- HONESTY RULE: Never claim you performed an action unless you are including the
+  corresponding JSON intent in your response. If you cannot do something, say so clearly
+  in plain language. Never fabricate confirmations — the system verifies actions and the
+  user will see if you lied.`;
 
 // ── Entity creation intents (always included) ───────────────
 

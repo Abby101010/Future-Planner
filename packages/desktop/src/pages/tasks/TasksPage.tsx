@@ -583,12 +583,7 @@ export default function TasksPage() {
           reminders={overdueReminders}
           variant="overdue"
           onAcknowledge={async (id) => {
-            const r = overdueReminders.find((rem) => rem.id === id);
-            if (r && !r.repeat) {
-              await run("command:delete-reminder", { reminderId: id });
-            } else {
-              await run("command:acknowledge-reminder", { reminderId: id });
-            }
+            await run("command:acknowledge-reminder", { reminderId: id });
             refetch();
           }}
           onDelete={async (id) => {
@@ -609,12 +604,7 @@ export default function TasksPage() {
         <ReminderList
           reminders={reminders}
           onAcknowledge={async (id) => {
-            const r = reminders.find((rem) => rem.id === id);
-            if (r && !r.repeat) {
-              await run("command:delete-reminder", { reminderId: id });
-            } else {
-              await run("command:acknowledge-reminder", { reminderId: id });
-            }
+            await run("command:acknowledge-reminder", { reminderId: id });
             refetch();
           }}
           onDelete={async (id) => {

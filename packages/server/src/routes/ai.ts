@@ -548,7 +548,47 @@ aiRouter.post(
               });
             }
 
-            if (
+            if (result.replan) {
+              // ── Replan: dispatch to the dedicated goal plan generator ──
+              console.log("[goal-plan-chat/stream] REPLAN requested, newTargetDate:", result.newTargetDate);
+              if (result.newTargetDate) {
+                goal.targetDate = result.newTargetDate;
+              }
+              try {
+                const replanMemory = await loadMemory(req.userId);
+                const replanMemCtx = buildMemoryContext(replanMemory, "planning");
+                const genPayload = {
+                  goalTitle: goal.title,
+                  targetDate: goal.targetDate,
+                  importance: goal.importance ?? "medium",
+                  isHabit: goal.isHabit ?? false,
+                  description: goal.description ?? "",
+                };
+                const genResult = await handleAIRequest(
+                  "generate-goal-plan",
+                  genPayload as Record<string, unknown>,
+                  replanMemCtx,
+                ) as { plan?: Record<string, unknown>; reply?: string } | null;
+
+                if (genResult?.plan && Array.isArray((genResult.plan as { years?: unknown }).years)) {
+                  const planObj = genResult.plan as unknown as GoalPlan;
+                  const gStart = goal.createdAt?.split("T")[0];
+                  const gEnd = goal.targetDate;
+                  await repos.goalPlan.replacePlan(goalId, planObj, gStart, gEnd);
+                  nextPlan = planObj;
+                  planReplaced = true;
+                  goal.planConfirmed = true;
+                  console.log("[goal-plan-chat/stream] REPLAN succeeded");
+                  result.reply = (result.reply || "") + "\n\nYour plan has been regenerated successfully. You can see the updated plan on the left.";
+                } else {
+                  console.error("[goal-plan-chat/stream] REPLAN failed — generator returned no valid plan");
+                  result.reply = (result.reply || "") + "\n\nSorry, the plan regeneration failed. Please try again.";
+                }
+              } catch (replanErr) {
+                console.error("[goal-plan-chat/stream] REPLAN error:", replanErr);
+                result.reply = (result.reply || "") + "\n\nSorry, the plan regeneration encountered an error. Please try again.";
+              }
+            } else if (
               result.planReady &&
               result.plan &&
               Array.isArray((result.plan as { years?: unknown }).years)
@@ -601,6 +641,15 @@ aiRouter.post(
               });
             }
 
+            // Post-hoc honesty check
+            if (!planReplaced && !result.replan && result.reply) {
+              const claimsChange = /\b(done|updated|changed|adjusted|modified|moved|swapped|removed|added)\b/i.test(result.reply);
+              const hadPatchOrPlan = result.planPatch || (result.planReady && result.plan);
+              if (claimsChange && hadPatchOrPlan) {
+                result.reply += "\n\n(Note: The requested change could not be applied to the current plan structure. Please try rephrasing your request or ask me to replan.)";
+              }
+            }
+
             await repos.goals.upsert({
               ...goal,
               planChat: nextChat,
@@ -627,6 +676,7 @@ aiRouter.post(
         planReady: result.planReady,
         plan: result.plan,
         planPatch: result.planPatch,
+        replan: result.replan,
       });
     } catch (err) {
       send("error", {
@@ -822,7 +872,54 @@ aiRouter.post(
             }
             if (!nextPlan) nextPlan = goal.plan ?? null;
 
-            if (result.planReady && result.plan && Array.isArray((result.plan as { years?: unknown }).years)) {
+            if (result.replan) {
+              // ── Replan: dispatch to the dedicated goal plan generator ──
+              // The chat AI detected a replan request (timeline change, start
+              // over, etc.) and asks us to run the full generator with memory
+              // + calendar context for best quality.
+              console.log("[ai/chat/stream] REPLAN requested, newTargetDate:", result.newTargetDate);
+              if (result.newTargetDate) {
+                goal.targetDate = result.newTargetDate;
+              }
+              try {
+                const replanMemory = await loadMemory(req.userId);
+                const replanMemCtx = buildMemoryContext(replanMemory, "planning");
+                const genPayload = {
+                  goalTitle: goal.title,
+                  targetDate: goal.targetDate,
+                  importance: goal.importance ?? "medium",
+                  isHabit: goal.isHabit ?? false,
+                  description: goal.description ?? "",
+                };
+                const genResult = await handleAIRequest(
+                  "generate-goal-plan",
+                  genPayload as Record<string, unknown>,
+                  replanMemCtx,
+                ) as { plan?: Record<string, unknown>; reply?: string } | null;
+
+                if (genResult?.plan && Array.isArray((genResult.plan as { years?: unknown }).years)) {
+                  const planObj = genResult.plan as unknown as GoalPlan;
+                  const gs = goal.createdAt?.split("T")[0];
+                  const ge = goal.targetDate;
+                  await repos.goalPlan.replacePlan(goalId, planObj, gs, ge);
+                  nextPlan = planObj;
+                  planReplaced = true;
+                  goal.planConfirmed = true;
+                  if (goal.status === "pending" || goal.status === "planning") {
+                    goal.status = "active" as typeof goal.status;
+                  }
+                  console.log("[ai/chat/stream] REPLAN succeeded — new plan persisted");
+                  // Append a system note so the user knows the replan completed
+                  result.reply = (result.reply || "") + "\n\nYour plan has been regenerated successfully. You can see the updated plan on the left.";
+                } else {
+                  console.error("[ai/chat/stream] REPLAN failed — generator returned no valid plan");
+                  result.reply = (result.reply || "") + "\n\nSorry, the plan regeneration failed. Please try again.";
+                }
+              } catch (replanErr) {
+                console.error("[ai/chat/stream] REPLAN error:", replanErr);
+                result.reply = (result.reply || "") + "\n\nSorry, the plan regeneration encountered an error. Please try again.";
+              }
+            } else if (result.planReady && result.plan && Array.isArray((result.plan as { years?: unknown }).years)) {
               console.log("[ai/chat/stream] FULL PLAN GENERATED — persisting");
               const planObj = result.plan as unknown as GoalPlan;
               const gs = goal.createdAt?.split("T")[0];
@@ -864,6 +961,16 @@ aiRouter.post(
               });
             }
 
+            // Post-hoc honesty check: if the AI claimed it made changes
+            // but no plan modification was persisted, append a correction.
+            if (isGoalPlanMode && !planReplaced && !result.replan && result.reply) {
+              const claimsChange = /\b(done|updated|changed|adjusted|modified|moved|swapped|removed|added)\b/i.test(result.reply);
+              const hadPatchOrPlan = result.planPatch || (result.planReady && result.plan);
+              if (claimsChange && hadPatchOrPlan) {
+                result.reply += "\n\n(Note: The requested change could not be applied to the current plan structure. Please try rephrasing your request or ask me to replan.)";
+              }
+            }
+
             await repos.goals.upsert({ ...goal, planChat: nextChat, plan: nextPlan });
           }
         } catch (err) {
@@ -888,6 +995,7 @@ aiRouter.post(
         planReady: result.planReady,
         plan: result.plan,
         planPatch: result.planPatch,
+        replan: result.replan,
         userMessageId,
         assistantMessageId,
       });

@@ -34,6 +34,11 @@ export interface UnifiedChatResult {
   planReady: boolean;
   plan: Record<string, unknown> | null;
   planPatch: Record<string, unknown> | null;
+  /** True when the AI wants the server to dispatch a full replan via the
+   *  dedicated goal plan generator. */
+  replan: boolean;
+  /** ISO date the user confirmed for the new target, or null to keep current. */
+  newTargetDate: string | null;
 }
 
 // ── Plan summary builder (lifted from goalPlanChat.ts) ──────
@@ -354,6 +359,8 @@ export function parseUnifiedChatResult(
       planReady: planResult.planReady,
       plan: planResult.plan,
       planPatch: planResult.planPatch,
+      replan: planResult.replan,
+      newTargetDate: planResult.newTargetDate,
     };
   }
 
@@ -375,6 +382,8 @@ export function parseUnifiedChatResult(
     planReady: false,
     plan: null,
     planPatch: null,
+    replan: false,
+    newTargetDate: null,
   };
 }
 

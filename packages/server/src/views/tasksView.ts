@@ -314,13 +314,18 @@ function computePendingGoalTasks(
   return { todayTasks, overduePlanTasks };
 }
 
+function isBonusTask(t: DailyTask): boolean {
+  return t.priority === "bonus";
+}
+
 function computeTodayProgress(
   todayLog: DailyLog | null,
   pendingGoalTasks: PendingGoalTask[],
 ): TodayProgressSummary {
   const logTasks = todayLog?.tasks ?? [];
-  // Exclude skipped tasks — they don't count toward today's progress
-  const activeTasks = logTasks.filter((t) => !t.skipped);
+  // Exclude skipped tasks AND bonus tasks — they don't count toward today's KPIs.
+  // Bonus tasks are optional extras that shouldn't inflate the denominator.
+  const activeTasks = logTasks.filter((t) => !t.skipped && !isBonusTask(t));
   const pendingCompleted = pendingGoalTasks.filter((t) => t.completed).length;
   const completed = activeTasks.filter((t) => t.completed).length + pendingCompleted;
   const total = activeTasks.length + pendingGoalTasks.length;
@@ -387,6 +392,13 @@ export async function resolveTasksView(): Promise<TasksView> {
     repos.dailyTasks.listPendingReschedule(today),
     repos.pendingTasks.countPooledForDate(today),
   ]);
+
+  // Cleanup: delete one-time reminders that were acknowledged on a past day.
+  // They were kept in the DB for the day of check-off (short-term memory)
+  // but serve no purpose after that day passes.
+  try {
+    await repos.reminders.cleanupPastAcknowledged(today);
+  } catch { /* best-effort */ }
 
   // Group tasks by date for cheap hydration.
   const tasksByDate = new Map<string, DailyTaskRecord[]>();
@@ -605,10 +617,13 @@ export async function resolveTasksView(): Promise<TasksView> {
   }
 
   // All tasks completed — triggers bonus task prompt on the client.
+  // Exclude bonus tasks from this check: they're optional extras that
+  // shouldn't prevent the "all done" state from showing.
   const todayTasks = todayLog?.tasks ?? [];
+  const nonBonusTasks = todayTasks.filter((t) => !isBonusTask(t));
   const allTasksCompleted =
-    todayTasks.length > 0 &&
-    todayTasks.every((t) => t.completed || t.skipped);
+    nonBonusTasks.length > 0 &&
+    nonBonusTasks.every((t) => t.completed || t.skipped);
 
   // Pending reschedules: incomplete tasks from past days that need
   // user confirmation on where to move them. No "overdue" concept —

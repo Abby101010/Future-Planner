@@ -138,4 +138,24 @@ export async function remove(id: string): Promise<void> {
   }
 }
 
+/** Delete one-time reminders that were acknowledged before `today`.
+ *  They were kept in the DB for the day they were checked off (so they
+ *  remain in short-term memory) but serve no purpose after that day. */
+export async function cleanupPastAcknowledged(today: string): Promise<number> {
+  const userId = requireUserId();
+  const result = await query<{ id: string }>(
+    `delete from reminders
+      where user_id = $1
+        and repeat is null
+        and acknowledged = true
+        and acknowledged_at::date < $2::date
+      returning id`,
+    [userId, today],
+  );
+  if (result.length > 0) {
+    console.log(`[remindersRepo] cleaned up ${result.length} past-day acknowledged reminder(s)`);
+  }
+  return result.length;
+}
+
 export { remove as delete_ };
