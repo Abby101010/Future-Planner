@@ -299,6 +299,25 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
     await repos.goals.upsert(updatedGoal);
     await repos.nudges.dismissByContext(goalId);
     planUpdated = true;
+
+    // Dismiss overdue daily_tasks for this goal so the overload banner
+    // doesn't reappear after refresh. The plan has been redistributed —
+    // the old materialized tasks are stale.
+    try {
+      const pendingTasks = await repos.dailyTasks.listPendingReschedule(today);
+      const goalOverdue = pendingTasks.filter((t) => t.goalId === goalId);
+      for (const t of goalOverdue) {
+        await repos.dailyTasks.update(t.id, {
+          payload: { rescheduleDismissed: true },
+        });
+      }
+      if (goalOverdue.length > 0) {
+        console.log(`[adaptive-reschedule] Dismissed ${goalOverdue.length} overdue daily_tasks for goal ${goalId}`);
+      }
+    } catch (err) {
+      console.warn(`[adaptive-reschedule] Failed to dismiss overdue tasks for goal ${goalId}:`, err);
+    }
+
     console.log(`[adaptive-reschedule] Plan updated for goal ${goalId}. targetDate → ${projectedCompletion}, incomplete tasks redistributed: ${overdueTasks.length}`);
   } else {
     console.warn(`[adaptive-reschedule] AI response missing valid plan.years — plan not updated. Keys: ${Object.keys(resultObj).join(", ")}`);
