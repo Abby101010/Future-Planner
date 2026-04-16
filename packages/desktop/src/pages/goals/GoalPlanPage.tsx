@@ -122,7 +122,14 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
   }, [goalId]);
 
   useEffect(() => {
-    if (plan && Array.isArray(plan.years) && shouldExpandRef.current) {
+    if (!plan || !Array.isArray(plan.years)) return;
+
+    // Check if current expanded IDs are stale (e.g. after a replan that
+    // regenerated all node IDs). If the year IDs don't match, re-expand.
+    const planYearIds = new Set(plan.years.map((yr) => yr.id));
+    const idsAreStale = expandedYears.size > 0 && ![...expandedYears].some((id) => planYearIds.has(id));
+
+    if (shouldExpandRef.current || idsAreStale) {
       const unlockedWeekIds = new Set<string>();
       const yearIds = new Set<string>();
       const monthIds = new Set<string>();
