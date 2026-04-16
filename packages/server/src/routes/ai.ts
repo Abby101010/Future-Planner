@@ -490,7 +490,19 @@ aiRouter.post(
         hasPlan: !!result.plan,
         hasPlanPatch: !!result.planPatch,
         planPatchKeys: result.planPatch ? Object.keys(result.planPatch) : [],
+        replan: result.replan,
+        newTargetDate: result.newTargetDate,
       });
+
+      // Auto-detect replan intent: if the AI's reply claims it's
+      // regenerating but forgot to set the replan flag, fix it.
+      if (!result.replan && !result.planReady && result.reply) {
+        const claimsReplan = /\b(regenerat|replan|start(?:ing)?\s+over|fresh\s+plan|new\s+plan|rebuilding|recreat)/i.test(result.reply);
+        if (claimsReplan) {
+          console.log("[goal-plan-chat/stream] auto-fixing missing replan flag (reply claims replan)");
+          result.replan = true;
+        }
+      }
 
       // Persist user + assistant onto goal.planChat and (if plan is
       // ready) replace the plan tree. All best-effort: SSE delivery to
@@ -570,6 +582,14 @@ aiRouter.post(
                   replanMemCtx,
                 ) as { plan?: Record<string, unknown>; reply?: string } | null;
 
+                console.log("[goal-plan-chat/stream] generator returned:", {
+                  hasResult: !!genResult,
+                  hasPlan: !!genResult?.plan,
+                  planKeys: genResult?.plan ? Object.keys(genResult.plan) : null,
+                  hasYears: Array.isArray((genResult?.plan as { years?: unknown })?.years),
+                  yearsCount: Array.isArray((genResult?.plan as { years?: unknown[] })?.years) ? (genResult!.plan as { years: unknown[] }).years.length : 0,
+                });
+
                 if (genResult?.plan && Array.isArray((genResult.plan as { years?: unknown }).years)) {
                   const planObj = genResult.plan as unknown as GoalPlan;
                   const gStart = goal.createdAt?.split("T")[0];
@@ -643,7 +663,7 @@ aiRouter.post(
 
             // Post-hoc honesty check
             if (!planReplaced && !result.replan && result.reply) {
-              const claimsChange = /\b(done|updated|changed|adjusted|modified|moved|swapped|removed|added)\b/i.test(result.reply);
+              const claimsChange = /\b(done|updated|changed|adjusted|modified|moved|swapped|removed|added|regenerated|replanned|rebuilt|recreated)\b/i.test(result.reply);
               const hadPatchOrPlan = result.planPatch || (result.planReady && result.plan);
               if (claimsChange && hadPatchOrPlan) {
                 result.reply += "\n\n(Note: The requested change could not be applied to the current plan structure. Please try rephrasing your request or ask me to replan.)";
@@ -820,7 +840,19 @@ aiRouter.post(
         hasPlan: !!result.plan,
         hasPlanPatch: !!result.planPatch,
         planPatchPreview: result.planPatch ? JSON.stringify(result.planPatch).slice(0, 500) : null,
+        replan: result.replan,
+        newTargetDate: result.newTargetDate,
       });
+
+      // Auto-detect replan intent in goal-plan mode: if the AI's reply
+      // claims it's regenerating but forgot to set the replan flag, fix it.
+      if (isGoalPlanMode && !result.replan && !result.planReady && result.reply) {
+        const claimsReplan = /\b(regenerat|replan|start(?:ing)?\s+over|fresh\s+plan|new\s+plan|rebuilding|recreat)/i.test(result.reply);
+        if (claimsReplan) {
+          console.log("[ai/chat/stream] auto-fixing missing replan flag (reply claims replan)");
+          result.replan = true;
+        }
+      }
 
       // Persist assistant reply for home-style chat
       let assistantMessageId = randomUUID();
@@ -897,6 +929,14 @@ aiRouter.post(
                   replanMemCtx,
                 ) as { plan?: Record<string, unknown>; reply?: string } | null;
 
+                console.log("[ai/chat/stream] generator returned:", {
+                  hasResult: !!genResult,
+                  hasPlan: !!genResult?.plan,
+                  planKeys: genResult?.plan ? Object.keys(genResult.plan) : null,
+                  hasYears: Array.isArray((genResult?.plan as { years?: unknown })?.years),
+                  yearsCount: Array.isArray((genResult?.plan as { years?: unknown[] })?.years) ? (genResult!.plan as { years: unknown[] }).years.length : 0,
+                });
+
                 if (genResult?.plan && Array.isArray((genResult.plan as { years?: unknown }).years)) {
                   const planObj = genResult.plan as unknown as GoalPlan;
                   const gs = goal.createdAt?.split("T")[0];
@@ -909,7 +949,6 @@ aiRouter.post(
                     goal.status = "active" as typeof goal.status;
                   }
                   console.log("[ai/chat/stream] REPLAN succeeded — new plan persisted");
-                  // Append a system note so the user knows the replan completed
                   result.reply = (result.reply || "") + "\n\nYour plan has been regenerated successfully. You can see the updated plan on the left.";
                 } else {
                   console.error("[ai/chat/stream] REPLAN failed — generator returned no valid plan");
@@ -964,7 +1003,7 @@ aiRouter.post(
             // Post-hoc honesty check: if the AI claimed it made changes
             // but no plan modification was persisted, append a correction.
             if (isGoalPlanMode && !planReplaced && !result.replan && result.reply) {
-              const claimsChange = /\b(done|updated|changed|adjusted|modified|moved|swapped|removed|added)\b/i.test(result.reply);
+              const claimsChange = /\b(done|updated|changed|adjusted|modified|moved|swapped|removed|added|regenerated|replanned|rebuilt|recreated)\b/i.test(result.reply);
               const hadPatchOrPlan = result.planPatch || (result.planReady && result.plan);
               if (claimsChange && hadPatchOrPlan) {
                 result.reply += "\n\n(Note: The requested change could not be applied to the current plan structure. Please try rephrasing your request or ask me to replan.)";
