@@ -114,6 +114,7 @@ DETECTION RULES:
   - When the user says "delete all reminders EXCEPT sleep and dance class" → action: "delete_all", match: "all", keepMatch: "sleep, dance class". The server will keep reminders whose titles match keepMatch and delete the rest.
   - When the user says "delete the expired picture reminders" → action: "delete_all", match: "expired picture"
   - When the user says "change sleep reminder to 10:30pm" → action: "edit", match: "sleep", patch: {"reminderTime": "YYYY-MM-DDT22:30:00"}
+  - When the user says "move the study reminder to April 20" → action: "edit", match: "study", patch: {"date": "2026-04-20"} (the server auto-syncs reminderTime to the new date)
   - When the user says "mark that bake reminder as done" → action: "acknowledge", match: "bake"
   - IMPORTANT: if the user is asking to delete reminders and ALSO create new ones in the same message, emit the manage_reminder JSON first (one JSON block), then emit each is_reminder JSON for the new ones. Multiple JSON blocks are fine — the server parses them all.
 - If the user wants to MANAGE an existing calendar event (delete, edit, reschedule), respond with ONLY this JSON:

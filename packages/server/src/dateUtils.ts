@@ -62,3 +62,31 @@ export function getEffectiveMonthKey(): string {
   const today = getEffectiveDate();
   return today.slice(0, 7);
 }
+
+/**
+ * Format an arbitrary Date/timestamp as YYYY-MM-DD in the user's timezone.
+ *
+ * Like `getEffectiveDate()` but for a given instant instead of `now()`.
+ * Useful for comparing DB timestamps (stored in UTC) against the user's
+ * local calendar date.
+ */
+export function formatDateInTz(date: Date | string): string {
+  const tz = timezoneStore.getStore() || "UTC";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  let year = 0;
+  let month = 0;
+  let day = 0;
+  for (const p of parts) {
+    if (p.type === "year") year = Number(p.value);
+    else if (p.type === "month") month = Number(p.value);
+    else if (p.type === "day") day = Number(p.value);
+  }
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}

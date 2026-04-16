@@ -171,13 +171,28 @@ export async function dispatchChatIntent(
       } else if (i.action === "edit") {
         const patch = i.patch as Record<string, unknown> | undefined;
         for (const target of resolved) {
+          let newDate = (patch?.date as string | undefined) ?? target.date;
+          let newReminderTime = (patch?.reminderTime as string | undefined) ?? target.reminderTime;
+          // Sync date and reminderTime when only one changes
+          if (patch?.date && !patch?.reminderTime && target.reminderTime) {
+            // Date changed but reminderTime didn't — preserve the time part on the new date
+            const timePart = target.reminderTime.includes("T")
+              ? target.reminderTime.split("T")[1]
+              : "09:00:00";
+            newReminderTime = `${newDate}T${timePart}`;
+          } else if (patch?.reminderTime && !patch?.date) {
+            // reminderTime changed but date didn't — extract local date from new reminderTime
+            const d = new Date(patch.reminderTime as string);
+            const pad = (n: number) => String(n).padStart(2, "0");
+            newDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+          }
           await run(cmd("command:upsert-reminder"), {
             reminder: {
               ...target,
-              title: patch?.title ?? target.title,
-              description: patch?.description ?? target.description,
-              reminderTime: patch?.reminderTime ?? target.reminderTime,
-              date: patch?.date ?? target.date,
+              title: (patch?.title as string | undefined) ?? target.title,
+              description: (patch?.description as string | undefined) ?? target.description,
+              reminderTime: newReminderTime,
+              date: newDate,
               repeat: patch?.repeat !== undefined ? patch.repeat : target.repeat,
             },
           });

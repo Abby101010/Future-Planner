@@ -11,7 +11,7 @@
  */
 
 import * as repos from "../repositories";
-import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
+import { getEffectiveDate, getEffectiveDaysAgo, formatDateInTz } from "../dateUtils";
 import type {
   ContextualNudge,
   DailyLog,
@@ -468,7 +468,7 @@ export async function resolveTasksView(): Promise<TasksView> {
       // For repeating reminders, hide if already acknowledged today.
       // They'll reappear on the next applicable day.
       if (r.repeat && r.acknowledged && r.acknowledgedAt) {
-        const ackDate = new Date(r.acknowledgedAt).toISOString().slice(0, 10);
+        const ackDate = formatDateInTz(r.acknowledgedAt);
         if (ackDate === today) return false;
       }
       // One-time reminders: hide if already acknowledged.

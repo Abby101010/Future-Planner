@@ -39,7 +39,7 @@ export default function ReminderList({
       ...r,
       title: editTitle,
       reminderTime: newTime.toISOString(),
-      date: newTime.toISOString().split("T")[0],
+      date: editTime.split("T")[0], // local date from datetime-local input, not UTC
     });
     setEditingId(null);
   };

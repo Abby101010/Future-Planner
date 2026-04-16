@@ -101,19 +101,10 @@ export async function resolveGoalPlanView(
       ? reconstructed
       : (goal.plan ?? null);
 
-  // Strip empty stub weeks/months that have no tasks — these are artifacts
-  // from prior gap-fill runs that clutter the UI and cause cross-month issues.
-  if (plan && Array.isArray(plan.years)) {
-    for (const yr of plan.years) {
-      for (const mo of yr.months) {
-        mo.weeks = mo.weeks.filter((wk) =>
-          wk.days.some((dy) => dy.tasks.length > 0),
-        );
-      }
-      yr.months = yr.months.filter((mo) => mo.weeks.length > 0);
-    }
-    plan.years = plan.years.filter((yr) => yr.months.length > 0);
-  }
+  // Keep all plan nodes including locked future weeks/months — they form
+  // the timeline skeleton the user expects to see. The old gap-fill
+  // artifacts were cleaned from the DB directly; in-memory stripping
+  // was removed because it also stripped legitimate locked stubs.
 
   const progress = computePlanProgress(plan);
   const today = todayISO();
