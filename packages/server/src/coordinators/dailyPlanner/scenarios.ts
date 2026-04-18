@@ -21,19 +21,10 @@ import { hydrateDailyLog } from "../../views/_mappers";
 import { loadMemory, computeCapacityProfile } from "../../memory";
 import { getCurrentUserId } from "../../middleware/requestContext";
 import type { DailyLog, Goal, HeatmapEntry, Reminder, TaskSource } from "@northstar/core";
-import { COGNITIVE_BUDGET, computeCognitiveWeight } from "@northstar/core";
+import { COGNITIVE_BUDGET, computeCognitiveWeight, checkOverload } from "@northstar/core";
+import type { DeferralRecommendation } from "@northstar/core";
 
 // ── Types ──────────────────────────────────────────────────
-
-export interface DeferralRecommendation {
-  taskId: string;
-  title: string;
-  goalId: string | null;
-  goalTitle: string;
-  cognitiveWeight: number;
-  durationMinutes: number;
-  reason: string;
-}
 
 export interface ScenarioResult {
   ok: boolean;
@@ -266,86 +257,35 @@ async function scenarioCollectAndSchedule(
   // 3. Cross-goal budget analysis — recommend deferrals if overloaded.
   //    ALL tasks are already inserted (user sees full picture).
   //    Recommendations are advisory — user decides what to act on.
-  const totalWeight = inserted.reduce((s, t) => s + t.cognitiveWeight, 0);
-  const totalTasks = inserted.length;
   const maxWeight = ctx.effectiveMaxWeight;
   const maxTasks = ctx.effectiveMaxTasks;
-  const overloaded = totalWeight > maxWeight || totalTasks > maxTasks;
 
-  // Build per-goal breakdown
-  const goalGroups = new Map<string, { goalTitle: string; tasks: typeof inserted; totalWeight: number }>();
-  for (const t of inserted) {
-    const key = t.goalId ?? "__user__";
-    const group = goalGroups.get(key) ?? { goalTitle: t.goalTitle, tasks: [], totalWeight: 0 };
-    group.tasks.push(t);
-    group.totalWeight += t.cognitiveWeight;
-    goalGroups.set(key, group);
-  }
+  const overloadResult = checkOverload(
+    inserted.map((t) => ({
+      id: t.id,
+      title: t.title,
+      goalId: t.goalId,
+      goalTitle: t.goalTitle,
+      cognitiveWeight: t.cognitiveWeight,
+      durationMinutes: t.durationMinutes,
+      priority: t.priority,
+    })),
+    maxWeight,
+    maxTasks,
+  );
 
-  const goalBreakdown = [...goalGroups.entries()].map(([goalId, g]) => ({
-    goalId: goalId === "__user__" ? "" : goalId,
-    goalTitle: g.goalTitle,
-    taskCount: g.tasks.length,
-    totalWeight: g.totalWeight,
-  }));
+  const { overloaded, totalWeight, totalTasks, goalBreakdown } = overloadResult;
+  const deferralRecommendations = overloadResult.deferralRecommendations.length
+    ? overloadResult.deferralRecommendations
+    : undefined;
 
-  let deferralRecommendations: DeferralRecommendation[] | undefined;
-
-  if (overloaded) {
-    // Strategy: spread goals fairly. If 3 goals each have 3 tasks (9 total)
-    // but budget is 5, recommend deferring lowest-priority tasks while
-    // keeping at least 1 task per goal so every goal gets attention.
-    const excessTasks = totalTasks - maxTasks;
-    const excessWeight = totalWeight - maxWeight;
-
-    if (excessTasks > 0 || excessWeight > 0) {
-      // Collect deferral candidates: all tasks, sorted so we defer from
-      // goals with the most tasks first (fairness), then lowest priority,
-      // then lowest weight. Never defer the last task of a goal.
-      const candidates = [...inserted]
-        .map((t) => ({
-          ...t,
-          goalTaskCount: goalGroups.get(t.goalId ?? "__user__")!.tasks.length,
-        }))
-        .sort((a, b) => {
-          // Goals with more tasks donate first (spread the pain)
-          if (a.goalTaskCount !== b.goalTaskCount) return b.goalTaskCount - a.goalTaskCount;
-          // Lower priority defers first
-          const priRank = (p: string) => p === "must-do" ? 0 : p === "should-do" ? 1 : 2;
-          if (priRank(a.priority) !== priRank(b.priority)) return priRank(b.priority) - priRank(a.priority);
-          // Lighter tasks defer first
-          return a.cognitiveWeight - b.cognitiveWeight;
-        });
-
-      deferralRecommendations = [];
-      let remainingWeight = totalWeight;
-      let remainingTasks = totalTasks;
-      // Track how many tasks remain per goal to enforce min-1
-      const goalRemaining = new Map<string, number>();
-      for (const [key, g] of goalGroups) goalRemaining.set(key, g.tasks.length);
-
-      for (const c of candidates) {
-        if (remainingTasks <= maxTasks && remainingWeight <= maxWeight) break;
-        const key = c.goalId ?? "__user__";
-        // Keep at least 1 task per goal
-        if ((goalRemaining.get(key) ?? 0) <= 1) continue;
-
-        deferralRecommendations.push({
-          taskId: c.id,
-          title: c.title,
-          goalId: c.goalId,
-          goalTitle: c.goalTitle,
-          cognitiveWeight: c.cognitiveWeight,
-          durationMinutes: c.durationMinutes,
-          reason: c.goalTaskCount > 2
-            ? `${c.goalTitle} has ${c.goalTaskCount} tasks today — spreading across days`
-            : `Over daily budget (${totalWeight}/${maxWeight} weight, ${totalTasks}/${maxTasks} tasks)`,
-        });
-        goalRemaining.set(key, (goalRemaining.get(key) ?? 1) - 1);
-        remainingWeight -= c.cognitiveWeight;
-        remainingTasks -= 1;
-      }
-    }
+  // Record overload signal for TextGrad feedback loop
+  if (overloaded && deferralRecommendations?.length) {
+    const { recordOverloadDetected } = await import("../../services/signalRecorder");
+    recordOverloadDetected(
+      `${today}: ${totalWeight}/${maxWeight} weight, ${totalTasks}/${maxTasks} tasks`,
+      deferralRecommendations.length,
+    ).catch(() => {});
   }
 
   // 4. Create a daily log entry for the day

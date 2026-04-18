@@ -16,6 +16,8 @@
 import { Router } from "express";
 import { envelope, envelopeError } from "@northstar/core";
 import type { CommandKind, QueryKind } from "@northstar/core";
+import { insertJob } from "../job-db";
+import { getCurrentUserId } from "../middleware/requestContext";
 
 import {
   invalidate,
@@ -23,6 +25,7 @@ import {
   cmdUpdateGoal,
   cmdDeleteGoal,
   cmdConfirmGoalPlan,
+  cmdExpandPlanWeek,
   cmdCreateTask,
   cmdToggleTask,
   cmdSkipTask,
@@ -66,6 +69,19 @@ import {
 } from "./commands/index";
 
 const commandsRouter = Router();
+
+// ── Job status polling (fallback if WS event is missed) ──────
+
+commandsRouter.get("/job-status/:jobId", async (req, res) => {
+  const userId = getCurrentUserId();
+  const { getJob } = await import("../job-db");
+  const job = await getJob(userId, req.params.jobId);
+  if (!job) {
+    res.status(404).json({ ok: false, error: "Job not found" });
+    return;
+  }
+  res.json({ ok: true, job: { id: job.id, type: job.type, status: job.status, result: job.result, error: job.error } });
+});
 
 // ── Dispatcher ───────────────────────────────────────────────
 
@@ -159,21 +175,33 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:clear-home-chat":
         result = await cmdClearHomeChat();
         break;
-      case "command:regenerate-goal-plan":
-        result = await cmdRegenerateGoalPlan(body);
+      case "command:regenerate-goal-plan": {
+        const userId = getCurrentUserId();
+        const jobId = await insertJob(userId, "regenerate-goal-plan", body);
+        result = { ok: true, jobId, async: true };
         break;
+      }
       case "command:reallocate-goal-plan":
         result = await cmdReallocateGoalPlan(body);
         break;
       case "command:confirm-goal-plan":
         result = await cmdConfirmGoalPlan(body);
         break;
-      case "command:adaptive-reschedule":
-        result = await cmdAdaptiveReschedule(body);
+      case "command:expand-plan-week":
+        result = await cmdExpandPlanWeek(body);
         break;
-      case "command:adjust-all-overloaded-plans":
-        result = await cmdAdjustAllOverloadedPlans(body);
+      case "command:adaptive-reschedule": {
+        const userId = getCurrentUserId();
+        const jobId = await insertJob(userId, "adaptive-reschedule", body);
+        result = { ok: true, jobId, async: true };
         break;
+      }
+      case "command:adjust-all-overloaded-plans": {
+        const userId = getCurrentUserId();
+        const jobId = await insertJob(userId, "adjust-all-overloaded-plans", body);
+        result = { ok: true, jobId, async: true };
+        break;
+      }
       case "command:confirm-daily-tasks":
         result = await cmdConfirmDailyTasks(body);
         break;
@@ -236,12 +264,10 @@ commandsRouter.post("/:kind", async (req, res) => {
     // Handlers may return `_invalidateExtra` to dynamically add views
     // that depend on runtime target (e.g. goal-plan vs. home chat).
     try {
-      const extra =
-        (result && typeof result === "object"
-          ? ((result as { _invalidateExtra?: QueryKind[] })._invalidateExtra ??
-            [])
-          : []) as QueryKind[];
-      invalidate(kind, extra);
+      const resultObj = result && typeof result === "object" ? result as Record<string, unknown> : {};
+      const extra = (resultObj._invalidateExtra ?? []) as QueryKind[];
+      const scope = resultObj._scope as { date?: string; entityId?: string; entityType?: string } | undefined;
+      invalidate(kind, extra, scope);
     } catch (err) {
       console.warn("[commands] view invalidation failed:", err);
     }

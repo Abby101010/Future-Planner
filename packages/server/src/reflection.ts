@@ -88,7 +88,14 @@ RULES:
 - Don't invent things not supported by signals
 - If signals are contradictory, note the uncertainty
 - Focus on ACTIONABLE insights that change future plans
-- tags should include day names, time-of-day words, and category names when relevant`;
+- tags should include day names, time-of-day words, and category names when relevant
+
+SYSTEM HEALTH SIGNALS:
+You may also receive system-level signals (not direct user actions). Analyze them the same way:
+- agent_fallback: An AI sub-agent failed and we used default values. Multiple occurrences → generate a fact with category "constraint" about AI reliability issues and suggest simpler task structures.
+- ai_parse_error: AI response couldn't be parsed. → generate a calibration noting prompt/model mismatch for that handler.
+- overload_detected: Daily cognitive load exceeded the budget. Frequent occurrences → generate a fact with category "capacity" suggesting the user's max daily tasks or weight setting may be too high.
+- estimation_error: Task duration deviated >50% from estimate. → generate a calibration for that task's category to improve future estimates.`;
 
 // ── Upsert helpers ──────────────────────────────────────
 

@@ -23,6 +23,162 @@ import {
   personalizeSystem,
 } from "./_helpers";
 
+/**
+ * Lazy Week Expansion (GoalAct pattern) — when a locked week is unlocked,
+ * generates detailed daily tasks using the week's objective and surrounding
+ * context. Replaces the old "just flip locked: false" approach.
+ */
+export async function cmdExpandPlanWeek(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const goalId = body.goalId as string;
+  const weekId = body.weekId as string;
+  if (!goalId || !weekId) {
+    throw new Error("command:expand-plan-week requires goalId and weekId");
+  }
+
+  const goal = await repos.goals.get(goalId);
+  if (!goal) throw new Error(`Goal ${goalId} not found`);
+
+  const nodes = await repos.goalPlan.listForGoal(goalId);
+  const weekNode = nodes.find((n) => n.id === weekId && n.nodeType === "week");
+  if (!weekNode) throw new Error(`Week ${weekId} not found in goal plan`);
+  if (!weekNode.payload.locked) {
+    return { ok: true, weekId, alreadyUnlocked: true };
+  }
+
+  // Gather surrounding context
+  const weekParent = weekNode.parentId;
+  const siblingWeeks = nodes
+    .filter((n) => n.nodeType === "week" && n.parentId === weekParent)
+    .sort((a, b) => a.orderIndex - b.orderIndex);
+  const weekIdx = siblingWeeks.findIndex((w) => w.id === weekId);
+  const prevWeek = weekIdx > 0 ? siblingWeeks[weekIdx - 1] : null;
+  const nextWeek = weekIdx < siblingWeeks.length - 1 ? siblingWeeks[weekIdx + 1] : null;
+
+  // Previous week tasks summary
+  let previousWeekContext = "";
+  if (prevWeek) {
+    const prevDays = nodes.filter((n) => n.nodeType === "day" && n.parentId === prevWeek.id);
+    const prevTasks = nodes.filter(
+      (n) => n.nodeType === "task" && prevDays.some((d) => d.id === n.parentId),
+    );
+    previousWeekContext = prevTasks
+      .map((t) => `- ${t.title} (${t.payload.completed ? "done" : "pending"})`)
+      .join("\n") || "No tasks in previous week";
+  }
+
+  // Progress summary
+  const allTasks = nodes.filter((n) => n.nodeType === "task");
+  const completedTasks = allTasks.filter((n) => n.payload.completed);
+  const progressSummary = `${completedTasks.length}/${allTasks.length} tasks completed (${
+    allTasks.length > 0 ? Math.round((completedTasks.length / allTasks.length) * 100) : 0
+  }%)`;
+
+  // Pace data — simple calculation from plan stats
+  let paceContext = "";
+  try {
+    const totalPlanTasks = allTasks.length;
+    const completedCount = completedTasks.length;
+    const remaining = totalPlanTasks - completedCount;
+    if (remaining > 0 && goal.targetDate) {
+      const daysLeft = Math.max(1, Math.ceil(
+        (new Date(goal.targetDate).getTime() - Date.now()) / 86_400_000,
+      ));
+      const requiredPerDay = remaining / daysLeft;
+      paceContext = `${completedCount}/${totalPlanTasks} done, ${remaining} remaining, need ~${requiredPerDay.toFixed(1)} tasks/day to finish by ${goal.targetDate}`;
+    }
+  } catch {
+    // pace calculation failed — continue without it
+  }
+
+  const userId = getCurrentUserId();
+  const [memory] = await Promise.all([loadMemory(userId)]);
+  const memoryContext = buildMemoryContext(memory, "planning");
+
+  const client = getClient();
+  if (!client) throw new Error("ANTHROPIC_API_KEY not configured");
+
+  const { handleExpandWeek } = await import("../../ai/handlers/expandWeek");
+  const result = await handleExpandWeek(
+    client,
+    {
+      goalTitle: goal.title,
+      goalDescription: goal.description ?? "",
+      weekLabel: weekNode.title,
+      weekObjective: (weekNode.payload.objective as string) ?? weekNode.description,
+      previousWeekContext,
+      nextWeekObjective: nextWeek
+        ? (nextWeek.payload.objective as string) ?? nextWeek.description
+        : "",
+      progressSummary,
+      paceContext,
+      startDate: weekNode.startDate ?? "",
+      endDate: weekNode.endDate ?? "",
+    },
+    memoryContext,
+  );
+
+  // Persist generated day+task nodes under the week
+  const { goalPlan: goalPlanRepo } = repos;
+  const newNodes: Array<import("../../repositories/goalPlanRepo").GoalPlanNode> = [];
+
+  for (let dayIdx = 0; dayIdx < result.days.length; dayIdx++) {
+    const day = result.days[dayIdx];
+    const dayId = `${weekId}-day-${dayIdx}`;
+    newNodes.push({
+      id: dayId,
+      goalId,
+      parentId: weekId,
+      nodeType: "day",
+      title: day.label,
+      description: "",
+      startDate: day.label,
+      endDate: day.label,
+      orderIndex: dayIdx,
+      payload: {},
+    });
+
+    for (let taskIdx = 0; taskIdx < day.tasks.length; taskIdx++) {
+      const task = day.tasks[taskIdx];
+      newNodes.push({
+        id: `${dayId}-task-${taskIdx}`,
+        goalId,
+        parentId: dayId,
+        nodeType: "task",
+        title: task.title,
+        description: task.description,
+        startDate: day.label,
+        endDate: day.label,
+        orderIndex: taskIdx,
+        payload: {
+          durationMinutes: task.durationMinutes,
+          priority: task.priority,
+          category: task.category,
+          completed: false,
+        },
+      });
+    }
+  }
+
+  await goalPlanRepo.upsertNodes(goalId, newNodes);
+
+  // Unlock the week
+  await goalPlanRepo.patchNodePayload(weekId, { locked: false });
+
+  emitAgentProgress(userId, {
+    agentId: "expand-week",
+    phase: "done",
+    message: `Generated ${result.days.reduce((s, d) => s + d.tasks.length, 0)} tasks for ${weekNode.title}`,
+  });
+
+  return {
+    ok: true,
+    weekId,
+    tasksCreated: result.days.reduce((s, d) => s + d.tasks.length, 0),
+  };
+}
+
 export async function cmdRegenerateGoalPlan(
   body: Record<string, unknown>,
 ): Promise<unknown> {

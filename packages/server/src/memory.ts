@@ -867,21 +867,34 @@ function getContextDirective(contextType: string, today: string): string {
  * Faithful port of frontend/electron/memory.ts buildMemoryContext, with the
  * MemoryManager indirection removed (we operate on a plain MemoryStore).
  */
+/**
+ * Per-context token budgets (approximate, 1 token ~ 4 chars).
+ * Keeps memory injection from dominating the prompt window.
+ */
+const MEMORY_CHAR_BUDGET: Record<string, number> = {
+  daily: 3200,    // ~800 tokens
+  planning: 4000, // ~1000 tokens
+  recovery: 2400, // ~600 tokens
+  general: 2400,  // ~600 tokens
+};
+
 export function buildMemoryContext(
   memory: MemoryStore,
   contextType: "planning" | "daily" | "recovery" | "general",
   contextTags: string[] = [],
 ): string {
-  const lines: string[] = [];
+  const budget = MEMORY_CHAR_BUDGET[contextType] ?? 2400;
   const today = new Date().toISOString().split("T")[0];
 
-  // Section 1: high-confidence facts grouped by category
+  // Build each section independently so we can prioritize and truncate.
+  const sections: Array<{ priority: number; text: string }> = [];
+
+  // ── Section: high-confidence facts ──
   const facts = getAllHighConfidenceFacts(memory);
   if (facts.length > 0) {
-    lines.push("Current User Preferences retrieved from memory:");
-    lines.push("");
+    const factLines: string[] = ["Current User Preferences:", ""];
     const grouped = new Map<string, LongTermFact[]>();
-    for (const f of facts.slice(0, 20)) {
+    for (const f of facts.slice(0, 15)) {
       const arr = grouped.get(f.category);
       if (arr) arr.push(f);
       else grouped.set(f.category, [f]);
@@ -897,53 +910,49 @@ export function buildMemoryContext(
       const catFacts = grouped.get(cat);
       if (!catFacts || catFacts.length === 0) continue;
       for (const f of catFacts) {
-        const conf = f.confidence >= 0.8 ? "🟢" : f.confidence >= 0.5 ? "🟡" : "⚪";
-        lines.push(`  ${conf} ${f.value}`);
+        factLines.push(`  ${f.value}`);
       }
     }
-    lines.push("");
+    sections.push({ priority: 1, text: factLines.join("\n") });
   }
 
-  // Section 2: feedback timeline
-  const recentUpdates = buildFeedbackTimeline(memory, contextType);
-  if (recentUpdates.length > 0) {
-    for (const u of recentUpdates) lines.push(u);
-    lines.push("");
-  }
-
-  // Section 3: behavioral patterns
+  // ── Section: behavioral patterns ──
   const patterns = [...buildBehavioralInsights(memory), ...buildDayOfWeekInsights(memory)];
   if (patterns.length > 0) {
-    lines.push("Behavioral Patterns (observed over time):");
-    lines.push("");
-    for (const p of patterns) lines.push(`  • ${p}`);
-    lines.push("");
+    const patternLines = ["Behavioral Patterns:", ""];
+    for (const p of patterns.slice(0, 6)) patternLines.push(`  - ${p}`);
+    sections.push({ priority: 2, text: patternLines.join("\n") });
   }
 
-  // Section 4: chronic snoozes (only for daily/recovery)
-  const chronic = memory.snoozeRecords.filter((s) => s.snoozeCount >= 3);
-  if (chronic.length > 0 && (contextType === "daily" || contextType === "recovery")) {
-    lines.push("⚠️ Chronically Snoozed Tasks (user keeps pushing these — consider restructuring):");
-    lines.push("");
-    for (const s of chronic.slice(0, 5)) {
-      lines.push(`  "${s.taskTitle}" — snoozed ${s.snoozeCount}x (category: ${s.taskCategory})`);
+  // ── Section: chronic snoozes (daily/recovery only) ──
+  if (contextType === "daily" || contextType === "recovery") {
+    const chronic = memory.snoozeRecords.filter((s) => s.snoozeCount >= 3);
+    if (chronic.length > 0) {
+      const snoozeLines = ["Chronically Snoozed Tasks:", ""];
+      for (const s of chronic.slice(0, 3)) {
+        snoozeLines.push(`  "${s.taskTitle}" snoozed ${s.snoozeCount}x`);
+      }
+      sections.push({ priority: 3, text: snoozeLines.join("\n") });
     }
-    lines.push(
-      "  → Consider: Is timing wrong? Is the task too big? Should it be broken down or rescheduled?",
-    );
-    lines.push("");
   }
 
-  // Duration calibration
-  const timing = buildTimingInsights(memory);
-  if (timing.length > 0 && (contextType === "planning" || contextType === "daily")) {
-    lines.push("Duration Calibration (actual vs estimated from past tasks):");
-    lines.push("");
-    for (const t of timing) lines.push(`  ${t}`);
-    lines.push("");
+  // ── Section: duration calibration (daily/planning only) ──
+  if (contextType === "planning" || contextType === "daily") {
+    const timing = buildTimingInsights(memory);
+    if (timing.length > 0) {
+      const timingLines = ["Duration Calibration:", ""];
+      for (const t of timing.slice(0, 4)) timingLines.push(`  ${t}`);
+      sections.push({ priority: 4, text: timingLines.join("\n") });
+    }
   }
 
-  // Semantic preferences (filtered by tag overlap with contextTags + contextType)
+  // ── Section: feedback timeline ──
+  const recentUpdates = buildFeedbackTimeline(memory, contextType, 6);
+  if (recentUpdates.length > 0) {
+    sections.push({ priority: 5, text: recentUpdates.join("\n") });
+  }
+
+  // ── Section: semantic preferences ──
   const relevantTags = new Set(
     [
       ...contextTags,
@@ -966,26 +975,39 @@ export function buildMemoryContext(
     }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || b.pref.frequency - a.pref.frequency)
-    .slice(0, 8)
+    .slice(0, 5)
     .map((x) => x.pref);
   if (scoredPrefs.length > 0) {
-    lines.push("Learned Preferences (softer patterns from behavior):");
-    lines.push("");
+    const prefLines = ["Learned Preferences:", ""];
     for (const p of scoredPrefs) {
-      const sentiment = p.weight > 0.3 ? "👍" : p.weight < -0.3 ? "👎" : "↔️";
-      lines.push(`  ${sentiment} ${p.text} (observed ${p.frequency}x)`);
+      prefLines.push(`  ${p.text} (observed ${p.frequency}x)`);
     }
-    lines.push("");
+    sections.push({ priority: 6, text: prefLines.join("\n") });
   }
 
-  // Directive
-  lines.push(getContextDirective(contextType, today));
+  // ── Context directive (always included) ──
+  const directive = getContextDirective(contextType, today);
 
-  if (lines.length <= 1) return ""; // only directive — fresh user
+  // ── Assemble within budget ──
+  sections.sort((a, b) => a.priority - b.priority);
+
+  const included: string[] = [];
+  let usedChars = directive.length + 80; // reserve for header/footer
+
+  for (const section of sections) {
+    if (usedChars + section.text.length > budget) continue;
+    included.push(section.text);
+    usedChars += section.text.length;
+  }
+
+  included.push(directive);
+
+  if (included.length <= 1) return ""; // only directive — fresh user
   return [
-    "═══ PERSONALIZATION MEMORY (Micro-Adjustments from Reflection Loop) ═══",
+    "═══ PERSONALIZATION MEMORY ═══",
     "",
-    ...lines,
+    ...included,
+    "",
     "═══ END MEMORY ═══",
     "",
   ].join("\n");

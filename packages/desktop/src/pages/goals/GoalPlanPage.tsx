@@ -234,28 +234,27 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
 
   const handleUnlockNext = useCallback(async () => {
     if (!goal || !plan) return;
-    // Walk the plan, flip the first locked week, and persist via update-goal.
-    let unlocked = false;
-    const next: GoalPlan = {
-      ...plan,
-      years: plan.years.map((yr) => ({
-        ...yr,
-        months: yr.months.map((mo) => ({
-          ...mo,
-          weeks: mo.weeks.map((wk) => {
-            if (!unlocked && wk.locked) {
-              unlocked = true;
-              return { ...wk, locked: false };
-            }
-            return wk;
-          }),
-        })),
-      })),
-    };
+    // Find the first locked week in the plan
+    let targetWeekId: string | null = null;
+    for (const yr of plan.years) {
+      for (const mo of yr.months) {
+        for (const wk of mo.weeks) {
+          if (wk.locked) {
+            targetWeekId = wk.id;
+            break;
+          }
+        }
+        if (targetWeekId) break;
+      }
+      if (targetWeekId) break;
+    }
+    if (!targetWeekId) return;
+
     setLocalError(null);
     try {
-      await runCommand("command:update-goal", {
-        goal: { ...goal, plan: next },
+      await runCommand("command:expand-plan-week", {
+        goalId: goal.id,
+        weekId: targetWeekId,
       });
       refetch();
     } catch (err) {
@@ -544,11 +543,24 @@ export default function GoalPlanPage({ goalId }: GoalPlanPageProps) {
                 <>
                 <strong>Falling behind pace</strong>
                 <p>
-                  You're averaging ~{paceMismatch?.actualTasksPerDay} tasks/day
-                  but this plan needs ~{paceMismatch?.requiredTasksPerDay}.
-                  {(paceMismatch?.estimatedDelayDays ?? 0) > 0 &&
-                    ` Estimated ${paceMismatch?.estimatedDelayDays} days late.`}
+                  {paceMismatch?.explanation ? (
+                    paceMismatch.explanation
+                  ) : (
+                    <>
+                      You're averaging ~{paceMismatch?.actualTasksPerDay} tasks/day
+                      but this plan needs ~{paceMismatch?.requiredTasksPerDay}.
+                      {(paceMismatch?.estimatedDelayDays ?? 0) > 0 &&
+                        ` Estimated ${paceMismatch?.estimatedDelayDays} days late.`}
+                    </>
+                  )}
                 </p>
+                {paceMismatch?.suggestions && paceMismatch.suggestions.length > 0 && (
+                  <ul className="gp-pace-suggestions">
+                    {paceMismatch.suggestions.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                )}
               </>
               </div>
             </div>

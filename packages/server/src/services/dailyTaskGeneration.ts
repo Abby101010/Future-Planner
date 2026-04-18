@@ -6,14 +6,13 @@
  */
 
 import * as repos from "../repositories";
-import { handleAIRequest } from "../ai/router";
+import { handleDailyTasksCopy } from "../ai/handlers/dailyTasksCopy";
+import { getClient } from "../ai/client";
 import { loadMemory, buildMemoryContext } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { getEffectiveDate } from "../dateUtils";
-import { needsCoordination } from "../agents/router";
-import { coordinateRequest } from "../agents/coordinator";
-import { COGNITIVE_BUDGET } from "@northstar/core";
-import type { Goal, DailyLog, HeatmapEntry, Reminder, TaskStateInput, GoalSummary, ScheduledTaskSummary, DailyLogSummary } from "@northstar/core";
+import { COGNITIVE_BUDGET, selectDailyTasks } from "@northstar/core";
+import type { Goal, DailyLog, HeatmapEntry, Reminder, TaskStateInput, GoalSummary, ScheduledTaskSummary, DailyLogSummary, TierEnforcement } from "@northstar/core";
 
 interface GeneratedResult {
   id?: string;
@@ -176,6 +175,42 @@ function buildGoalPlanSummaries(goals: Goal[], date: string) {
     .filter((g) => g.todayTasks.length > 0);
 }
 
+function buildScheduleBlockText(tier: TierEnforcement): string {
+  const lines: string[] = ["SCHEDULE STRUCTURE (pre-computed by rule engine):"];
+
+  lines.push("Tier 1 — Calendar (FIXED, do not move):");
+  if (tier.calendarBlocks.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const b of tier.calendarBlocks) {
+      lines.push(`  [${b.startTime}-${b.endTime}] ${b.label} (${b.durationMinutes}min)`);
+    }
+  }
+
+  lines.push("Tier 2 — Goal Deep Work (PROTECTED):");
+  if (tier.goalBlocks.length === 0) {
+    lines.push("  (none)");
+  } else {
+    for (const b of tier.goalBlocks) {
+      lines.push(`  [${b.startTime || "flex"}-${b.endTime || "flex"}] ${b.label} (${b.durationMinutes}min)`);
+    }
+  }
+
+  lines.push("Tier 3 — Available for daily tasks:");
+  if (tier.taskSlots.length === 0) {
+    lines.push("  (none)");
+  } else {
+    let totalAvailable = 0;
+    for (const b of tier.taskSlots) {
+      lines.push(`  [${b.startTime || "flex"}-${b.endTime || "flex"}] ${b.durationMinutes}min`);
+      totalAvailable += b.durationMinutes;
+    }
+    lines.push(`Total available: ${totalAvailable}min`);
+  }
+
+  return lines.join("\n");
+}
+
 /** Generate daily tasks via the AI handler and persist the result.
  *
  *  - `dryRun`: run the AI but don't persist — return proposals only.
@@ -298,80 +333,139 @@ export async function generateAndPersistDailyTasks(opts: {
     isVacationDay: false,
   };
 
-  // Run coordinator pipeline when agents are needed (daily-tasks → gatekeeper + timeEstimator + scheduler)
-  let coordinatorState;
-  if (needsCoordination("daily-tasks")) {
-    const goalLastTouched = computeGoalLastTouched(pastLogs, activeGoals, date);
+  // ── Rule Engine: deterministic task selection ──
+  // Replaces the 3-AI-call coordinator pipeline (gatekeeper + timeEstimator + scheduler)
+  // with pure scoring in @northstar/core.
+  const goalLastTouched = computeGoalLastTouched(pastLogs, activeGoals, date);
 
-    const goalSummaries: GoalSummary[] = goalPlanSummaries.map((gps) => ({
-      id: gps.goalId,
-      title: gps.goalTitle,
-      goalType: gps.goalType,
-      status: gps.status,
-      targetDate: activeGoals.find((g) => g.id === gps.goalId)?.targetDate ?? null,
-      lastTouchedDate: goalLastTouched[gps.goalId]?.lastDate ?? null,
-      daysSinceLastWorked: goalLastTouched[gps.goalId]?.daysSince ?? 999,
-      planTasksToday: gps.todayTasks.map((t) => ({
-        id: t.planNodeId,
+  const goalSummaries: GoalSummary[] = goalPlanSummaries.map((gps) => ({
+    id: gps.goalId,
+    title: gps.goalTitle,
+    goalType: gps.goalType,
+    status: gps.status,
+    targetDate: activeGoals.find((g) => g.id === gps.goalId)?.targetDate ?? null,
+    lastTouchedDate: goalLastTouched[gps.goalId]?.lastDate ?? null,
+    daysSinceLastWorked: goalLastTouched[gps.goalId]?.daysSince ?? 999,
+    planTasksToday: gps.todayTasks.map((t) => ({
+      id: t.planNodeId,
+      title: t.title,
+      description: t.description,
+      durationMinutes: t.durationMinutes,
+      priority: t.priority,
+      category: t.category,
+      goalId: t.goalId,
+      goalTitle: gps.goalTitle,
+      planNodeId: t.planNodeId,
+    })),
+  }));
+
+  // Build scheduled task summaries from DB (tasks with scheduledTime)
+  const scheduledTaskRecords = await repos.dailyTasks.listForDate(date);
+  const scheduledTasks: ScheduledTaskSummary[] = scheduledTaskRecords
+    .filter((t) => (t.payload as Record<string, unknown>).scheduledTime)
+    .map((t) => {
+      const p = t.payload as Record<string, unknown>;
+      return {
+        id: t.id,
         title: t.title,
-        description: t.description,
-        durationMinutes: t.durationMinutes,
-        priority: t.priority,
-        category: t.category,
-        goalId: t.goalId,
-        goalTitle: gps.goalTitle,
-        planNodeId: t.planNodeId,
-      })),
-    }));
+        date: t.date,
+        scheduledTime: p.scheduledTime as string | undefined,
+        scheduledEndTime: p.scheduledEndTime as string | undefined,
+        durationMinutes: (p.durationMinutes as number) ?? 30,
+        category: (p.category as string) ?? "",
+        isAllDay: (p.isAllDay as boolean) ?? false,
+      };
+    });
 
-    // Build scheduled task summaries from DB (tasks with scheduledTime)
-    const scheduledTaskRecords = await repos.dailyTasks.listForDate(date);
-    const scheduledTasks: ScheduledTaskSummary[] = scheduledTaskRecords
-      .filter((t) => (t.payload as Record<string, unknown>).scheduledTime)
-      .map((t) => {
-        const p = t.payload as Record<string, unknown>;
-        return {
-          id: t.id,
-          title: t.title,
-          date: t.date,
-          scheduledTime: p.scheduledTime as string | undefined,
-          scheduledEndTime: p.scheduledEndTime as string | undefined,
-          durationMinutes: (p.durationMinutes as number) ?? 30,
-          category: (p.category as string) ?? "",
-          isAllDay: (p.isAllDay as boolean) ?? false,
-        };
-      });
+  const logSummaries: DailyLogSummary[] = pastLogs.slice(0, 7).map((l) => ({
+    date: l.date,
+    tasksCompleted: l.tasks?.filter((t) => t.completed).length ?? 0,
+    tasksTotal: l.tasks?.length ?? 0,
+    goalIdsWorked: [...new Set((l.tasks ?? []).map((t) => t.goalId).filter(Boolean) as string[])],
+  }));
 
-    const logSummaries: DailyLogSummary[] = pastLogs.slice(0, 7).map((l) => ({
-      date: l.date,
-      tasksCompleted: l.tasks?.filter((t) => t.completed).length ?? 0,
-      tasksTotal: l.tasks?.length ?? 0,
-      goalIdsWorked: [...new Set((l.tasks ?? []).map((t) => t.goalId).filter(Boolean) as string[])],
-    }));
+  const recentLogs = pastLogs.slice(0, 7);
+  const recentCompletionRate = recentLogs.length > 0
+    ? Math.round(
+        (recentLogs.reduce((s, l) => s + (l.tasks?.filter((t) => t.completed).length ?? 0), 0) /
+          Math.max(1, recentLogs.reduce((s, l) => s + (l.tasks?.length ?? 0), 0))) *
+          100,
+      )
+    : -1;
 
-    const recentLogs = pastLogs.slice(0, 7);
-    const recentCompletionRate = recentLogs.length > 0
-      ? Math.round(
-          (recentLogs.reduce((s, l) => s + (l.tasks?.filter((t) => t.completed).length ?? 0), 0) /
-            Math.max(1, recentLogs.reduce((s, l) => s + (l.tasks?.length ?? 0), 0))) *
-            100,
-        )
-      : -1;
+  const taskStateInput: TaskStateInput = {
+    date,
+    goals: goalSummaries,
+    scheduledTasks,
+    pastLogs: logSummaries,
+    memoryContext,
+    capacityBudget: COGNITIVE_BUDGET.MAX_DAILY_WEIGHT,
+    recentCompletionRate,
+  };
 
-    const taskStateInput: TaskStateInput = {
-      date,
-      goals: goalSummaries,
-      scheduledTasks,
-      pastLogs: logSummaries,
-      memoryContext,
-      capacityBudget: COGNITIVE_BUDGET.MAX_DAILY_WEIGHT,
-      recentCompletionRate,
-    };
-
-    coordinatorState = await coordinateRequest("daily-tasks", taskStateInput);
+  // Build goal importance map from actual Goal objects
+  const goalImportance: Record<string, string> = {};
+  for (const g of activeGoals) {
+    goalImportance[g.id] = g.importance ?? "medium";
   }
 
-  const result = (await handleAIRequest("daily-tasks", payload, memoryContext, coordinatorState)) as GeneratedResult;
+  const ruleEngineResult = selectDailyTasks(taskStateInput, { goalImportance });
+
+  // ── Step 2: Haiku copy generation ──
+  // The rule engine already selected and sequenced tasks. Now we just need
+  // a lightweight Haiku call to generate why_today + briefing copy.
+  const client = getClient();
+  if (!client) {
+    throw new Error("ANTHROPIC_API_KEY not configured on server.");
+  }
+
+  const yesterday = pastLogs.length > 0 ? pastLogs[pastLogs.length - 1] : null;
+  const yesterdayRecap = yesterday
+    ? {
+        tasksCompleted: yesterday.tasks?.filter((t) => t.completed).length ?? 0,
+        tasksTotal: yesterday.tasks?.length ?? 0,
+      }
+    : null;
+
+  const copyResult = await handleDailyTasksCopy(client, {
+    date,
+    selectedTasks: ruleEngineResult.selectedTasks,
+    yesterdayRecap,
+    memoryContext,
+    recentCompletionRate,
+    recommendedCount: ruleEngineResult.recommendedCount,
+  });
+
+  // ── Assemble result from rule engine + copy handler ──
+  const result: GeneratedResult = {
+    id: `log-${date}`,
+    date,
+    tasks: ruleEngineResult.selectedTasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      durationMinutes: t.durationMinutes,
+      cognitiveWeight: t.cognitiveWeight,
+      whyToday: copyResult.taskCopy[t.id]?.whyToday ?? (t.goalTitle ? `Keeps "${t.goalTitle}" on track.` : "Planned for today."),
+      priority: t.signal === "high" ? "must-do" : t.signal === "medium" ? "should-do" : "bonus",
+      isMomentumTask: t.cognitiveWeight <= 2 && t.durationMinutes <= 15,
+      progressContribution: "",
+      category: t.category,
+      completed: false,
+      goalId: t.goalId,
+      planNodeId: t.planNodeId,
+    })),
+    notificationBriefing: copyResult.notificationBriefing,
+    adaptiveReasoning: copyResult.adaptiveReasoning,
+    encouragement: copyResult.encouragement,
+    heatmapEntry: {
+      date,
+      completionLevel: 0,
+      currentStreak: 0,
+      totalActiveDays: 0,
+      longestStreak: 0,
+    },
+  };
 
   // ── dryRun: return proposals without persisting ──
   if (opts.dryRun) {

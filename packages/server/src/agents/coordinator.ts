@@ -22,6 +22,26 @@ import { runGatekeeper } from "./gatekeeper";
 import { runTimeEstimator } from "./timeEstimator";
 import { runScheduler } from "./scheduler";
 
+// ── HiTAMP error categorization & retry ───────────────────
+
+type AgentErrorKind = "timeout" | "parse_error" | "api_error" | "rate_limit" | "unknown";
+
+function categorizeAgentError(err: unknown): AgentErrorKind {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/timeout|timed?\s*out|ETIMEDOUT/i.test(msg)) return "timeout";
+  if (/parse|JSON|unexpected token|invalid/i.test(msg)) return "parse_error";
+  if (/rate.?limit|429|too many/i.test(msg)) return "rate_limit";
+  if (/5\d{2}|api|network|ECONNREFUSED|ECONNRESET/i.test(msg)) return "api_error";
+  return "unknown";
+}
+
+function isRetryable(kind: AgentErrorKind): boolean {
+  return kind === "timeout" || kind === "rate_limit" || kind === "api_error";
+}
+
+const RETRY_DELAY_MS = 2000;
+const MAX_RETRIES = 1;
+
 // ── Agent runner dispatch ──────────────────────────────────
 
 type AgentResults = {
@@ -59,6 +79,36 @@ async function runAgent(
       };
       results.scheduler = await runScheduler(input, gk, te);
       break;
+    }
+  }
+}
+
+/** Run an agent with retry on transient errors (HiTAMP pattern). */
+async function runAgentWithRetry(
+  agentId: SubAgentId,
+  input: TaskStateInput,
+  results: AgentResults,
+  userId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await runAgent(agentId, input, results);
+      return;
+    } catch (err) {
+      const kind = categorizeAgentError(err);
+      const { recordAgentFallback } = await import("../services/signalRecorder");
+      recordAgentFallback(agentId, kind).catch(() => {});
+
+      if (isRetryable(kind) && attempt < MAX_RETRIES) {
+        emitAgentProgress(userId, {
+          agentId,
+          phase: "retrying",
+          message: `${agentId} failed (${kind}), retrying in ${RETRY_DELAY_MS / 1000}s...`,
+        });
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        continue;
+      }
+      throw err;
     }
   }
 }
@@ -127,7 +177,7 @@ export async function coordinateRequest(
             message: `Starting ${agentId}`,
           });
 
-          await runAgent(agentId, input, results);
+          await runAgentWithRetry(agentId, input, results, userId);
 
           emitAgentProgress(userId, {
             agentId: agentId,
@@ -146,7 +196,7 @@ export async function coordinateRequest(
         message: `Starting ${agentId}`,
       });
 
-      await runAgent(agentId, input, results);
+      await runAgentWithRetry(agentId, input, results, userId);
 
       emitAgentProgress(userId, {
         agentId: agentId,

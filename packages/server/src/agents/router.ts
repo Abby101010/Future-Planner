@@ -8,6 +8,7 @@ export function routeRequest(requestType: string): AgentPlan {
         agents: ["gatekeeper", "timeEstimator", "scheduler"],
         parallel: [["gatekeeper", "timeEstimator"]],
         sequential: ["scheduler"],
+        dependencies: { scheduler: ["gatekeeper", "timeEstimator"] },
       };
 
     case "goal-intake":
@@ -15,6 +16,7 @@ export function routeRequest(requestType: string): AgentPlan {
         agents: ["gatekeeper", "scheduler"],
         parallel: [["gatekeeper"]],
         sequential: ["scheduler"],
+        dependencies: { scheduler: ["gatekeeper"] },
       };
 
     case "budget-check":
@@ -29,6 +31,7 @@ export function routeRequest(requestType: string): AgentPlan {
         agents: ["timeEstimator", "scheduler"],
         parallel: [["timeEstimator"]],
         sequential: ["scheduler"],
+        dependencies: { scheduler: ["timeEstimator"] },
       };
 
     default:

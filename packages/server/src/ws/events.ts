@@ -44,9 +44,15 @@ export interface AgentProgressPayload {
   percent?: number;
 }
 
-/** Payload for `view:invalidate`. Clients use this to re-fetch views. */
+/** Payload for `view:invalidate`. Clients use this to re-fetch views.
+ *  Optional `scope` lets the client skip refetches for irrelevant dates/entities. */
 export interface ViewInvalidatePayload {
   viewKinds: QueryKind[];
+  scope?: {
+    date?: string;
+    entityId?: string;
+    entityType?: string;
+  };
 }
 
 /** Payload for `reminder:triggered`. */
@@ -113,5 +119,57 @@ export function emitReminderTriggered(
   connectionRegistry.broadcastToUser(
     userId,
     envelope("reminder:triggered", payload),
+  );
+}
+
+/** Payload for `job:complete`. */
+export interface JobCompletePayload {
+  jobId: string;
+  type: string;
+  result: Record<string, unknown>;
+}
+
+/** Payload for `job:failed`. */
+export interface JobFailedPayload {
+  jobId: string;
+  type: string;
+  error: string;
+}
+
+export function emitJobComplete(
+  userId: string,
+  payload: JobCompletePayload,
+): void {
+  connectionRegistry.broadcastToUser(
+    userId,
+    envelope("job:complete", payload),
+  );
+}
+
+export function emitJobFailed(
+  userId: string,
+  payload: JobFailedPayload,
+): void {
+  connectionRegistry.broadcastToUser(
+    userId,
+    envelope("job:failed", payload),
+  );
+}
+
+/** Payload for `entity:patch` — direct state push for simple mutations. */
+export interface EntityPatchPayload {
+  entityType: "task" | "goal" | "reminder";
+  entityId: string;
+  patch: Record<string, unknown>;
+  date?: string;
+}
+
+export function emitEntityPatch(
+  userId: string,
+  payload: EntityPatchPayload,
+): void {
+  connectionRegistry.broadcastToUser(
+    userId,
+    envelope("entity:patch", payload),
   );
 }

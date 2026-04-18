@@ -162,4 +162,9 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:tasks",
     "view:settings",
   ],
+  "command:expand-plan-week": [
+    "view:goal-plan",
+    "view:tasks",
+    "view:calendar",
+  ],
 };

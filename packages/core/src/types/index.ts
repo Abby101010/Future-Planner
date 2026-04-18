@@ -740,4 +740,8 @@ export interface PaceMismatch {
   requiredTasksPerDay: number;
   severity: "mild" | "moderate" | "severe";
   estimatedDelayDays: number;
+  /** AI-generated explanation for moderate/severe mismatches (pace explainer). */
+  explanation?: string;
+  /** AI-generated actionable suggestions for getting back on track. */
+  suggestions?: string[];
 }

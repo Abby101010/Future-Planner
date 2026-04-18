@@ -192,4 +192,7 @@ export interface AgentPlan {
   agents: SubAgentId[];
   parallel: SubAgentId[][];
   sequential: SubAgentId[];
+  /** HiTAMP dependency graph — which agents depend on which. Informational
+   *  for now, enables future retraction decisions. */
+  dependencies?: Partial<Record<SubAgentId, SubAgentId[]>>;
 }

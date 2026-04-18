@@ -172,6 +172,8 @@ Filter these candidates and score their priority. Return JSON only.`;
       priorityScores = aiResult.priorityScores;
     } catch (err) {
       console.error("[gatekeeper] AI call failed, falling back to pass-through:", err);
+      const { recordAgentFallback } = await import("../services/signalRecorder");
+      recordAgentFallback("gatekeeper", err instanceof Error ? err.message : String(err)).catch(() => {});
       filteredTasks = candidates.map((c) => ({
         id: c.id,
         title: c.title,

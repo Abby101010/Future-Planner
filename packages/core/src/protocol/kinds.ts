@@ -53,7 +53,8 @@ export type CommandKind =
   | "command:dismiss-nudge"
   | "command:cant-complete-task"
   | "command:add-task-to-plan"
-  | "command:set-vacation-mode";
+  | "command:set-vacation-mode"
+  | "command:expand-plan-week";
 
 export type EventKind =
   | "ai:stream-start"
@@ -61,6 +62,9 @@ export type EventKind =
   | "ai:stream-end"
   | "agent:progress"
   | "view:invalidate"
-  | "reminder:triggered";
+  | "reminder:triggered"
+  | "job:complete"
+  | "job:failed"
+  | "entity:patch";
 
 export type Kind = QueryKind | CommandKind | EventKind;

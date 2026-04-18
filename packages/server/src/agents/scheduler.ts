@@ -263,6 +263,8 @@ Detect any conflicts and propose reshuffle actions if needed. Return JSON only.`
       opportunityCost = aiResult.opportunityCost;
     } catch (err) {
       console.error("[scheduler] AI call failed, returning schedule without conflict analysis:", err);
+      const { recordAgentFallback } = await import("../services/signalRecorder");
+      recordAgentFallback("scheduler", err instanceof Error ? err.message : String(err)).catch(() => {});
     }
   }
 

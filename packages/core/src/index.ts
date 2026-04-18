@@ -8,6 +8,10 @@ export * from "./ai/payloads.js";
 export * from "./model-config.js";
 export * from "./domain/cognitiveBudget.js";
 export * from "./domain/goalPlan.js";
+export * from "./domain/paceDetection.js";
+export * from "./domain/dailyTaskEngine.js";
+export * from "./domain/effortClassifier.js";
+export * from "./domain/overloadCheck.js";
 // AI handlers are server-only (pull in @anthropic-ai/sdk + node:crypto).
 // Server code imports them from "@northstar/core/handlers". Never re-export
 // them here — the desktop renderer consumes this barrel through a Vite alias.

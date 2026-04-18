@@ -48,6 +48,7 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "news-briefing": "light",
   "reflection": "light",         // reflection engine
   "coordinator": "light",        // coordinator's own calls (routing only)
+  "daily-tasks-copy": "light",   // Haiku generates why_today + briefing copy
   "gatekeeper": "light",         // signal/noise filter + priority scoring
   "time-estimator": "light",     // duration estimation + planning fallacy
   "scheduler": "light",          // calendar conflicts + 3-tier hierarchy
@@ -56,6 +57,10 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "effort-router": "light",      // Haiku classifies high/low effort
   "goal-research": "heavy",      // Opus researches best practices, timelines
   "goal-personalization": "light", // Haiku pulls capacity profile
+
+  // ── GoalAct / HiTAMP additions ──
+  "expand-week": "medium",          // Sonnet generates tasks for unlocked week
+  "pace-explainer": "light",        // Haiku explains pace mismatches
 };
 
 /** User overrides stored in settings (tier → model) */

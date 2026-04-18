@@ -153,6 +153,42 @@ export async function resolveGoalPlanView(
     const mismatches = detectPaceMismatches([goalForPace], capacity.avgTasksCompletedPerDay, today);
     paceMismatch = mismatches.length > 0 ? mismatches[0] : null;
 
+    // Pace Explainer: for moderate/severe mismatches, generate AI explanation.
+    // Cache in goal_plan_node payload to avoid repeated API calls.
+    if (paceMismatch && (paceMismatch.severity === "moderate" || paceMismatch.severity === "severe")) {
+      try {
+        // Check cache: look for a pace explanation cached today
+        const goalNode = planNodes.find((n) => n.nodeType === "milestone" || (n.parentId === null && n.nodeType === "year"));
+        const cachedExplanation = goalNode?.payload?.paceExplanation as string | undefined;
+        const cachedDate = goalNode?.payload?.paceExplanationDate as string | undefined;
+        if (cachedExplanation && cachedDate === today) {
+          paceMismatch.explanation = cachedExplanation;
+          paceMismatch.suggestions = (goalNode?.payload?.paceSuggestions as string[] | undefined) ?? [];
+        } else {
+          const { getClient } = await import("../ai/client");
+          const client = getClient();
+          if (client) {
+            const { buildMemoryContext } = await import("../memory");
+            const memCtx = buildMemoryContext(memory, "planning");
+            const { handlePaceExplainer } = await import("../ai/handlers/paceExplainer");
+            const result = await handlePaceExplainer(client, paceMismatch, memCtx);
+            paceMismatch.explanation = result.explanation;
+            paceMismatch.suggestions = result.suggestions;
+            // Cache result on the first top-level node
+            if (goalNode) {
+              repos.goalPlan.patchNodePayload(goalNode.id, {
+                paceExplanation: result.explanation,
+                paceSuggestions: result.suggestions,
+                paceExplanationDate: today,
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch {
+        // pace explanation is best-effort — don't block the view
+      }
+    }
+
     // Cross-goal overload detection
     const advisories = detectCrossGoalOverload(
       allGoals, capacity.avgTasksCompletedPerDay,

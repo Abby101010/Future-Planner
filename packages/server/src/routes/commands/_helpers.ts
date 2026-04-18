@@ -34,11 +34,12 @@ export { getClient } from "../../ai/client";
 export function invalidate(
   kind: CommandKind,
   extraViews: QueryKind[] = [],
+  scope?: { date?: string; entityId?: string; entityType?: string },
 ): void {
   const userId = getCurrentUserId();
   const base = commandToInvalidations[kind] ?? [];
   const merged = Array.from(new Set<QueryKind>([...base, ...extraViews]));
-  emitViewInvalidate(userId, { viewKinds: merged });
+  emitViewInvalidate(userId, { viewKinds: merged, scope });
 }
 
 export async function runAI(

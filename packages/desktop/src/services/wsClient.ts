@@ -41,6 +41,9 @@ export type EventPayloads = {
   };
   "view:invalidate": { viewKinds: QueryKind[] };
   "reminder:triggered": { reminderId: string; title: string; body?: string };
+  "job:complete": { jobId: string; type: string; result: Record<string, unknown> };
+  "job:failed": { jobId: string; type: string; error: string };
+  "entity:patch": { entityType: string; entityId: string; patch: Record<string, unknown>; date?: string };
 };
 
 type Listener<K extends EventKind> = (

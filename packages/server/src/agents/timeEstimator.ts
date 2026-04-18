@@ -161,6 +161,8 @@ Estimate realistic durations for each task. Return JSON only.`;
       estimates = parseAiResponse(text, candidates);
     } catch (err) {
       console.error("[time-estimator] AI call failed, using default estimates:", err);
+      const { recordAgentFallback } = await import("../services/signalRecorder");
+      recordAgentFallback("timeEstimator", err instanceof Error ? err.message : String(err)).catch(() => {});
       estimates = {};
       for (const c of candidates) {
         estimates[c.id] = defaultEstimate(c);

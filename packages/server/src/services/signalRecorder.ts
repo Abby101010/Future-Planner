@@ -25,7 +25,11 @@ export type SignalType =
   | "session_time"
   | "high_energy_window"
   | "low_energy_window"
-  | "chat_insight";
+  | "chat_insight"
+  | "agent_fallback"
+  | "ai_parse_error"
+  | "overload_detected"
+  | "estimation_error";
 
 /**
  * Insert a behavioral signal into memory_signals. Best-effort —
@@ -87,5 +91,57 @@ export async function recordTaskUncompleted(
     "schedule_override",
     taskTitle,
     "Task un-completed by user",
+  );
+}
+
+// ── System health signals (TextGrad feedback loop) ─────────
+
+/** Record when an AI sub-agent fails and we fall back to defaults. */
+export async function recordAgentFallback(
+  agentName: string,
+  errorKind: string,
+): Promise<void> {
+  await recordSignal(
+    "agent_fallback",
+    agentName,
+    `fallback triggered: ${errorKind}`,
+  );
+}
+
+/** Record when an AI response couldn't be parsed. */
+export async function recordAiParseError(
+  handlerName: string,
+  response: string,
+): Promise<void> {
+  await recordSignal(
+    "ai_parse_error",
+    handlerName,
+    `unparseable response (${response.length} chars): ${response.slice(0, 200)}`,
+  );
+}
+
+/** Record when daily cognitive load exceeds budget. */
+export async function recordOverloadDetected(
+  context: string,
+  deferralCount: number,
+): Promise<void> {
+  await recordSignal(
+    "overload_detected",
+    context,
+    `${deferralCount} deferral(s) recommended`,
+  );
+}
+
+/** Record when actual task duration deviates significantly from estimate. */
+export async function recordEstimationError(
+  taskTitle: string,
+  estimatedMinutes: number,
+  actualMinutes: number,
+): Promise<void> {
+  const ratio = actualMinutes / estimatedMinutes;
+  await recordSignal(
+    "estimation_error",
+    taskTitle,
+    `estimated: ${estimatedMinutes}min, actual: ${actualMinutes}min, ratio: ${ratio.toFixed(2)}`,
   );
 }

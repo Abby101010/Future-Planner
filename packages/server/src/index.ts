@@ -28,6 +28,7 @@ import commandsRouter from "./routes/commands";
 import { getPool, closePool } from "./db/pool";
 import { runMigrations } from "./db/migrate";
 import { attachWebSocketServer, connectionRegistry } from "./ws";
+import { startJobWorker, stopJobWorker } from "./job-worker";
 
 const DEBUG = process.env.DEBUG === "1" || process.env.LOG_LEVEL === "debug";
 
@@ -118,6 +119,7 @@ async function start() {
     console.log(`[server] WebSocket endpoint: ws://…:${PORT}/ws`);
     console.log(`[server] DEV_USER_ID=${process.env.DEV_USER_ID ?? "(unset)"}`);
     console.log(`[server] DEBUG=${DEBUG ? "on" : "off"}`);
+    startJobWorker();
   });
 }
 
@@ -126,6 +128,7 @@ void start();
 // ── Graceful shutdown ────────────────────────────────────
 async function shutdown(signal: string) {
   console.log(`[server] Received ${signal}, shutting down...`);
+  stopJobWorker();
   server.close(async () => {
     await closePool();
     process.exit(0);

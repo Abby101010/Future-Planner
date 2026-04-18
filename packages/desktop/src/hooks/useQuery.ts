@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { QueryKind } from "@northstar/core";
 import { queryView } from "../services/transport";
-import { cacheKey, get as cacheGet, set as cacheSet, invalidate as cacheInvalidate } from "../services/queryCache";
+import { cacheKey, get as cacheGet, set as cacheSet, invalidate as cacheInvalidate, patchEntity as cachePatchEntity } from "../services/queryCache";
 import { wsClient } from "../services/wsClient";
 
 const FRESH_WINDOW_MS = 5_000;
@@ -106,6 +106,26 @@ export function useQuery<T>(
     });
     return unsub;
   }, [kind, enabled, run]);
+
+  // Listen for direct entity patches — instant local updates without a
+  // full refetch. The background view:invalidate still fires to sync
+  // derived data (progress counts, etc.), but the entity's own fields
+  // update immediately.
+  useEffect(() => {
+    if (!enabled) return;
+    const unsub = wsClient.subscribe("entity:patch", (payload) => {
+      if (!payload?.entityId || !payload?.patch) return;
+      const affected = cachePatchEntity(
+        payload.entityId as string,
+        payload.patch as Record<string, unknown>,
+      );
+      if (affected.includes(key)) {
+        const cached = cacheGet(key);
+        if (cached) setData({ ...(cached.data as object) } as T);
+      }
+    });
+    return unsub;
+  }, [key, enabled]);
 
   const refetch = useCallback(() => {
     void run(true);

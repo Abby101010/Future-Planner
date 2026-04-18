@@ -29,6 +29,7 @@ export {
 } from "./tasks";
 
 export {
+  cmdExpandPlanWeek,
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
   cmdConfirmDailyTasks,

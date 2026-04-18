@@ -4,6 +4,7 @@
 
 import type { TaskSource } from "@northstar/core";
 import { repos, runAI, invalidate, getEffectiveDate, getCurrentUserId, emitViewInvalidate } from "./_helpers";
+import { emitEntityPatch } from "../../ws/events";
 import { runWithUserId } from "../../middleware/requestContext";
 import { timezoneStore } from "../../dateUtils";
 import {
@@ -112,7 +113,16 @@ export async function cmdToggleTask(
       });
     }
 
-    return { ok: true, taskId, completed: next };
+    // Push direct state patch so client can update locally without refetching
+    const userId = getCurrentUserId();
+    emitEntityPatch(userId, {
+      entityType: "task",
+      entityId: taskId,
+      patch: { completed: next, completedAt: next ? new Date().toISOString() : null },
+      date: task?.date,
+    });
+
+    return { ok: true, taskId, completed: next, _scope: { date: task?.date, entityId: taskId, entityType: "task" } };
   }
 
   // Not found in daily_tasks — the id might be a goal_plan_node id

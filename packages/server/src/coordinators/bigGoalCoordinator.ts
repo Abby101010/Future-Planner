@@ -16,6 +16,7 @@
 import { emitAgentProgress } from "../ws";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { routeEffort, type EffortRouterInput } from "./effortRouter";
+import { classifyEffort } from "@northstar/core";
 import { runResearchAgent, type ResearchResult } from "./bigGoal/researchAgent";
 import { runPersonalizationAgent, type PersonalizationResult } from "./bigGoal/personalizationAgent";
 import { loadProjectContext, saveProjectContext, type ProjectAgentContext } from "./bigGoal/projectAgentContext";
@@ -74,7 +75,8 @@ export async function coordinateBigGoal(
     message: "Classifying request effort level...",
   });
 
-  // Step 1: Route effort (Haiku rapid classifier)
+  // Step 1: Route effort — local heuristic first (ACONIC pattern),
+  // fall back to Haiku when confidence is low.
   const effortInput: EffortRouterInput = {
     userMessage: request.userMessage,
     existingGoals: request.existingGoals,
@@ -82,7 +84,11 @@ export async function coordinateBigGoal(
     currentCognitiveLoad: request.currentCognitiveLoad,
   };
 
-  const effortResult = await routeEffort(effortInput);
+  const localClassification = classifyEffort(effortInput);
+  const effortResult =
+    localClassification.confidence >= 0.6
+      ? localClassification
+      : await routeEffort(effortInput);
 
   // If low-effort has been denied 2+ times, force high-effort
   const forceHigh = (request.denialCount ?? 0) >= 2;

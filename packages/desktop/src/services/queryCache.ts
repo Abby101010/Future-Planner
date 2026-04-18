@@ -32,14 +32,63 @@ export function set(key: string, data: unknown): void {
 }
 
 /**
- * Invalidate every entry for the given query kind, regardless of args.
- * Called by the `view:invalidate` WebSocket listener inside useQuery.
+ * Mark every entry for the given query kind as stale (fetchedAt=0).
+ * The data stays in cache so useQuery can show it while refetching
+ * (stale-while-revalidate), avoiding a loading flash on every WS
+ * invalidation.
  */
 export function invalidate(kind: QueryKind): void {
   const prefix = `${kind}|`;
-  for (const key of Array.from(cache.keys())) {
-    if (key.startsWith(prefix)) cache.delete(key);
+  for (const [key, entry] of cache.entries()) {
+    if (key.startsWith(prefix)) entry.fetchedAt = 0;
   }
+}
+
+// ── Entity patching ─────────────────────────────────────
+
+/**
+ * Recursively walk all cached view data, find objects whose `id`
+ * matches `entityId`, and merge `patch` into them. Returns the cache
+ * keys that were modified so callers can trigger re-renders.
+ */
+export function patchEntity(
+  entityId: string,
+  patch: Record<string, unknown>,
+): string[] {
+  const affected: string[] = [];
+  for (const [key, entry] of cache.entries()) {
+    if (deepPatch(entry.data, entityId, patch)) {
+      affected.push(key);
+    }
+  }
+  return affected;
+}
+
+function deepPatch(
+  obj: unknown,
+  entityId: string,
+  patch: Record<string, unknown>,
+): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  if (Array.isArray(obj)) {
+    let found = false;
+    for (const item of obj) {
+      if (deepPatch(item, entityId, patch)) found = true;
+    }
+    return found;
+  }
+  const record = obj as Record<string, unknown>;
+  let found = false;
+  if (record.id === entityId) {
+    Object.assign(record, patch);
+    found = true;
+  }
+  for (const val of Object.values(record)) {
+    if (val && typeof val === "object") {
+      if (deepPatch(val, entityId, patch)) found = true;
+    }
+  }
+  return found;
 }
 
 /** Nuke the entire cache — call on logout or user switch. */
