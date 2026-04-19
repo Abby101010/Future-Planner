@@ -1,239 +1,35 @@
-/* ──────────────────────────────────────────────────────────
-   NorthStar — Sidebar component
-   ────────────────────────────────────────────────────────── */
+/* Sidebar — bare nav. Buttons switch currentView via the store. */
 
-import { useEffect, useState } from "react";
-import {
-  Map,
-  Settings,
-  CalendarDays,
-  Target,
-  CheckSquare,
-  Compass,
-  Newspaper,
-  Download,
-  MessageCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
 import useStore from "../store/useStore";
-import { useQuery } from "../hooks/useQuery";
-import { useT, getDateLocale } from "../i18n";
-import type { AppView, Goal, Roadmap, UserProfile } from "@northstar/core";
-import "./Sidebar.css";
+import type { AppView } from "@northstar/core";
 
-interface NavItem {
-  icon: React.ReactNode;
-  label: string;
-  view: AppView;
-  optIn?: boolean;
-}
-
-interface SidebarPlanningView {
-  goals: Goal[];
-}
-interface SidebarRoadmapView {
-  roadmap: Roadmap | null;
-}
-interface SidebarSettingsView {
-  user: UserProfile | null;
-}
+const VIEWS: { view: AppView; label: string }[] = [
+  { view: "tasks", label: "tasks" },
+  { view: "calendar", label: "calendar" },
+  { view: "planning", label: "planning" },
+  { view: "roadmap", label: "roadmap" },
+  { view: "news-feed", label: "news-feed" },
+  { view: "settings", label: "settings" },
+  { view: "onboarding", label: "onboarding" },
+];
 
 export default function Sidebar() {
   const currentView = useStore((s) => s.currentView);
   const setView = useStore((s) => s.setView);
-  const toggleChat = useStore((s) => s.toggleChat);
-  const isCollapsed = useStore((s) => s.isSidebarCollapsed);
-  const toggleSidebar = useStore((s) => s.toggleSidebar);
-  const lang = useStore((s) => s.language);
-  const { data: planningData } = useQuery<SidebarPlanningView>("view:planning");
-  const { data: roadmapData } = useQuery<SidebarRoadmapView>("view:roadmap");
-  const { data: settingsData } = useQuery<SidebarSettingsView>("view:settings");
-  const goals: Goal[] = planningData?.goals ?? [];
-  const roadmap = roadmapData?.roadmap ?? null;
-  const user = settingsData?.user ?? null;
-  const t = useT();
-
-  // ── Auto-update badge ──
-  // Listens for "updater:status" IPC events from electron/auto-updater.ts.
-  // When the updater detects a newer version on GitHub Releases, it pushes
-  // { status: "available", version }, and we surface a badge in the footer.
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  useEffect(() => {
-    if (!window.electronAPI?.on) return;
-    const off = window.electronAPI.on("updater:status", (...args: unknown[]) => {
-      const payload = args[0] as { status?: string; version?: string } | undefined;
-      if (payload?.status === "available" && payload.version) {
-        setUpdateVersion(payload.version);
-      }
-    });
-    return () => {
-      if (typeof off === "function") off();
-    };
-  }, []);
-  const handleOpenReleases = () => {
-    window.electronAPI?.invoke?.("updater:open-releases");
-  };
-
-  const bigGoals = goals.filter(
-    (g) => (g.goalType === "big" || (!g.goalType && g.scope === "big")) && g.status !== "archived"
-  );
-  const everydayCount = goals.filter(
-    (g) => (g.goalType === "everyday" || (!g.goalType && g.scope === "small")) && g.status !== "archived" && g.status !== "completed"
-  ).length;
-  const repeatingCount = goals.filter(
-    (g) => g.goalType === "repeating" && g.status !== "archived"
-  ).length;
-
-  const nav: NavItem[] = [
-    { icon: <CheckSquare size={18} />, label: t.sidebar.today, view: "tasks" },
-    { icon: <Compass size={18} />, label: "Planning", view: "planning" },
-    { icon: <CalendarDays size={18} />, label: t.sidebar.calendar, view: "calendar" },
-    { icon: <Map size={18} />, label: t.sidebar.roadmap, view: "roadmap" },
-    {
-      icon: <Newspaper size={18} />,
-      label: t.settings.newsFeed,
-      view: "news-feed",
-      optIn: true,
-    },
-    { icon: <Settings size={18} />, label: t.sidebar.settings, view: "settings" },
-  ];
-
-  // Filter visibility
-  const visibleNav = nav.filter((item) => {
-    if (item.label === t.sidebar.roadmap && !roadmap) return false;
-    if (item.label === t.settings.newsFeed) {
-      return user?.settings.enableNewsFeed;
-    }
-    return true;
-  });
-
   return (
-    <aside className={`sidebar ${isCollapsed ? "sidebar--collapsed" : ""}`}>
-      <div className="sidebar-brand">
-        {!isCollapsed && <span className="sidebar-title">NorthStar</span>}
-        <button
-          className="btn btn-ghost sidebar-collapse-btn"
-          onClick={toggleSidebar}
-          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {isCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        </button>
-      </div>
-
-      <nav className="sidebar-nav">
-        <button
-          className="sidebar-item sidebar-chat-btn"
-          onClick={toggleChat}
-        >
-          <MessageCircle size={18} />
-          <span>Chat</span>
-        </button>
-        <div className="sidebar-divider" />
-        {visibleNav.map((item) => (
-          <button
-            key={item.view + item.label}
-            className={`sidebar-item ${currentView === item.view ? "active" : ""}`}
-            onClick={() => setView(item.view)}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </button>
+    <nav>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        {VIEWS.map(({ view, label }) => (
+          <li key={view}>
+            <button
+              onClick={() => setView(view)}
+              style={{ fontWeight: currentView === view ? "bold" : "normal" }}
+            >
+              {label}
+            </button>
+          </li>
         ))}
-
-        {/* Dynamic entries for goals */}
-        {(bigGoals.length > 0 || everydayCount > 0 || repeatingCount > 0) && (
-          <>
-            <div className="sidebar-divider" />
-            <div className="sidebar-section-label">{t.sidebar.goalsSection}</div>
-            {bigGoals.map((goal) => {
-              const goalView: AppView = `goal-plan-${goal.id}`;
-              // Compute progress for sidebar badge
-              let progressPercent = 0;
-              if (goal.plan && Array.isArray(goal.plan.years)) {
-                let total = 0, completed = 0;
-                for (const yr of goal.plan.years) {
-                  for (const mo of yr.months) {
-                    for (const wk of mo.weeks) {
-                      for (const dy of wk.days) {
-                        for (const tk of dy.tasks) {
-                          total++;
-                          if (tk.completed) completed++;
-                        }
-                      }
-                    }
-                  }
-                }
-                progressPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
-              }
-              return (
-                <button
-                  key={goal.id}
-                  className={`sidebar-item ${currentView === goalView ? "active" : ""}`}
-                  onClick={() => setView(goalView)}
-                >
-                  {goal.icon ? (
-                    <span className="sidebar-goal-icon">{goal.icon}</span>
-                  ) : (
-                    <Target size={18} />
-                  )}
-                  <span className="sidebar-goal-label">
-                    {goal.title}
-                    {progressPercent > 0 && (
-                      <span className="sidebar-goal-progress">{progressPercent}%</span>
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-            {everydayCount > 0 && (
-              <button
-                className={`sidebar-item ${currentView === "planning" ? "" : ""}`}
-                onClick={() => setView("planning")}
-              >
-                <CheckSquare size={18} />
-                <span>{t.goalTypes?.everydayTasks || "Everyday"} <span className="sidebar-count">{everydayCount}</span></span>
-              </button>
-            )}
-          </>
-        )}
-      </nav>
-
-      <div className="sidebar-footer">
-        {updateVersion && !isCollapsed && (
-          <button
-            type="button"
-            className="sidebar-update-badge"
-            onClick={handleOpenReleases}
-            title={`Click to download NorthStar ${updateVersion}`}
-          >
-            <Download size={14} />
-            <span>Update available · {updateVersion}</span>
-          </button>
-        )}
-        {updateVersion && isCollapsed && (
-          <button
-            type="button"
-            className="sidebar-update-badge sidebar-update-badge--icon"
-            onClick={handleOpenReleases}
-            title={`Update available: ${updateVersion}`}
-          >
-            <Download size={14} />
-          </button>
-        )}
-        {!isCollapsed && (
-          <div className="sidebar-user">
-            <CalendarDays size={14} />
-            <span className="sidebar-date">
-              {new Date().toLocaleDateString(getDateLocale(lang), {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </span>
-          </div>
-        )}
-      </div>
-    </aside>
+      </ul>
+    </nav>
   );
 }

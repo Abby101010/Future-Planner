@@ -1,6 +1,4 @@
-/* ──────────────────────────────────────────────────────────
-   NorthStar (北极星) — Root application shell
-   ────────────────────────────────────────────────────────── */
+/* NorthStar client test harness — bare HTML shell. */
 
 import { useEffect } from "react";
 import useStore from "./store/useStore";
@@ -12,7 +10,6 @@ import { useQuery } from "./hooks/useQuery";
 import Sidebar from "./components/Sidebar";
 import Chat from "./components/Chat";
 import ErrorBoundary from "./components/ErrorBoundary";
-import WelcomePage from "./pages/welcome/WelcomePage";
 import OnboardingPage from "./pages/onboarding/OnboardingPage";
 import CalendarPage from "./pages/calendar/CalendarPage";
 import GoalPlanPage from "./pages/goals/GoalPlanPage";
@@ -21,11 +18,7 @@ import SettingsPage from "./pages/settings/SettingsPage";
 import PlanningPage from "./pages/goals/PlanningPage";
 import TasksPage from "./pages/tasks/TasksPage";
 import NewsFeedPage from "./pages/news/NewsFeedPage";
-import "./styles/global.css";
-import "./App.css";
 
-// Minimal projection of view:onboarding used solely to seed language +
-// decide whether to boot into onboarding or dashboard on first render.
 interface OnboardingBootView {
   user: {
     settings?: { language?: "en" | "zh" };
@@ -34,11 +27,6 @@ interface OnboardingBootView {
   onboardingComplete: boolean;
 }
 
-/**
- * Outer shell: wraps everything in AuthProvider → AuthGuard.
- * Hooks that require an auth token live in AppShell (only mounts
- * after AuthGuard confirms a valid session).
- */
 function App() {
   return (
     <AuthProvider>
@@ -49,16 +37,12 @@ function App() {
   );
 }
 
-/** Inner shell — only mounts when a valid auth session exists. */
 function AppShell() {
   const currentView = useStore((s) => s.currentView);
   const setView = useStore((s) => s.setView);
   const language = useStore((s) => s.language);
   const setLanguage = useStore((s) => s.setLanguage);
 
-  // One-shot boot query: read the user + onboardingComplete so we can
-  // seed language and jump into dashboard vs. onboarding. After this
-  // settles we never touch it again; pages fetch their own views.
   const { data: boot } = useQuery<OnboardingBootView>("view:onboarding");
   useEffect(() => {
     if (!boot) return;
@@ -70,11 +54,6 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boot]);
 
-  // Phase 5b: single top-level WebSocket subscription. Individual hooks
-  // (useQuery, useWsEvent, useAiStream) register listeners against this
-  // shared connection; here we just manage its lifecycle.
-  // Safe to connect unconditionally — AuthGuard guarantees a session exists
-  // and the cached token is populated by the time this component mounts.
   useEffect(() => {
     wsClient.connect();
     return () => {
@@ -82,42 +61,33 @@ function AppShell() {
     };
   }, []);
 
-  const showSidebar =
-    currentView === "planning" ||
-    currentView === "tasks" ||
-    currentView === "calendar" ||
-    currentView === "roadmap" ||
-    currentView === "settings" ||
-    currentView === "news-feed" ||
-    currentView.startsWith("goal-plan-");
-
   const goalPlanId = currentView.startsWith("goal-plan-")
     ? currentView.replace("goal-plan-", "")
     : null;
 
   return (
     <I18nProvider language={language}>
-    <div className="app-shell">
-      {/* macOS drag region */}
-      <div className="drag-region" />
-
-      {showSidebar && <Sidebar />}
-      {showSidebar && <Chat />}
-
-      <main className={`app-main ${showSidebar ? "app-main--with-sidebar" : ""}`}>
-        <ErrorBoundary>
-          {currentView === "welcome" && <WelcomePage />}
-          {currentView === "onboarding" && <OnboardingPage />}
-          {currentView === "planning" && <PlanningPage />}
-          {currentView === "tasks" && <TasksPage />}
-          {currentView === "calendar" && <CalendarPage />}
-          {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
-          {currentView === "roadmap" && <RoadmapPage />}
-          {currentView === "news-feed" && <NewsFeedPage />}
-          {currentView === "settings" && <SettingsPage />}
-        </ErrorBoundary>
-      </main>
-    </div>
+      <div style={{ display: "flex", minHeight: "100vh", fontFamily: "monospace" }}>
+        <div style={{ width: 160, borderRight: "1px solid #ccc", padding: 8 }}>
+          <Sidebar />
+        </div>
+        <main style={{ flex: 1, padding: 12, overflowY: "auto" }}>
+          <ErrorBoundary>
+            {currentView === "welcome" && <p>booting…</p>}
+            {currentView === "onboarding" && <OnboardingPage />}
+            {currentView === "planning" && <PlanningPage />}
+            {currentView === "tasks" && <TasksPage />}
+            {currentView === "calendar" && <CalendarPage />}
+            {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
+            {currentView === "roadmap" && <RoadmapPage />}
+            {currentView === "news-feed" && <NewsFeedPage />}
+            {currentView === "settings" && <SettingsPage />}
+          </ErrorBoundary>
+        </main>
+        <div style={{ width: 360 }}>
+          <Chat />
+        </div>
+      </div>
     </I18nProvider>
   );
 }
