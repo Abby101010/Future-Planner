@@ -10,16 +10,21 @@
     "build": "tsc -b",
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
+    "ingest-knowledge": "tsx scripts/ingest-knowledge.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@northstar/core": "*",
+    "bullmq": "^5.74.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
+    "node-cron": "^4.2.1",
     "pg": "^8.13.1",
+    "voyageai": "^0.2.1",
     "ws": "^8.20.0"
   },
   "devDependencies": {
@@ -27,6 +32,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.2",
+    "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.10",
     "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",

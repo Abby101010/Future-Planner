@@ -15,12 +15,14 @@ import type {
   GatekeeperResult,
   TimeEstimatorResult,
   SchedulerResult,
+  PriorityAnnotatorResult,
   SubAgentId,
 } from "@northstar/core";
 import { routeRequest } from "./router";
 import { runGatekeeper } from "./gatekeeper";
 import { runTimeEstimator } from "./timeEstimator";
 import { runScheduler } from "./scheduler";
+import { annotatePriorities } from "./priorityAnnotator";
 
 // ── HiTAMP error categorization & retry ───────────────────
 
@@ -48,6 +50,7 @@ type AgentResults = {
   gatekeeper: GatekeeperResult | null;
   timeEstimator: TimeEstimatorResult | null;
   scheduler: SchedulerResult | null;
+  priorityAnnotator: PriorityAnnotatorResult | null;
 };
 
 async function runAgent(
@@ -64,8 +67,27 @@ async function runAgent(
       results.timeEstimator = await runTimeEstimator(input);
       break;
     }
+    case "priorityAnnotator": {
+      // Phase B: fills cognitiveLoad/cognitiveCost/tier per task. Skippable
+      // — the agent returns empty annotations on any failure and the
+      // scheduler falls back to current tier-1/tier-2/tier-3 behaviour.
+      const candidates = input.goals.flatMap((g) =>
+        g.planTasksToday.map((t) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          category: t.category,
+          goalId: t.goalId,
+          goalTitle: t.goalTitle,
+          goalType: input.goals.find((g2) => g2.id === t.goalId)?.goalType ?? null,
+        })),
+      );
+      results.priorityAnnotator = await annotatePriorities({ tasks: candidates });
+      break;
+    }
     case "scheduler": {
-      // Scheduler depends on gatekeeper + timeEstimator results
+      // Scheduler depends on gatekeeper + timeEstimator results, and
+      // (when available) on priorityAnnotator annotations.
       const gk = results.gatekeeper ?? {
         filteredTasks: [],
         priorityScores: {},
@@ -77,7 +99,8 @@ async function runAgent(
         totalMinutes: 0,
         exceedsDeepWorkCeiling: false,
       };
-      results.scheduler = await runScheduler(input, gk, te);
+      const pa = results.priorityAnnotator ?? { annotations: {} };
+      results.scheduler = await runScheduler(input, gk, te, pa);
       break;
     }
   }
@@ -132,6 +155,7 @@ export async function coordinateRequest(
       gatekeeper: null,
       timeEstimator: null,
       scheduler: null,
+      priorityAnnotator: null,
     },
     output: null,
     error: null,
@@ -159,6 +183,7 @@ export async function coordinateRequest(
       gatekeeper: null,
       timeEstimator: null,
       scheduler: null,
+      priorityAnnotator: null,
     };
 
     // Run parallel agent groups
@@ -209,6 +234,7 @@ export async function coordinateRequest(
     state.agents.gatekeeper = results.gatekeeper;
     state.agents.timeEstimator = results.timeEstimator;
     state.agents.scheduler = results.scheduler;
+    state.agents.priorityAnnotator = results.priorityAnnotator;
     state.status = "enriched";
 
     emitAgentProgress(userId, {

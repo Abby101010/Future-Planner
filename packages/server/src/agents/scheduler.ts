@@ -21,8 +21,12 @@ import type {
   CalendarConflict,
   ReshuffleAction,
   OpportunityCost,
+  PriorityAnnotatorResult,
+  PriorityAnnotation,
+  TriagedTask,
 } from "@northstar/core";
 import { SCHEDULER_SYSTEM } from "./prompts/scheduler";
+import * as repos from "../repositories";
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -168,12 +172,110 @@ function parseAiResponse(text: string): {
   }
 }
 
+// ── Phase B: cognitive-budget enforcement ─────────────────
+
+const TIER_PRIORITY: Record<string, number> = {
+  lifetime: 0,
+  quarter: 1,
+  week: 2,
+  day: 3,
+};
+
+const DEFAULT_DAILY_COGNITIVE_BUDGET = 22;
+
+async function resolveDailyCognitiveBudget(): Promise<number> {
+  try {
+    const user = await repos.users.get();
+    const n = user?.settings?.dailyCognitiveBudget;
+    return typeof n === "number" && n > 0 ? n : DEFAULT_DAILY_COGNITIVE_BUDGET;
+  } catch {
+    return DEFAULT_DAILY_COGNITIVE_BUDGET;
+  }
+}
+
+/** Sum cognitiveCost across annotated tasks. Tasks without annotations
+ *  are skipped (their cost is unknown; pre-Phase-B rows will not contribute). */
+function sumCognitiveCost(
+  tasks: TriagedTask[],
+  annotations: Record<string, PriorityAnnotation>,
+): number {
+  let total = 0;
+  for (const t of tasks) {
+    const a = annotations[t.id];
+    if (a) total += a.cognitiveCost;
+  }
+  return total;
+}
+
+/** Order tasks by tier (lifetime first) and — within a tier — by descending
+ *  cognitiveCost so the heaviest lifetime work anchors the day. Unannotated
+ *  tasks keep their original ordering by sliding to the front with a stable
+ *  synthetic "unknown" tier that outranks "day" (we don't know if it's low
+ *  value, so don't drop it first). */
+function orderByTier(
+  tasks: TriagedTask[],
+  annotations: Record<string, PriorityAnnotation>,
+): TriagedTask[] {
+  return tasks.slice().sort((a, b) => {
+    const aa = annotations[a.id];
+    const ab = annotations[b.id];
+    const aTier = aa ? TIER_PRIORITY[aa.tier] ?? 3 : 2.5;
+    const bTier = ab ? TIER_PRIORITY[ab.tier] ?? 3 : 2.5;
+    if (aTier !== bTier) return aTier - bTier;
+    const aCost = aa?.cognitiveCost ?? 0;
+    const bCost = ab?.cognitiveCost ?? 0;
+    return bCost - aCost;
+  });
+}
+
+/** If total cognitiveCost exceeds the user's daily budget, defer the
+ *  lowest-tier tasks (starting from "day", then "week", then "quarter")
+ *  until the sum is within budget. Returns the trimmed list and the ids
+ *  that were deferred. */
+function enforceCognitiveBudget(
+  tasks: TriagedTask[],
+  annotations: Record<string, PriorityAnnotation>,
+  budget: number,
+): { kept: TriagedTask[]; deferred: string[] } {
+  if (tasks.length === 0) return { kept: tasks, deferred: [] };
+  const total = sumCognitiveCost(tasks, annotations);
+  if (total <= budget) return { kept: tasks, deferred: [] };
+
+  // Sort descending by (tier rank, cost) so the LAST item is the lowest-tier
+  // heaviest — the best candidate to defer first.
+  const dropOrder = tasks.slice().sort((a, b) => {
+    const aa = annotations[a.id];
+    const ab = annotations[b.id];
+    const aTier = aa ? TIER_PRIORITY[aa.tier] ?? 3 : 2.5;
+    const bTier = ab ? TIER_PRIORITY[ab.tier] ?? 3 : 2.5;
+    if (aTier !== bTier) return bTier - aTier;
+    const aCost = aa?.cognitiveCost ?? 0;
+    const bCost = ab?.cognitiveCost ?? 0;
+    return bCost - aCost;
+  });
+
+  const deferred = new Set<string>();
+  let running = total;
+  for (const t of dropOrder) {
+    if (running <= budget) break;
+    const a = annotations[t.id];
+    if (!a) continue; // never defer unannotated tasks
+    deferred.add(t.id);
+    running -= a.cognitiveCost;
+  }
+  return {
+    kept: tasks.filter((t) => !deferred.has(t.id)),
+    deferred: Array.from(deferred),
+  };
+}
+
 // ── Main runner ────────────────────────────────────────────
 
 export async function runScheduler(
   input: TaskStateInput,
   gatekeeper: GatekeeperResult,
   timeEstimator: TimeEstimatorResult,
+  priorityAnnotator?: PriorityAnnotatorResult,
 ): Promise<SchedulerResult> {
   const userId = getCurrentUserId();
   emitAgentProgress(userId, {
@@ -182,10 +284,46 @@ export async function runScheduler(
     message: "Building schedule and detecting conflicts",
   });
 
-  // Build the 3-tier schedule in code
+  // ── Phase B: hard cognitive-budget enforcement ────────
+  // If priorityAnnotator supplied annotations, sum cognitiveCost and defer
+  // lowest-tier tasks to the pending pool when the user's daily budget is
+  // exceeded. Reorder within budget by (tier, cost) so high-value work
+  // anchors the day. When no annotations, behaviour is unchanged.
+  const annotations = priorityAnnotator?.annotations ?? {};
+  let workingTasks = gatekeeper.filteredTasks;
+  let deferredByBudget: string[] = [];
+  if (Object.keys(annotations).length > 0) {
+    const budget = await resolveDailyCognitiveBudget();
+    const trimmed = enforceCognitiveBudget(workingTasks, annotations, budget);
+    workingTasks = orderByTier(trimmed.kept, annotations);
+    deferredByBudget = trimmed.deferred;
+    if (deferredByBudget.length > 0) {
+      console.log(
+        `[scheduler] Deferred ${deferredByBudget.length} task(s) over cognitive budget (${budget}):`,
+        deferredByBudget,
+      );
+    }
+  }
+
+  // Replace gatekeeper.filteredTasks with the budget-enforced, tier-ordered
+  // list for downstream tier-block construction. Gatekeeper's output shape
+  // is unchanged; only the membership + order differ.
+  const budgetedGatekeeper: GatekeeperResult = {
+    ...gatekeeper,
+    filteredTasks: workingTasks,
+    budgetCheck: {
+      ...gatekeeper.budgetCheck,
+      tasksDropped: [
+        ...gatekeeper.budgetCheck.tasksDropped,
+        ...deferredByBudget,
+      ],
+    },
+  };
+
+  // Build the 3-tier schedule in code (using the budget-enforced list).
   const calendarBlocks = buildCalendarBlocks(input);
-  const goalBlocks = buildGoalBlocks(gatekeeper, timeEstimator);
-  const taskSlots = buildTaskSlots(gatekeeper, timeEstimator);
+  const goalBlocks = buildGoalBlocks(budgetedGatekeeper, timeEstimator);
+  const taskSlots = buildTaskSlots(budgetedGatekeeper, timeEstimator);
 
   const tierEnforcement: TierEnforcement = {
     calendarBlocks,
@@ -194,7 +332,7 @@ export async function runScheduler(
   };
 
   // If no tasks to schedule, skip AI call
-  if (gatekeeper.filteredTasks.length === 0) {
+  if (budgetedGatekeeper.filteredTasks.length === 0) {
     emitAgentProgress(userId, { agentId: "scheduler", phase: "done" });
     return {
       conflicts: [],
@@ -207,9 +345,9 @@ export async function runScheduler(
   // Call AI for conflict detection and reshuffle proposals
   const userMessage = `Today is ${input.date}.
 
-FILTERED TASKS (from Gatekeeper, sorted by priority):
+FILTERED TASKS (from Gatekeeper, tier-ordered with budget enforcement applied):
 ${JSON.stringify(
-  gatekeeper.filteredTasks.map((t) => ({
+  budgetedGatekeeper.filteredTasks.map((t) => ({
     id: t.id,
     title: t.title,
     priority: t.priority,
@@ -217,6 +355,9 @@ ${JSON.stringify(
     goalId: t.goalId,
     goalTitle: t.goalTitle,
     category: t.category,
+    tier: annotations[t.id]?.tier,
+    cognitiveLoad: annotations[t.id]?.cognitiveLoad,
+    cognitiveCost: annotations[t.id]?.cognitiveCost,
   })),
   null,
   2,

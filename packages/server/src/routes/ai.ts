@@ -71,7 +71,7 @@ function makeAIRoute(channel: string, type: RequestType) {
       // fall back to "general".
       const memory = await loadMemory(req.userId);
       const ctxType = CONTEXT_TYPE_BY_CHANNEL[channel] ?? "general";
-      const memoryContext = buildMemoryContext(memory, ctxType);
+      const memoryContext = await buildMemoryContext(memory, ctxType);
       const result = await handleAIRequest(type, payload, memoryContext);
       res.json(result);
     }),
@@ -110,7 +110,7 @@ aiRouter.post(
     const env = payload._environmentContext as ClientEnvironment | undefined;
     await enrichWithEnvironment(payload, env);
     const memory = await loadMemory(req.userId);
-    const memoryContext = buildMemoryContext(memory, "general");
+    const memoryContext = await buildMemoryContext(memory, "general");
     const result = (await handleAIRequest(
       "home-chat",
       payload,
@@ -201,7 +201,7 @@ aiRouter.post(
     }
 
     const memory = await loadMemory(req.userId);
-    const memoryContext = buildMemoryContext(memory, "daily");
+    const memoryContext = await buildMemoryContext(memory, "daily");
     const result = (await handleAIRequest(
       "daily-tasks",
       payload,
@@ -333,7 +333,7 @@ aiRouter.post(
     const envRaw = (payload as unknown as Record<string, unknown>)._environmentContext as ClientEnvironment | undefined;
     await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
     const memory = await loadMemory(req.userId);
-    const memoryContext = buildMemoryContext(memory, "general");
+    const memoryContext = await buildMemoryContext(memory, "general");
     const request = buildHomeChatRequest(payload, memoryContext);
 
     // Persist user message before streaming starts
@@ -450,7 +450,7 @@ aiRouter.post(
     };
     const goalId = typeof payload.goalId === "string" ? payload.goalId : "";
     const memory = await loadMemory(req.userId);
-    const memoryContext = buildMemoryContext(memory, "planning");
+    const memoryContext = await buildMemoryContext(memory, "planning");
     const request = buildGoalPlanChatRequest(payload, memoryContext);
 
     res.setHeader("Content-Type", "text/event-stream");
@@ -568,7 +568,7 @@ aiRouter.post(
               }
               try {
                 const replanMemory = await loadMemory(req.userId);
-                const replanMemCtx = buildMemoryContext(replanMemory, "planning");
+                const replanMemCtx = await buildMemoryContext(replanMemory, "planning");
                 const genPayload = {
                   goalTitle: goal.title,
                   targetDate: goal.targetDate,
@@ -757,7 +757,7 @@ aiRouter.post(
     }
 
     const memory = await loadMemory(req.userId);
-    const memoryContext = buildMemoryContext(memory, isGoalPlanMode ? "planning" : "general");
+    const memoryContext = await buildMemoryContext(memory, isGoalPlanMode ? "planning" : "general");
     const request = buildUnifiedChatRequest(payload, memoryContext);
 
     // Persist user message before streaming starts
@@ -915,7 +915,7 @@ aiRouter.post(
               }
               try {
                 const replanMemory = await loadMemory(req.userId);
-                const replanMemCtx = buildMemoryContext(replanMemory, "planning");
+                const replanMemCtx = await buildMemoryContext(replanMemory, "planning");
                 const genPayload = {
                   goalTitle: goal.title,
                   targetDate: goal.targetDate,

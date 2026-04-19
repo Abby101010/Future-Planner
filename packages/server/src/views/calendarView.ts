@@ -15,18 +15,30 @@ export interface CalendarVacationMode {
   endDate: string | null;
 }
 
+export type CalendarViewMode = "month" | "week" | "day" | "project";
+
 export interface CalendarViewArgs {
   startDate: string;
   endDate: string;
+  viewMode?: CalendarViewMode;
+}
+
+export interface ProjectTimeAllocation {
+  projectTag: string | null;   // null = "unassigned"
+  totalMinutes: number;
+  percentOfRange: number;
+  taskCount: number;
 }
 
 export interface CalendarView {
   rangeStart: string;
   rangeEnd: string;
+  viewMode: CalendarViewMode;
   tasks: DailyTask[];
   goalPlanTasks: GoalPlanTaskForCalendar[];
   goals: Goal[];
   vacationMode: CalendarVacationMode;
+  projectAllocation?: ProjectTimeAllocation[];
 }
 
 function defaultRange(): CalendarViewArgs {
@@ -97,12 +109,32 @@ function expandRecurring(
   return result;
 }
 
+function computeProjectAllocation(tasks: DailyTask[]): ProjectTimeAllocation[] {
+  const groups = new Map<string | null, { totalMinutes: number; taskCount: number }>();
+  for (const t of tasks) {
+    const tag = t.projectTag ?? null;
+    const minutes = t.estimatedDurationMinutes ?? t.durationMinutes ?? 0;
+    const existing = groups.get(tag) ?? { totalMinutes: 0, taskCount: 0 };
+    existing.totalMinutes += minutes;
+    existing.taskCount += 1;
+    groups.set(tag, existing);
+  }
+  const rangeTotal = Array.from(groups.values()).reduce((s, g) => s + g.totalMinutes, 0);
+  return Array.from(groups.entries()).map(([projectTag, g]) => ({
+    projectTag,
+    totalMinutes: g.totalMinutes,
+    taskCount: g.taskCount,
+    percentOfRange: rangeTotal > 0 ? Math.round((g.totalMinutes / rangeTotal) * 1000) / 10 : 0,
+  })).sort((a, b) => b.totalMinutes - a.totalMinutes);
+}
+
 export async function resolveCalendarView(
   args?: Partial<CalendarViewArgs>,
 ): Promise<CalendarView> {
   const defaults = defaultRange();
   const startDate = args?.startDate || defaults.startDate;
   const endDate = args?.endDate || defaults.endDate;
+  const viewMode: CalendarViewMode = args?.viewMode ?? "month";
 
   const [taskRecords, goals, vacationState, goalPlanTasksRaw] = await Promise.all([
     repos.dailyTasks.listForDateRange(startDate, endDate),
@@ -133,12 +165,17 @@ export async function resolveCalendarView(
       }
     : { active: false, startDate: null, endDate: null };
 
+  const projectAllocation =
+    viewMode === "project" ? computeProjectAllocation(expanded) : undefined;
+
   return {
     rangeStart: startDate,
     rangeEnd: endDate,
+    viewMode,
     tasks: expanded,
     goalPlanTasks,
     goals,
     vacationMode,
+    projectAllocation,
   };
 }

@@ -54,13 +54,17 @@ export type CommandKind =
   | "command:cant-complete-task"
   | "command:add-task-to-plan"
   | "command:set-vacation-mode"
-  | "command:expand-plan-week";
+  | "command:expand-plan-week"
+  | "command:estimate-task-durations"
+  | "command:set-task-time-block"
+  | "command:set-task-project-tag";
 
 export type EventKind =
   | "ai:stream-start"
   | "ai:token-delta"
   | "ai:stream-end"
   | "agent:progress"
+  | "agent:critique"
   | "view:invalidate"
   | "reminder:triggered"
   | "job:complete"

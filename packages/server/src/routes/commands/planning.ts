@@ -94,7 +94,7 @@ export async function cmdExpandPlanWeek(
 
   const userId = getCurrentUserId();
   const [memory] = await Promise.all([loadMemory(userId)]);
-  const memoryContext = buildMemoryContext(memory, "planning");
+  const memoryContext = await buildMemoryContext(memory, "planning");
 
   const client = getClient();
   if (!client) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -220,6 +220,30 @@ export async function cmdRegenerateGoalPlan(
     });
   }
   const reply = resultObj.reply as string | undefined;
+
+  // ── Phase 2 pilot: detached critique pass ──
+  // Runs Haiku in the background to review the generated plan. Advisory only
+  // — the primary response ships first and is unaffected by critique outcome.
+  // Wrapped in an async IIFE so the memory rebuild does not delay the return.
+  void (async () => {
+    try {
+      const userId = getCurrentUserId();
+      const memory = await loadMemory(userId);
+      const memoryContext = await buildMemoryContext(memory, "planning");
+      const { runCritique } = await import("../../critique");
+      await runCritique({
+        userId,
+        handler: "generate-goal-plan",
+        primaryOutput: resultObj,
+        memoryContext,
+        payload,
+        correlationId: goalId,
+      });
+    } catch (err) {
+      console.error("[critique-pilot] dispatch failed:", err);
+    }
+  })();
+
   return { ok: true, goalId, reply };
 }
 
@@ -307,7 +331,50 @@ export async function cmdRefreshDailyPlan(
     "../../coordinators/dailyPlanner/scenarios"
   );
   const date = (body.date as string) || getEffectiveDate();
-  return routeRefresh(date);
+  const result = await routeRefresh(date);
+
+  // ── Phase B: detached critique on the daily-tasks output ──
+  // Fire-and-forget so the primary flow is unaffected. The payload includes
+  // the user's dailyCognitiveBudget so the critique can flag budget
+  // violations without fabricating the limit.
+  void (async () => {
+    try {
+      const userId = getCurrentUserId();
+      const memory = await loadMemory(userId);
+      const memoryContext = await buildMemoryContext(memory, "daily");
+      const user = await repos.users.get();
+      const { runCritique } = await import("../../critique");
+
+      // Compute a 3-day rolling check for lifetime/quarter tasks so the
+      // critique agent has the signal it needs for the rubric without
+      // having to re-query the DB.
+      const threeDaysAgo = new Date(date);
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
+      const startDate = threeDaysAgo.toISOString().slice(0, 10);
+      const recentTasks = await repos.dailyTasks.listForDateRange(startDate, date);
+      const recentTiers = recentTasks.map((t) => ({
+        date: t.date,
+        tier: t.tier,
+      }));
+
+      await runCritique({
+        userId,
+        handler: "regenerate-daily-tasks",
+        primaryOutput: result,
+        memoryContext,
+        payload: {
+          date,
+          dailyCognitiveBudget: user?.settings?.dailyCognitiveBudget ?? 22,
+          recentTiers, // last 3 days, for the lifetime/quarter streak check
+        },
+        correlationId: date,
+      });
+    } catch (err) {
+      console.error("[critique] daily-tasks dispatch failed:", err);
+    }
+  })();
+
+  return result;
 }
 
 /** @deprecated — delegate to cmdRefreshDailyPlan for backward compat */
@@ -369,7 +436,7 @@ export async function cmdAdaptiveReschedule(
   const client = getClient();
   if (!client) throw new Error("ANTHROPIC_API_KEY not configured");
 
-  const memoryContext = buildMemoryContext(memory, "daily");
+  const memoryContext = await buildMemoryContext(memory, "daily");
 
   emitAgentProgress(userId, { agentId: "adaptive-reschedule", phase: "running", message: "Adjusting plan to your pace" });
 

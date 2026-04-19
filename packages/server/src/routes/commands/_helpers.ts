@@ -49,6 +49,6 @@ export async function runAI(
 ): Promise<unknown> {
   const userId = getCurrentUserId();
   const memory = await loadMemory(userId);
-  const memoryContext = buildMemoryContext(memory, contextType);
+  const memoryContext = await buildMemoryContext(memory, contextType);
   return handleAIRequest(type, payload, memoryContext);
 }

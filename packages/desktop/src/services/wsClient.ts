@@ -44,6 +44,23 @@ export type EventPayloads = {
   "job:complete": { jobId: string; type: string; result: Record<string, unknown> };
   "job:failed": { jobId: string; type: string; error: string };
   "entity:patch": { entityType: string; entityId: string; patch: Record<string, unknown>; date?: string };
+  "agent:critique": {
+    handler: string;
+    correlationId?: string;
+    overallAssessment: "ok" | "concerns" | "blocking";
+    issues: Array<{
+      severity: "info" | "warn" | "error";
+      category:
+        | "hallucination"
+        | "overcommit"
+        | "memory-violation"
+        | "priority-violation"
+        | "other";
+      message: string;
+      suggestion?: string;
+    }>;
+    summary?: string;
+  };
 };
 
 type Listener<K extends EventKind> = (

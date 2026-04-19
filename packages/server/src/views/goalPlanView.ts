@@ -169,7 +169,7 @@ export async function resolveGoalPlanView(
           const client = getClient();
           if (client) {
             const { buildMemoryContext } = await import("../memory");
-            const memCtx = buildMemoryContext(memory, "planning");
+            const memCtx = await buildMemoryContext(memory, "planning");
             const { handlePaceExplainer } = await import("../ai/handlers/paceExplainer");
             const result = await handlePaceExplainer(client, paceMismatch, memCtx);
             paceMismatch.explanation = result.explanation;

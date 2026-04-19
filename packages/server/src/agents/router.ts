@@ -5,10 +5,14 @@ export function routeRequest(requestType: string): AgentPlan {
     case "daily-tasks":
     case "adaptive-reschedule":
       return {
-        agents: ["gatekeeper", "timeEstimator", "scheduler"],
-        parallel: [["gatekeeper", "timeEstimator"]],
+        // Phase B: priorityAnnotator runs in parallel with gatekeeper +
+        // timeEstimator. Scheduler waits for all three before placing tasks.
+        agents: ["gatekeeper", "timeEstimator", "priorityAnnotator", "scheduler"],
+        parallel: [["gatekeeper", "timeEstimator", "priorityAnnotator"]],
         sequential: ["scheduler"],
-        dependencies: { scheduler: ["gatekeeper", "timeEstimator"] },
+        dependencies: {
+          scheduler: ["gatekeeper", "timeEstimator", "priorityAnnotator"],
+        },
       };
 
     case "goal-intake":

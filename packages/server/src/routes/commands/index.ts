@@ -59,3 +59,9 @@ export {
   cmdCompleteOnboarding,
   cmdResetData,
 } from "./settings";
+
+export {
+  cmdEstimateTaskDurations,
+  cmdSetTaskTimeBlock,
+  cmdSetTaskProjectTag,
+} from "./timeBlocks";

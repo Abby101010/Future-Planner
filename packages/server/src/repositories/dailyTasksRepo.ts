@@ -33,6 +33,16 @@ export interface DailyTaskRecord {
   source: TaskSource;
   /** All variable-shape DailyTask fields live here. */
   payload: Record<string, unknown>;
+  // ── Phase A columns (dual-written alongside payload.scheduledTime etc.) ──
+  scheduledStartIso: string | null;
+  scheduledEndIso: string | null;
+  estimatedDurationMinutes: number | null;
+  timeBlockStatus: string | null;
+  projectTag: string | null;
+  // ── Phase B columns (priorityAnnotator output) ──
+  cognitiveLoad: string | null;
+  cognitiveCost: number | null;
+  tier: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +59,14 @@ interface DailyTaskRow {
   order_index: number;
   source: string;
   payload: Record<string, unknown> | string | null;
+  scheduled_start_time: string | null;
+  scheduled_end_time: string | null;
+  estimated_duration_minutes: number | null;
+  time_block_status: string | null;
+  project_tag: string | null;
+  cognitive_load: string | null;
+  cognitive_cost: number | null;
+  tier: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -65,9 +83,58 @@ function rowToTask(r: DailyTaskRow): DailyTaskRecord {
     orderIndex: r.order_index,
     source: (r.source as TaskSource) ?? "user_created",
     payload: parseJson(r.payload),
+    scheduledStartIso: r.scheduled_start_time,
+    scheduledEndIso: r.scheduled_end_time,
+    estimatedDurationMinutes: r.estimated_duration_minutes,
+    timeBlockStatus: r.time_block_status,
+    projectTag: r.project_tag,
+    cognitiveLoad: r.cognitive_load,
+    cognitiveCost: r.cognitive_cost,
+    tier: r.tier,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** Compose an ISO timestamptz from a YYYY-MM-DD date, a HH:MM time-of-day,
+ *  and an IANA timezone. Returns null if any input is missing/malformed. The
+ *  result is a UTC ISO string that represents the local wall-clock time in
+ *  the given zone — so "2026-04-19" + "14:30" + "America/Toronto" →
+ *  "2026-04-19T18:30:00.000Z" (EDT offset). */
+export function composeIso(
+  date: string | null | undefined,
+  timeOfDay: string | null | undefined,
+  tz: string | null | undefined,
+): string | null {
+  if (!date || !timeOfDay) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (!/^\d{1,2}:\d{2}$/.test(timeOfDay)) return null;
+  const zone = tz || "UTC";
+  try {
+    const [h, m] = timeOfDay.split(":").map(Number);
+    // Use the Intl APIs to compute the zone's UTC offset for the given
+    // wall-clock time. Build a "as-if-UTC" Date, then subtract the zone's
+    // offset at that instant to land on the true UTC instant.
+    const asIfUtc = new Date(`${date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`);
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+    const parts = fmt.formatToParts(asIfUtc).reduce<Record<string, string>>((acc, p) => {
+      if (p.type !== "literal") acc[p.type] = p.value;
+      return acc;
+    }, {});
+    const asZoneUtc = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour) % 24, Number(parts.minute), Number(parts.second),
+    );
+    const offsetMs = asZoneUtc - asIfUtc.getTime();
+    return new Date(asIfUtc.getTime() - offsetMs).toISOString();
+  } catch {
+    return null;
+  }
 }
 
 export async function listForDate(date: string): Promise<DailyTaskRecord[]> {
@@ -115,6 +182,14 @@ export interface InsertDailyTaskInput {
   orderIndex?: number;
   source?: TaskSource;
   payload?: Record<string, unknown>;
+  scheduledStartIso?: string | null;
+  scheduledEndIso?: string | null;
+  estimatedDurationMinutes?: number | null;
+  timeBlockStatus?: string | null;
+  projectTag?: string | null;
+  cognitiveLoad?: string | null;
+  cognitiveCost?: number | null;
+  tier?: string | null;
 }
 
 export async function insert(task: InsertDailyTaskInput): Promise<void> {
@@ -125,9 +200,16 @@ export async function insert(task: InsertDailyTaskInput): Promise<void> {
   await query(
     `insert into daily_tasks (
        id, user_id, log_date, goal_id, plan_node_id, title,
-       completed, completed_at, order_index, source, payload, updated_at
+       completed, completed_at, order_index, source, payload,
+       scheduled_start_time, scheduled_end_time,
+       estimated_duration_minutes, time_block_status, project_tag,
+       cognitive_load, cognitive_cost, tier,
+       updated_at
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, now()
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
+       $12, $13, $14, $15, $16,
+       $17, $18, $19,
+       now()
      )`,
     [
       task.id,
@@ -141,6 +223,14 @@ export async function insert(task: InsertDailyTaskInput): Promise<void> {
       task.orderIndex ?? 0,
       source,
       JSON.stringify(task.payload ?? {}),
+      task.scheduledStartIso ?? null,
+      task.scheduledEndIso ?? null,
+      task.estimatedDurationMinutes ?? null,
+      task.timeBlockStatus ?? null,
+      task.projectTag ?? null,
+      task.cognitiveLoad ?? null,
+      task.cognitiveCost ?? null,
+      task.tier ?? null,
     ],
   );
 }
@@ -154,6 +244,14 @@ export interface UpdateDailyTaskPatch {
   orderIndex?: number;
   date?: string;
   payload?: Record<string, unknown>;
+  scheduledStartIso?: string | null;
+  scheduledEndIso?: string | null;
+  estimatedDurationMinutes?: number | null;
+  timeBlockStatus?: string | null;
+  projectTag?: string | null;
+  cognitiveLoad?: string | null;
+  cognitiveCost?: number | null;
+  tier?: string | null;
 }
 
 /** Reads the row, merges the patch in memory, and writes it back. This
@@ -178,6 +276,14 @@ export async function update(
        order_index = $8,
        log_date = $9,
        payload = $10::jsonb,
+       scheduled_start_time = $11,
+       scheduled_end_time = $12,
+       estimated_duration_minutes = $13,
+       time_block_status = $14,
+       project_tag = $15,
+       cognitive_load = $16,
+       cognitive_cost = $17,
+       tier = $18,
        updated_at = now()
      where user_id = $1 and id = $2`,
     [
@@ -193,6 +299,14 @@ export async function update(
       patch.orderIndex ?? existing.orderIndex,
       patch.date ?? existing.date,
       JSON.stringify(mergedPayload),
+      patch.scheduledStartIso !== undefined ? patch.scheduledStartIso : existing.scheduledStartIso,
+      patch.scheduledEndIso !== undefined ? patch.scheduledEndIso : existing.scheduledEndIso,
+      patch.estimatedDurationMinutes !== undefined ? patch.estimatedDurationMinutes : existing.estimatedDurationMinutes,
+      patch.timeBlockStatus !== undefined ? patch.timeBlockStatus : existing.timeBlockStatus,
+      patch.projectTag !== undefined ? patch.projectTag : existing.projectTag,
+      patch.cognitiveLoad !== undefined ? patch.cognitiveLoad : existing.cognitiveLoad,
+      patch.cognitiveCost !== undefined ? patch.cognitiveCost : existing.cognitiveCost,
+      patch.tier !== undefined ? patch.tier : existing.tier,
     ],
   );
 }

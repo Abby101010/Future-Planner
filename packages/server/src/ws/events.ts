@@ -173,3 +173,40 @@ export function emitEntityPatch(
     envelope("entity:patch", payload),
   );
 }
+
+/** Issue found by the critique agent during its review of a primary AI output. */
+export interface CritiqueIssue {
+  severity: "info" | "warn" | "error";
+  category:
+    | "hallucination"
+    | "overcommit"
+    | "memory-violation"
+    | "priority-violation"
+    | "other";
+  message: string;
+  suggestion?: string;
+}
+
+/** Payload for `agent:critique`. Emitted after a primary AI handler completes
+ *  and a background critique pass has reviewed its output. Advisory only —
+ *  the primary response has already shipped by the time this fires. */
+export interface AgentCritiquePayload {
+  /** Identifies the primary handler whose output was reviewed (e.g. "generate-goal-plan"). */
+  handler: string;
+  /** Correlates back to the original HTTP call when the caller has a request/stream id. */
+  correlationId?: string;
+  overallAssessment: "ok" | "concerns" | "blocking";
+  issues: CritiqueIssue[];
+  /** Optional one-paragraph summary for UI display. */
+  summary?: string;
+}
+
+export function emitAgentCritique(
+  userId: string,
+  payload: AgentCritiquePayload,
+): void {
+  connectionRegistry.broadcastToUser(
+    userId,
+    envelope("agent:critique", payload),
+  );
+}

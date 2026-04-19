@@ -15,6 +15,7 @@ export {
   emitAiTokenDelta,
   emitAiStreamEnd,
   emitAgentProgress,
+  emitAgentCritique,
   emitViewInvalidate,
   emitReminderTriggered,
 } from "./events";
@@ -23,6 +24,8 @@ export type {
   AiTokenDeltaPayload,
   AiStreamEndPayload,
   AgentProgressPayload,
+  AgentCritiquePayload,
+  CritiqueIssue,
   ViewInvalidatePayload,
   ReminderTriggeredPayload,
 } from "./events";

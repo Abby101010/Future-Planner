@@ -66,6 +66,9 @@ import {
   cmdCompleteOnboarding,
   cmdResetData,
   cmdHealAllGoalPlans,
+  cmdEstimateTaskDurations,
+  cmdSetTaskTimeBlock,
+  cmdSetTaskProjectTag,
 } from "./commands/index";
 
 const commandsRouter = Router();
@@ -240,6 +243,15 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:heal-all-goal-plans" as CommandKind:
         result = await cmdHealAllGoalPlans();
+        break;
+      case "command:estimate-task-durations":
+        result = await cmdEstimateTaskDurations(body);
+        break;
+      case "command:set-task-time-block":
+        result = await cmdSetTaskTimeBlock(body);
+        break;
+      case "command:set-task-project-tag":
+        result = await cmdSetTaskProjectTag(body);
         break;
       default: {
         // Unknown slug: the URL didn't match any known command. 404 with

@@ -45,7 +45,7 @@ export async function runPersonalizationAgent(): Promise<PersonalizationResult> 
 
   const dayOfWeek = new Date().getDay();
   const profile = computeCapacityProfile(memory, pastLogs, dayOfWeek, null, user?.weeklyAvailability);
-  const memoryContext = buildMemoryContext(memory, "planning");
+  const memoryContext = await buildMemoryContext(memory, "planning");
 
   // Determine weak days from the profile
   const weakDays: string[] = [];

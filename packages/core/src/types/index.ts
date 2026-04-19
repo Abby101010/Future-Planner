@@ -35,6 +35,10 @@ export interface UserSettings {
   language: "en" | "zh";
   apiKey?: string;
   modelOverrides?: Partial<Record<"heavy" | "medium" | "light", string>>;
+  /** Phase B: per-user cognitive-load ceiling. Scheduler sums task cognitiveCost
+   *  against this and defers lowest-tier tasks to the pending pool if exceeded.
+   *  When null, server defaults to personalization.maxDailyWeight ?? 22. */
+  dailyCognitiveBudget?: number | null;
 }
 
 // Onboarding
@@ -241,6 +245,29 @@ export interface DailyTask {
   notes?: string;
   /** Optional color override for calendar display. */
   color?: string;
+  // ── Phase A: ISO time-block fields (dual-written alongside scheduledTime) ──
+  /** ISO timestamptz start of the scheduled block. Preferred over `scheduledTime`
+   *  for computation; legacy readers continue to use `scheduledTime`. Named with
+   *  "Iso" suffix to avoid collision with the time-of-day `scheduledTime`. */
+  scheduledStartIso?: string | null;
+  /** ISO timestamptz end of the scheduled block. */
+  scheduledEndIso?: string | null;
+  /** AI-estimated duration in minutes. Distinct from user-entered `durationMinutes`. */
+  estimatedDurationMinutes?: number | null;
+  /** Time-block lifecycle state. */
+  timeBlockStatus?: "planned" | "in_progress" | "completed" | "skipped" | null;
+  /** Project grouping tag — drives the "project" calendar viewMode. */
+  projectTag?: string | null;
+  // ── Phase B: priority annotations (produced by priorityAnnotator agent) ──
+  /** Dual-process theory — "high" = System 2 (novel/deliberative), "low" = System 1 (habitual).
+   *  Internal scheduling input only; never rendered in the UI. */
+  cognitiveLoad?: "high" | "medium" | "low" | null;
+  /** Cognitive load theory — per-task numeric cost on a 1..10 scale. Summed against
+   *  the user's `dailyCognitiveBudget` for hard-budget enforcement. */
+  cognitiveCost?: number | null;
+  /** Value tiering — horizon this task serves. Scheduler uses tier to pick
+   *  which tasks to defer to the pending pool when over budget. */
+  tier?: "lifetime" | "quarter" | "week" | "day" | null;
 }
 
 export interface HeatmapEntry {

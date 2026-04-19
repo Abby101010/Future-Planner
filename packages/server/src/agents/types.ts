@@ -17,6 +17,8 @@ export type {
   CalendarConflict,
   ReshuffleAction,
   OpportunityCost,
+  PriorityAnnotatorResult,
+  PriorityAnnotation,
   SubAgentId,
   AgentPlan,
 } from "@northstar/core";

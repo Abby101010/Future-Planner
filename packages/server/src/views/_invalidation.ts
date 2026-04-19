@@ -167,4 +167,17 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:tasks",
     "view:calendar",
   ],
+  "command:estimate-task-durations": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+  ],
+  "command:set-task-time-block": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+  ],
+  "command:set-task-project-tag": [
+    "view:calendar",
+  ],
 };

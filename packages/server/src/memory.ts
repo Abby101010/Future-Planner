@@ -878,11 +878,12 @@ const MEMORY_CHAR_BUDGET: Record<string, number> = {
   general: 2400,  // ~600 tokens
 };
 
-export function buildMemoryContext(
+export async function buildMemoryContext(
   memory: MemoryStore,
   contextType: "planning" | "daily" | "recovery" | "general",
   contextTags: string[] = [],
-): string {
+  retrievalQuery?: string,
+): Promise<string> {
   const budget = MEMORY_CHAR_BUDGET[contextType] ?? 2400;
   const today = new Date().toISOString().split("T")[0];
 
@@ -1002,11 +1003,33 @@ export function buildMemoryContext(
 
   included.push(directive);
 
-  if (included.length <= 1) return ""; // only directive — fresh user
+  // ── Retrieved Knowledge (opt-in: planning/daily only) ──
+  let retrievedBlock = "";
+  const retrievalEligible = contextType === "planning" || contextType === "daily";
+  if (retrievalEligible && retrievalQuery && retrievalQuery.trim().length > 0) {
+    try {
+      const { retrieveRelevant } = await import("./knowledge");
+      const hits = await retrieveRelevant(retrievalQuery, 4);
+      if (hits.length > 0) {
+        const lines = ["Retrieved Knowledge:", ""];
+        for (const hit of hits) {
+          const path = hit.metadata.headingPath.join(" > ");
+          const loc = path ? `${hit.metadata.source}#${path}` : hit.metadata.source;
+          lines.push(`- [${loc}] ${hit.content}`);
+        }
+        retrievedBlock = lines.join("\n");
+      }
+    } catch (err) {
+      console.error("[memory] retrieval failed, skipping knowledge section:", err);
+    }
+  }
+
+  if (included.length <= 1 && !retrievedBlock) return ""; // only directive — fresh user
+  const body = retrievedBlock ? [...included, "", retrievedBlock] : included;
   return [
     "═══ PERSONALIZATION MEMORY ═══",
     "",
-    ...included,
+    ...body,
     "",
     "═══ END MEMORY ═══",
     "",

@@ -281,7 +281,7 @@ export async function generateAndPersistDailyTasks(opts: {
 
   const userId = getCurrentUserId();
   const memory = await loadMemory(userId);
-  const memoryContext = buildMemoryContext(memory, "daily");
+  const memoryContext = await buildMemoryContext(memory, "daily");
 
   // Always feed user-created tasks to the AI so the coordinator generates
   // complementary work within the remaining budget. In preserveExisting

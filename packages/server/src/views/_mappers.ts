@@ -46,6 +46,16 @@ export function flattenDailyTask(r: DailyTaskRecord, date?: string): DailyTask {
     recurring,
     notes: p.notes as string | undefined,
     color: p.color as string | undefined,
+    // Phase A columns (surfaced from top-level columns, not payload).
+    scheduledStartIso: r.scheduledStartIso,
+    scheduledEndIso: r.scheduledEndIso,
+    estimatedDurationMinutes: r.estimatedDurationMinutes,
+    timeBlockStatus: r.timeBlockStatus as DailyTask["timeBlockStatus"],
+    projectTag: r.projectTag,
+    // Phase B columns.
+    cognitiveLoad: r.cognitiveLoad as DailyTask["cognitiveLoad"],
+    cognitiveCost: r.cognitiveCost,
+    tier: r.tier as DailyTask["tier"],
   };
 }
 

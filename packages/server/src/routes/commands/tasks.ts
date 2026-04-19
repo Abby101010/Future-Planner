@@ -7,6 +7,7 @@ import { repos, runAI, invalidate, getEffectiveDate, getCurrentUserId, emitViewI
 import { emitEntityPatch } from "../../ws/events";
 import { runWithUserId } from "../../middleware/requestContext";
 import { timezoneStore } from "../../dateUtils";
+import { composeIso } from "../../repositories/dailyTasksRepo";
 import {
   recordSignal,
   recordTaskCompleted,
@@ -32,6 +33,10 @@ export async function cmdCreateTask(
   const source = (body.source as TaskSource | undefined)
     ?? (body.goalId ? "big_goal" : "user_created");
   const existing = await repos.dailyTasks.listForDate(date);
+  // Dual-write: if payload supplies legacy HH:MM schedule, also populate ISO columns.
+  const tz = timezoneStore.getStore() || "UTC";
+  const scheduledStartIso = composeIso(date, payload.scheduledTime as string | undefined, tz);
+  const scheduledEndIso = composeIso(date, payload.scheduledEndTime as string | undefined, tz);
   await repos.dailyTasks.insert({
     id,
     date,
@@ -42,6 +47,8 @@ export async function cmdCreateTask(
     orderIndex: existing.length,
     source,
     payload,
+    scheduledStartIso,
+    scheduledEndIso,
   });
   await repos.dailyLogs.ensureExists(date);
   return { ok: true, taskId: id };
@@ -244,6 +251,22 @@ export async function cmdUpdateTask(
   if (typeof patch.orderIndex === "number") topPatch.orderIndex = patch.orderIndex;
   if (typeof patch.completed === "boolean") topPatch.completed = patch.completed;
   if (Object.keys(payloadPatch).length > 0) topPatch.payload = payloadPatch;
+  // Dual-write: if the patch adjusts legacy schedule fields, recompute ISO.
+  if ("scheduledTime" in payloadPatch || "scheduledEndTime" in payloadPatch || typeof patch.date === "string") {
+    const tzUpdate = timezoneStore.getStore() || "UTC";
+    const existingTask = await repos.dailyTasks.get(taskId);
+    if (existingTask) {
+      const targetDate = (topPatch.date ?? existingTask.date) as string;
+      const startHHMM = "scheduledTime" in payloadPatch
+        ? (payloadPatch.scheduledTime as string | undefined)
+        : (existingTask.payload.scheduledTime as string | undefined);
+      const endHHMM = "scheduledEndTime" in payloadPatch
+        ? (payloadPatch.scheduledEndTime as string | undefined)
+        : (existingTask.payload.scheduledEndTime as string | undefined);
+      topPatch.scheduledStartIso = composeIso(targetDate, startHHMM, tzUpdate);
+      topPatch.scheduledEndIso = composeIso(targetDate, endHHMM, tzUpdate);
+    }
+  }
   await repos.dailyTasks.update(taskId, topPatch);
   return { ok: true, taskId };
 }

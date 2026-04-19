@@ -21,6 +21,7 @@ export interface TaskState {
     gatekeeper: GatekeeperResult | null;
     timeEstimator: TimeEstimatorResult | null;
     scheduler: SchedulerResult | null;
+    priorityAnnotator: PriorityAnnotatorResult | null;
   };
 
   output: unknown | null;
@@ -184,9 +185,28 @@ export interface OpportunityCost {
   warning: string | null;
 }
 
+// ── PriorityAnnotator Result (Phase B) ──────────────────────
+
+export interface PriorityAnnotation {
+  cognitiveLoad: "high" | "medium" | "low";
+  cognitiveCost: number;            // 1..10
+  tier: "lifetime" | "quarter" | "week" | "day";
+  rationale: string;
+}
+
+export interface PriorityAnnotatorResult {
+  /** Keyed by taskId. Empty map when the agent is skipped or fails — callers
+   *  must tolerate missing entries and fall back to pre-Phase-B behaviour. */
+  annotations: Record<string, PriorityAnnotation>;
+}
+
 // ── Agent routing ───────────────────────────────────────────
 
-export type SubAgentId = "gatekeeper" | "timeEstimator" | "scheduler";
+export type SubAgentId =
+  | "gatekeeper"
+  | "timeEstimator"
+  | "scheduler"
+  | "priorityAnnotator";
 
 export interface AgentPlan {
   agents: SubAgentId[];

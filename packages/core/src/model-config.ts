@@ -51,6 +51,8 @@ const TASK_TIERS: Record<string, ModelTier> = {
   "daily-tasks-copy": "light",   // Haiku generates why_today + briefing copy
   "gatekeeper": "light",         // signal/noise filter + priority scoring
   "time-estimator": "light",     // duration estimation + planning fallacy
+  "duration-estimator": "light", // Phase A: batch AI duration estimates (uses RAG)
+  "priority-annotator": "light", // Phase B: cognitiveLoad/Cost/tier annotations (uses RAG)
   "scheduler": "light",          // calendar conflicts + 3-tier hierarchy
 
   // ── Big Goal Coordinator ──

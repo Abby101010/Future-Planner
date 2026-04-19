@@ -23,12 +23,16 @@ import { monthlyContextRouter } from "./routes/monthlyContext";
 import { modelConfigRouter } from "./routes/modelConfig";
 import { chatRouter } from "./routes/chat";
 import { memoryRouter } from "./routes/memory";
+import { toolChatRouter } from "./routes/toolChat";
 import viewRouter from "./routes/view";
 import commandsRouter from "./routes/commands";
 import { getPool, closePool } from "./db/pool";
 import { runMigrations } from "./db/migrate";
 import { attachWebSocketServer, connectionRegistry } from "./ws";
 import { startJobWorker, stopJobWorker } from "./job-worker";
+import { startBullWorker, closeBullQueue } from "./jobs/queue";
+import { registerAllJobHandlers } from "./jobs/handlers";
+import { startScheduler, stopScheduler } from "./scheduler";
 
 const DEBUG = process.env.DEBUG === "1" || process.env.LOG_LEVEL === "debug";
 
@@ -77,8 +81,29 @@ app.use(authMiddleware);
 // Timezone middleware — stores the X-Timezone header (IANA timezone
 // string from the client) in AsyncLocalStorage so getEffectiveDate()
 // can compute "today" in the user's local time (midnight boundary).
+//
+// Also opportunistically persists the header value into users.payload.timezone
+// so background jobs (the scheduler, which has no HTTP context) can resolve
+// the user's local time. Throttled to at most one update per user per
+// 24h to avoid touching the DB on every request.
+const lastTzPersist = new Map<string, number>();
+const TZ_PERSIST_TTL_MS = 24 * 60 * 60 * 1000;
 app.use((req, _res, next) => {
   const tz = req.header("X-Timezone") || "UTC";
+  if (req.userId && tz !== "UTC") {
+    const last = lastTzPersist.get(req.userId) ?? 0;
+    if (Date.now() - last > TZ_PERSIST_TTL_MS) {
+      lastTzPersist.set(req.userId, Date.now());
+      const userId = req.userId;
+      void import("./middleware/requestContext").then(({ runWithUserId }) =>
+        import("./repositories").then(({ users }) =>
+          runWithUserId(userId, () => users.updatePayload({ timezone: tz })),
+        ),
+      ).catch((err) => {
+        console.error("[tz-persist] failed for", userId, err);
+      });
+    }
+  }
   timezoneStore.run(tz, () => next());
 });
 
@@ -97,6 +122,7 @@ app.use("/monthly-context", monthlyContextRouter);
 app.use("/model-config", modelConfigRouter);
 app.use("/chat", chatRouter);
 app.use("/memory", memoryRouter);
+app.use("/ai-tools", toolChatRouter);
 
 // ── Error handler (must be last) ─────────────────────────
 app.use(errorHandler);
@@ -120,6 +146,9 @@ async function start() {
     console.log(`[server] DEV_USER_ID=${process.env.DEV_USER_ID ?? "(unset)"}`);
     console.log(`[server] DEBUG=${DEBUG ? "on" : "off"}`);
     startJobWorker();
+    registerAllJobHandlers();
+    startBullWorker();
+    startScheduler();
   });
 }
 
@@ -129,6 +158,8 @@ void start();
 async function shutdown(signal: string) {
   console.log(`[server] Received ${signal}, shutting down...`);
   stopJobWorker();
+  stopScheduler();
+  await closeBullQueue().catch(() => {});
   server.close(async () => {
     await closePool();
     process.exit(0);
