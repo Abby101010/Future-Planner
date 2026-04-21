@@ -61,6 +61,14 @@ export type EventPayloads = {
     }>;
     summary?: string;
   };
+  "agent:budget-computed": {
+    agentId: "scheduler";
+    effectiveBudget: number;
+    baseBudget: number;
+    segment: string;
+    dayOfWeek: number;
+    multipliers: { segMult: number; trendMult: number; completionMult: number };
+  };
 };
 
 type Listener<K extends EventKind> = (

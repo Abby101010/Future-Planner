@@ -4,7 +4,14 @@
 
 export { invalidate, runAI } from "./_helpers";
 
-export { cmdCreateGoal, cmdUpdateGoal, cmdDeleteGoal, cmdConfirmGoalPlan } from "./goals";
+export {
+  cmdCreateGoal,
+  cmdUpdateGoal,
+  cmdDeleteGoal,
+  cmdConfirmGoalPlan,
+  cmdPauseGoal,
+  cmdResumeGoal,
+} from "./goals";
 
 export {
   cmdCreateTask,
@@ -24,6 +31,7 @@ export {
   cmdDismissReschedule,
   cmdCantCompleteTask,
   cmdAddTaskToPlan,
+  cmdAnalyzeImage,
   deferScore,
   tomorrowOf,
 } from "./tasks";
@@ -40,6 +48,8 @@ export {
   cmdGenerateBonusTask,
   cmdAcceptTaskProposal,
   cmdHealAllGoalPlans,
+  cmdSubmitPriorityFeedback,
+  cmdProposeGapFillers,
 } from "./planning";
 
 export { cmdStartChatStream, cmdSendChatMessage, cmdClearHomeChat } from "./chat";

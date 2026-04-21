@@ -69,6 +69,11 @@ import {
   cmdEstimateTaskDurations,
   cmdSetTaskTimeBlock,
   cmdSetTaskProjectTag,
+  cmdSubmitPriorityFeedback,
+  cmdPauseGoal,
+  cmdResumeGoal,
+  cmdProposeGapFillers,
+  cmdAnalyzeImage,
 } from "./commands/index";
 
 const commandsRouter = Router();
@@ -108,6 +113,12 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:delete-goal":
         result = await cmdDeleteGoal(body);
+        break;
+      case "command:pause-goal":
+        result = await cmdPauseGoal(body);
+        break;
+      case "command:resume-goal":
+        result = await cmdResumeGoal(body);
         break;
       case "command:create-task":
         result = await cmdCreateTask(body);
@@ -252,6 +263,15 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:set-task-project-tag":
         result = await cmdSetTaskProjectTag(body);
+        break;
+      case "command:submit-priority-feedback":
+        result = await cmdSubmitPriorityFeedback(body);
+        break;
+      case "command:propose-gap-fillers":
+        result = await cmdProposeGapFillers(body);
+        break;
+      case "command:analyze-image":
+        result = await cmdAnalyzeImage(body);
         break;
       default: {
         // Unknown slug: the URL didn't match any known command. 404 with

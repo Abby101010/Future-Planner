@@ -18,9 +18,25 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getClient } from "../ai/client";
 import { getCurrentUserId } from "../middleware/requestContext";
-import { getModelForTask } from "@northstar/core";
+import { getModelForTask, USER_SEGMENTS, type UserSegment } from "@northstar/core";
 import { loadMemory, buildMemoryContext } from "../memory";
-import { PRIORITY_ANNOTATOR_SYSTEM } from "./prompts/priorityAnnotator";
+import { buildPriorityAnnotatorSystem } from "./prompts/priorityAnnotator";
+
+const VALID_SEGMENT = new Set<string>(USER_SEGMENTS);
+
+/** Map from segment to a short seed-term block prepended to the RAG query
+ *  so pgvector pulls segment-relevant chunks. `general` contributes nothing. */
+const SEGMENT_SEED_TERMS: Record<UserSegment, string> = {
+  "career-transition": "job search psychology, deadline pressure, transformation goals",
+  "freelancer": "context switching, deep work for creators, multi-project management",
+  "side-project": "fragmented time, post-work cognitive depletion, habit formation",
+  "general": "",
+};
+
+function resolveSegment(input?: UserSegment | string | null): UserSegment {
+  if (input && VALID_SEGMENT.has(String(input))) return input as UserSegment;
+  return "general";
+}
 
 export type CognitiveLoad = "high" | "medium" | "low";
 export type Tier = "lifetime" | "quarter" | "week" | "day";
@@ -39,6 +55,10 @@ export interface PriorityAnnotatorInput {
   tasks: PriorityAnnotatorTaskInput[];
   /** Optional free-text hint, e.g. "user is in recovery mode" — fed into the retrieval query. */
   contextHint?: string;
+  /** Phase B: user segment — drives RAG seed terms + segment-specific
+   *  guidance appended to the system prompt. Unknown / absent → "general"
+   *  (byte-identical historical behaviour). */
+  userSegment?: UserSegment | string | null;
 }
 
 export interface PriorityAnnotation {
@@ -55,12 +75,17 @@ export interface PriorityAnnotatorOutput {
 const VALID_LOAD = new Set<CognitiveLoad>(["high", "medium", "low"]);
 const VALID_TIER = new Set<Tier>(["lifetime", "quarter", "week", "day"]);
 
-function buildRetrievalQuery(input: PriorityAnnotatorInput): string {
+function buildRetrievalQuery(
+  input: PriorityAnnotatorInput,
+  segment: UserSegment,
+): string {
   const titles = input.tasks.map((t) => t.title).join(", ");
   const goalTitles = Array.from(
     new Set(input.tasks.map((t) => t.goalTitle).filter(Boolean) as string[]),
   ).join(", ");
+  const segSeed = SEGMENT_SEED_TERMS[segment];
   const parts = [
+    segSeed,
     "cognitive load dual-process System 1 System 2 value tiering goal importance for tasks:",
     titles,
     goalTitles ? `goals: ${goalTitles}` : "",
@@ -109,7 +134,8 @@ export async function annotatePriorities(
   if (input.tasks.length === 0) return { annotations: {} };
 
   const userId = getCurrentUserId();
-  const retrievalQuery = buildRetrievalQuery(input);
+  const segment = resolveSegment(input.userSegment);
+  const retrievalQuery = buildRetrievalQuery(input, segment);
 
   // Selective RAG: pull from psychology + goal-setting knowledge files.
   let memoryContext = "";
@@ -135,7 +161,7 @@ Return the annotations JSON.`;
     const response = await client.messages.create({
       model: getModelForTask("priority-annotator"),
       max_tokens: 2048,
-      system: PRIORITY_ANNOTATOR_SYSTEM,
+      system: buildPriorityAnnotatorSystem(segment),
       messages: [{ role: "user", content: userMessage }],
     });
     const text = response.content

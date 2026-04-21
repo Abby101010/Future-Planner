@@ -180,4 +180,27 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:set-task-project-tag": [
     "view:calendar",
   ],
+  "command:submit-priority-feedback": [
+    "view:tasks",
+  ],
+  "command:pause-goal": [
+    "view:dashboard",
+    "view:roadmap",
+    "view:planning",
+    "view:goal-plan",
+  ],
+  "command:resume-goal": [
+    "view:dashboard",
+    "view:roadmap",
+    "view:planning",
+    "view:goal-plan",
+  ],
+  "command:propose-gap-fillers": [
+    "view:dashboard",
+    "view:tasks",
+  ],
+  // Image analysis is a pure read: the handler returns extracted todos
+  // for the client to render confirmation UI. No DB state changes, so
+  // no view needs refetching.
+  "command:analyze-image": [],
 };

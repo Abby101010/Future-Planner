@@ -10,9 +10,15 @@
      - Dual-process theory  → cognitiveLoad
      - Cognitive load theory → cognitiveCost (1..10)
      - Value tiering        → tier (lifetime/quarter/week/day)
+
+   Phase B (segment): `buildPriorityAnnotatorSystem(segment)` appends
+   a short segment-specific paragraph between the base rules and
+   the closing. `general` yields the historical string byte-for-byte.
    ────────────────────────────────────────────────────────── */
 
-export const PRIORITY_ANNOTATOR_SYSTEM = `You are the Priority Annotator for NorthStar, a goal-planning app.
+import type { UserSegment } from "@northstar/core";
+
+const BASE_PROMPT = `You are the Priority Annotator for NorthStar, a goal-planning app.
 
 Your job is to annotate each task with three internal decision inputs. The
 user NEVER sees these labels directly — they only experience better-ordered
@@ -71,3 +77,39 @@ Rules:
   rationale. Never leave a field null.
 - Do not duplicate gatekeeper's priority/signal fields. You annotate; you
   do not rank or drop tasks.`;
+
+const SEGMENT_GUIDANCE: Record<Exclude<UserSegment, "general">, string> = {
+  "career-transition": `
+USER SEGMENT — career transition:
+This user is actively reshaping their identity or role (new field, new
+role, bootcamp, post-layoff rebuild). Deadline pressure is real. When a
+task clearly ladders to the multi-year identity goal (the big goal),
+prefer tier "quarter" over "day" — under-tiering here erodes momentum.
+Weight cognitiveCost slightly higher for novel-domain tasks even when
+they look short, because onboarding friction is high.`,
+  "freelancer": `
+USER SEGMENT — freelancer:
+This user juggles several concurrent client / project streams. Billable
+or client-facing work is tier "quarter" when it moves a retainer forward
+and "week" when it's a specific deliverable in flight. Admin between
+clients is tier "day". Cognitive cost should reflect context-switching:
+two short but unrelated tasks can sum higher than one medium task.`,
+  "side-project": `
+USER SEGMENT — side-project:
+This user has a day job (or equivalent) and works on this goal in the
+margins. Evening hours after primary work are depleted; honour that by
+scoring cognitiveCost conservatively-high for heavy (System 2) tasks
+scheduled on weekdays. Tier "week" or "quarter" only when a task
+meaningfully advances the creative project — don't inflate housekeeping.`,
+};
+
+export function buildPriorityAnnotatorSystem(segment: UserSegment): string {
+  if (segment === "general") return BASE_PROMPT;
+  const guidance = SEGMENT_GUIDANCE[segment];
+  if (!guidance) return BASE_PROMPT;
+  return BASE_PROMPT + "\n" + guidance;
+}
+
+/** Back-compat export. Equivalent to the "general" build — kept so any
+ *  caller that imports the constant directly continues to work. */
+export const PRIORITY_ANNOTATOR_SYSTEM = BASE_PROMPT;

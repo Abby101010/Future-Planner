@@ -24,6 +24,7 @@ import { handleRecovery } from "./handlers/recovery";
 import { handlePaceCheck } from "./handlers/paceCheck";
 import { handleAnalyzeQuickTask } from "./handlers/analyzeQuickTask";
 import { handleNewsBriefing } from "./handlers/newsBriefing";
+import { handleImageToTodos } from "./handlers/imageToTodos";
 import { getEffectiveDate } from "../dateUtils";
 import { loadProjectContext } from "../coordinators/bigGoal/projectAgentContext";
 
@@ -138,7 +139,8 @@ export type RequestType =
   | "analyze-monthly-context"
   | "home-chat"
   | "chat"
-  | "news-briefing";
+  | "news-briefing"
+  | "image-to-todos";
 
 export async function handleAIRequest(
   type: RequestType,
@@ -246,5 +248,7 @@ export async function handleAIRequestDirect(
     }
     case "news-briefing":
       return handleNewsBriefing(client, p as { goals: Array<{ id: string; title: string; description?: string; targetDate?: string; isHabit?: boolean }>; topic?: string }, memoryContext);
+    case "image-to-todos":
+      return handleImageToTodos(client, p as AIPayloadMap["image-to-todos"], memoryContext);
   }
 }

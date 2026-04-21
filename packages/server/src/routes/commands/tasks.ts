@@ -13,6 +13,10 @@ import {
   recordTaskCompleted,
   recordTaskSkipped,
   recordTaskUncompleted,
+  recordPriorityFeedback,
+  recordImageSource,
+  type ImageClassification,
+  type ImageSourceKind,
 } from "../../services/signalRecorder";
 import { routeCantComplete } from "../../coordinators/dailyPlanner/cantCompleteRouter";
 import { packageCurrentPlan, evaluateCapacity } from "../../coordinators/dailyPlanner/memoryPackager";
@@ -84,6 +88,13 @@ export async function cmdToggleTask(
       const duration = (pl?.durationMinutes as number) ?? undefined;
       if (next) {
         await recordTaskCompleted(task.title, category, duration);
+        // A-2: implicit priority feedback — completing a task is an
+        // implicit vote that its priority/category/day mix was right.
+        void recordPriorityFeedback(task.title, "complete", {
+          category,
+          tier: (pl?.tier as string) ?? undefined,
+          dayOfWeek: new Date(task.date + "T00:00:00").getDay(),
+        }).catch(() => {});
       } else {
         await recordTaskUncompleted(task.title);
       }
@@ -189,6 +200,13 @@ export async function cmdSkipTask(
     const pl = task.payload as Record<string, unknown>;
     const category = (pl?.category as string) ?? "planning";
     await recordTaskSkipped(task.title, category);
+    // A-2: implicit priority feedback — a skip is an implicit vote
+    // that the task's priority/category/day mix was wrong today.
+    void recordPriorityFeedback(task.title, "skip", {
+      category,
+      tier: (pl?.tier as string) ?? undefined,
+      dayOfWeek: new Date(task.date + "T00:00:00").getDay(),
+    }).catch(() => {});
   }
   return { ok: true, taskId, skipped: isSkipped };
 }
@@ -858,6 +876,13 @@ export async function cmdRescheduleTask(
     }
   }
 
+  // A-2: implicit priority feedback — rescheduling is a "not now" vote.
+  void recordPriorityFeedback(task.title, "defer", {
+    category: (pl.category as string) ?? "planning",
+    tier: (pl.tier as string) ?? undefined,
+    dayOfWeek: new Date(originalDate + "T00:00:00").getDay(),
+  }).catch(() => {});
+
   return { ok: true, taskId, from: originalDate, to: targetDate };
 }
 
@@ -881,6 +906,15 @@ export async function cmdSnoozeReschedule(
     payload: { rescheduleSnoozeUntil: tomorrow },
   });
 
+  // A-2: implicit priority feedback — snoozing a reschedule card is
+  // also a "not now" vote on the task's current placement.
+  const pl = task.payload as Record<string, unknown>;
+  void recordPriorityFeedback(task.title, "defer", {
+    category: (pl?.category as string) ?? "planning",
+    tier: (pl?.tier as string) ?? undefined,
+    dayOfWeek: new Date(task.date + "T00:00:00").getDay(),
+  }).catch(() => {});
+
   return { ok: true, taskId, snoozedUntil: tomorrow };
 }
 
@@ -899,4 +933,94 @@ export async function cmdDismissReschedule(
   });
 
   return { ok: true, taskId };
+}
+
+// ── Image → Todos (Phase 1) ──────────────────────────────────
+//
+// Server-side gateway for the vision pipeline. Accepts a one-shot base64
+// image, validates it never exceeds 5 MB or the allowed mime list, then
+// forwards to the AI channel and returns the structured todo list.
+// Important: the image bytes are NEVER persisted anywhere — they live
+// only in the request payload and in Anthropic's per-call buffer.
+
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_IMAGE_MIME: ReadonlyArray<string> = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
+/** Best-effort byte count for a base64 string without allocating the
+ *  full decoded buffer. Base64 encodes 3 bytes per 4 chars minus padding. */
+function approxBase64Bytes(b64: string): number {
+  const len = b64.length;
+  if (len === 0) return 0;
+  const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.floor((len * 3) / 4) - pad;
+}
+
+export async function cmdAnalyzeImage(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const imageBase64 = body.imageBase64 as string | undefined;
+  const mediaType = body.mediaType as string | undefined;
+  const source = body.source as string | undefined;
+  const userHint = body.userHint as string | undefined;
+  const todayDate =
+    (body.todayDate as string | undefined) ?? getEffectiveDate();
+
+  if (!imageBase64 || typeof imageBase64 !== "string") {
+    throw new Error("command:analyze-image requires args.imageBase64");
+  }
+  if (!mediaType || !ALLOWED_IMAGE_MIME.includes(mediaType)) {
+    throw new Error(
+      `command:analyze-image unsupported mediaType: ${mediaType ?? "(missing)"}`,
+    );
+  }
+  if (source !== "upload" && source !== "paste" && source !== "screenshot") {
+    throw new Error(
+      `command:analyze-image requires args.source in {upload|paste|screenshot}, got: ${source ?? "(missing)"}`,
+    );
+  }
+
+  const bytes = approxBase64Bytes(imageBase64);
+  if (bytes > IMAGE_MAX_BYTES) {
+    throw new Error(
+      `command:analyze-image image too large: ${bytes} bytes (max ${IMAGE_MAX_BYTES})`,
+    );
+  }
+
+  const result = await runAI(
+    "image-to-todos",
+    {
+      imageBase64,
+      mediaType,
+      source,
+      userHint,
+      todayDate,
+    },
+    "general",
+  );
+
+  // Phase 5 memory hook: log the image classification + extracted
+  // count so reflection can learn which image kinds are useful for
+  // this user. Best-effort; never blocks the response.
+  void (async () => {
+    try {
+      const r = (result ?? {}) as {
+        imageType?: string;
+        todos?: unknown[];
+      };
+      const imageType = (r.imageType ?? "other") as ImageClassification;
+      const todoCount = Array.isArray(r.todos) ? r.todos.length : 0;
+      await recordImageSource(imageType, todoCount, source as ImageSourceKind);
+    } catch {
+      /* signal recording is best-effort */
+    }
+  })();
+
+  // Return the parsed AI response verbatim. The client renders a
+  // confirmation UI and dispatches create-task per accepted item —
+  // this command intentionally does NOT write to the DB.
+  return { ok: true, result };
 }

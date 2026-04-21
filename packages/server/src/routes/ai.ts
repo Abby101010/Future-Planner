@@ -56,6 +56,7 @@ const CONTEXT_TYPE_BY_CHANNEL: Record<
   onboarding: "general",
   "classify-goal": "general",
   "analyze-monthly-context": "planning",
+  "image-to-todos": "general",
 };
 
 function makeAIRoute(channel: string, type: RequestType) {
@@ -97,6 +98,7 @@ makeAIRoute("goal-plan-edit", "goal-plan-edit");
 makeAIRoute("analyze-quick-task", "analyze-quick-task");
 makeAIRoute("analyze-monthly-context", "analyze-monthly-context");
 makeAIRoute("news-briefing", "news-briefing");
+makeAIRoute("image-to-todos", "image-to-todos");
 // home-chat is registered below with a custom handler that also persists
 // the user message + assistant reply into home_chat_messages so the
 // dashboard view shows real history on refetch / restart. The client

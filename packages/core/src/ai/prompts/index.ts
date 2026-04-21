@@ -17,3 +17,4 @@ export { CLASSIFY_GOAL_SYSTEM, ANALYZE_MONTHLY_CONTEXT_SYSTEM } from "./analysis
 export { buildUnifiedChatPrompt } from "./chat.js";
 export type { ChatPromptContext } from "./chat.js";
 export { EFFORT_ROUTER_SYSTEM } from "./effortRouter.js";
+export { IMAGE_TO_TODOS_SYSTEM } from "./imageToTodos.js";

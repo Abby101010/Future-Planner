@@ -7,6 +7,7 @@
  */
 
 export * from "./ai/handlers/onboarding.js";
+export * from "./ai/handlers/onboardingExtract.js";
 export * from "./ai/handlers/classifyGoal.js";
 export * from "./ai/handlers/goalPlanChat.js";
 export * from "./ai/handlers/goalPlanEdit.js";

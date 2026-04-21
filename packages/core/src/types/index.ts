@@ -28,6 +28,14 @@ export interface TimeBlock {
   label: string;      // brief description of what this time is for
 }
 
+export const USER_SEGMENTS = [
+  "career-transition",
+  "freelancer",
+  "side-project",
+  "general",
+] as const;
+export type UserSegment = typeof USER_SEGMENTS[number];
+
 export interface UserSettings {
   enableNewsFeed: boolean;
   dailyReminderTime?: string;
@@ -39,6 +47,26 @@ export interface UserSettings {
    *  against this and defers lowest-tier tasks to the pending pool if exceeded.
    *  When null, server defaults to personalization.maxDailyWeight ?? 22. */
   dailyCognitiveBudget?: number | null;
+  /** Phase B segment: drives priorityAnnotator RAG + prompt + scheduler
+   *  deferral policy. Undefined / null behaves identically to "general". */
+  userSegment?: UserSegment | null;
+  /** B-2: when true, scheduler matches today's tasks to weeklyAvailability
+   *  slots based on cognitiveLoad and writes scheduled_start/end ISO. Default
+   *  false → no scheduler-originated time-block writes (byte-identical). */
+  cognitiveLoadMatchingEnabled?: boolean;
+  /** A-4: when true, scheduler uses the blended finalScore (tier × priorityScore
+   *  × recency) to order tasks within a budget-kept set. Default false preserves
+   *  Phase-1 (tier, cost) ordering byte-for-byte. */
+  priorityArbitrationEnabled?: boolean;
+  /** B-3: when true, the slot matcher consults the per-(hour, dow, category)
+   *  completion-rate weights learned by the nightly energy-profile job and
+   *  uses them as a tie-break between equally-suited slots. Default false
+   *  → matcher behaves exactly as B-2 shipped. */
+  dataDrivenEnergyEnabled?: boolean;
+  /** B-4: when true, `command:propose-gap-fillers` may write proposals
+   *  into `pending_tasks` for calendar gaps ≥ 15 min. Default false →
+   *  the command is a no-op, no pending_tasks writes originate here. */
+  gapFillersEnabled?: boolean;
 }
 
 // Onboarding
@@ -455,7 +483,7 @@ export interface Goal {
   importance: GoalImportance;
   scope: GoalScope;                // NLP-determined: "small" tasks vs "big" plan goals
   goalType: GoalType;              // user-facing type: big, everyday, or repeating
-  status: "pending" | "planning" | "active" | "completed" | "archived";
+  status: "pending" | "planning" | "active" | "paused" | "completed" | "archived";
   createdAt: string;
   updatedAt: string;
   /** User-chosen icon/emoji for this goal */

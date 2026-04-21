@@ -29,7 +29,9 @@ export type SignalType =
   | "agent_fallback"
   | "ai_parse_error"
   | "overload_detected"
-  | "estimation_error";
+  | "estimation_error"
+  | "priority_feedback"
+  | "image_source";
 
 /**
  * Insert a behavioral signal into memory_signals. Best-effort —
@@ -129,6 +131,65 @@ export async function recordOverloadDetected(
     "overload_detected",
     context,
     `${deferralCount} deferral(s) recommended`,
+  );
+}
+
+// ── Priority feedback (A-2) ────────────────────────────────
+
+export type PriorityFeedbackSignal =
+  | "complete"
+  | "skip"
+  | "defer"
+  | "wrong_priority";
+
+/**
+ * Record a priority feedback signal — the user's implicit (complete/skip/defer)
+ * or explicit (wrong_priority) vote on how the gatekeeper ranked a task.
+ * Reflection later distills these into memory_preferences rules the gatekeeper
+ * already reads at ranking time.
+ */
+export async function recordPriorityFeedback(
+  taskTitle: string,
+  signal: PriorityFeedbackSignal,
+  context: { category?: string; tier?: string; dayOfWeek: number; reason?: string },
+): Promise<void> {
+  const parts = [
+    `signal:${signal}`,
+    `dow:${context.dayOfWeek}`,
+  ];
+  if (context.category) parts.push(`category:${context.category}`);
+  if (context.tier) parts.push(`tier:${context.tier}`);
+  if (context.reason) parts.push(`reason:${context.reason.slice(0, 80)}`);
+  await recordSignal("priority_feedback", taskTitle, parts.join(", "));
+}
+
+// ── Image → Todos (Phase 5) ─────────────────────────────────
+
+export type ImageSourceKind = "upload" | "paste" | "screenshot";
+
+export type ImageClassification =
+  | "handwritten-notes"
+  | "screenshot"
+  | "calendar"
+  | "chat-log"
+  | "physical-scene"
+  | "other";
+
+/**
+ * Record when the user analyzed an image and how many todos the AI
+ * extracted. Feeds reflection + future image-specific personalization
+ * (e.g. "user uploads mostly handwritten notes — prefer short titles").
+ * Image bytes are never persisted — only the classification metadata.
+ */
+export async function recordImageSource(
+  imageType: ImageClassification,
+  todoCount: number,
+  source: ImageSourceKind,
+): Promise<void> {
+  await recordSignal(
+    "image_source",
+    imageType,
+    `count:${todoCount}, source:${source}`,
   );
 }
 

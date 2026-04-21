@@ -82,7 +82,22 @@ async function runAgent(
           goalType: input.goals.find((g2) => g2.id === t.goalId)?.goalType ?? null,
         })),
       );
-      results.priorityAnnotator = await annotatePriorities({ tasks: candidates });
+      // Phase B segment: surface userSegment from settings so the annotator
+      // can seed RAG + the system prompt. Fetch is cheap (single row) and
+      // failure resolves to "general" via annotatePriorities' internal
+      // fallback.
+      let userSegment: string | null | undefined;
+      try {
+        const repos = await import("../repositories");
+        const u = await repos.users.get();
+        userSegment = u?.settings?.userSegment ?? null;
+      } catch {
+        userSegment = null;
+      }
+      results.priorityAnnotator = await annotatePriorities({
+        tasks: candidates,
+        userSegment,
+      });
       break;
     }
     case "scheduler": {

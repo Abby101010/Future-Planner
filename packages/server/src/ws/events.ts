@@ -14,7 +14,7 @@
  */
 
 import { envelope } from "@northstar/core";
-import type { QueryKind } from "@northstar/core";
+import type { QueryKind, UserSegment } from "@northstar/core";
 import { connectionRegistry } from "./connections";
 
 /** Payload for `ai:stream-start`. */
@@ -208,5 +208,32 @@ export function emitAgentCritique(
   connectionRegistry.broadcastToUser(
     userId,
     envelope("agent:critique", payload),
+  );
+}
+
+/** Payload for `agent:budget-computed`. A-3 emits this once per scheduler
+ *  run so the harness + critique can cite the exact effective budget the
+ *  scheduler used instead of re-deriving it. */
+export interface AgentBudgetComputedPayload {
+  agentId: "scheduler";
+  effectiveBudget: number;
+  baseBudget: number;
+  segment: UserSegment;
+  /** JS Date.getDay() convention: 0=Sun..6=Sat. */
+  dayOfWeek: number;
+  multipliers: {
+    segMult: number;
+    trendMult: number;
+    completionMult: number;
+  };
+}
+
+export function emitAgentBudgetComputed(
+  userId: string,
+  payload: AgentBudgetComputedPayload,
+): void {
+  connectionRegistry.broadcastToUser(
+    userId,
+    envelope("agent:budget-computed", payload),
   );
 }

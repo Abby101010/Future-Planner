@@ -75,7 +75,8 @@ export type SignalType =
   | "session_time"
   | "high_energy_window"
   | "low_energy_window"
-  | "chat_insight";
+  | "chat_insight"
+  | "priority_feedback";
 
 export interface BehavioralSignal {
   id: string;
@@ -959,13 +960,13 @@ export async function buildMemoryContext(
       ...contextTags,
       contextType,
       ...(contextType === "daily"
-        ? ["morning", "evening", "energy", "timing", "duration", "focus", "deep_work"]
+        ? ["morning", "evening", "energy", "timing", "duration", "focus", "deep_work", "priority"]
         : []),
       ...(contextType === "recovery"
         ? ["blocker", "motivation", "struggle", "energy", "overwhelm", "burnout"]
         : []),
       ...(contextType === "planning"
-        ? ["schedule", "capacity", "preference", "intensity", "pace", "deadline"]
+        ? ["schedule", "capacity", "preference", "intensity", "pace", "deadline", "priority"]
         : []),
     ].map((t) => t.toLowerCase()),
   );

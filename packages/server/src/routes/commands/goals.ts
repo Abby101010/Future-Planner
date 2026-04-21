@@ -38,6 +38,36 @@ export async function cmdDeleteGoal(
   return { ok: true, goalId };
 }
 
+// ── A-5: goal pause / resume ────────────────────────────────
+
+export async function cmdPauseGoal(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const goalId = body.goalId as string | undefined;
+  if (!goalId) throw new Error("command:pause-goal requires args.goalId");
+  const existing = await repos.goals.get(goalId);
+  if (!existing) throw new Error(`goal ${goalId} not found`);
+  if (existing.status === "paused") {
+    return { ok: true, goalId, noop: true };
+  }
+  await repos.goals.upsert({ ...existing, status: "paused" });
+  return { ok: true, goalId };
+}
+
+export async function cmdResumeGoal(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const goalId = body.goalId as string | undefined;
+  if (!goalId) throw new Error("command:resume-goal requires args.goalId");
+  const existing = await repos.goals.get(goalId);
+  if (!existing) throw new Error(`goal ${goalId} not found`);
+  if (existing.status !== "paused") {
+    return { ok: true, goalId, noop: true };
+  }
+  await repos.goals.upsert({ ...existing, status: "active" });
+  return { ok: true, goalId };
+}
+
 export async function cmdConfirmGoalPlan(
   body: Record<string, unknown>,
 ): Promise<unknown> {

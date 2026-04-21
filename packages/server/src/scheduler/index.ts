@@ -33,6 +33,7 @@ import { query } from "../db/pool";
 import { getClient } from "../ai/client";
 import { runReflection, shouldAutoReflect, generateNudges } from "../reflection";
 import * as repos from "../repositories";
+import { runEnergyProfileJob } from "../jobs/energyProfileJob";
 
 type ScheduledTask = ReturnType<typeof cron.schedule>;
 const tasks: ScheduledTask[] = [];
@@ -44,16 +45,21 @@ const NIGHTLY_REFLECTION_HOUR = Number(
   process.env.NIGHTLY_REFLECTION_HOUR ?? 23,
 );
 const MORNING_NUDGE_HOUR = Number(process.env.MORNING_NUDGE_HOUR ?? 7);
+const ENERGY_PROFILE_HOUR = Number(process.env.ENERGY_PROFILE_HOUR ?? 3);
 
 interface SchedulableUser {
   userId: string;
   tz: string;
 }
 
-/** "reflection" | "nudge" -> userId -> last-fired YYYY-MM-DD (in that user's tz). */
-const lastRan = new Map<"reflection" | "nudge", Map<string, string>>();
+/** "reflection" | "nudge" | "energy" -> userId -> last-fired YYYY-MM-DD (in that user's tz). */
+const lastRan = new Map<
+  "reflection" | "nudge" | "energy",
+  Map<string, string>
+>();
 lastRan.set("reflection", new Map());
 lastRan.set("nudge", new Map());
+lastRan.set("energy", new Map());
 
 async function listSchedulableUsers(): Promise<SchedulableUser[]> {
   try {
@@ -126,6 +132,23 @@ async function fireNightlyReflection(userId: string): Promise<boolean> {
   });
 }
 
+async function fireEnergyProfile(userId: string): Promise<boolean> {
+  return runWithUserId(userId, async () => {
+    try {
+      const result = await runEnergyProfileJob();
+      if (result.bucketsWritten > 0) {
+        console.log(
+          `[scheduler] energy-profile for ${userId}: observations=${result.observations} buckets=${result.bucketsWritten}`,
+        );
+      }
+      return true;
+    } catch (err) {
+      console.error(`[scheduler] energy-profile for ${userId} failed:`, err);
+      return false;
+    }
+  });
+}
+
 async function fireMorningNudge(userId: string): Promise<boolean> {
   return runWithUserId(userId, async () => {
     const today = new Date().toISOString().split("T")[0]!;
@@ -158,9 +181,11 @@ async function hourlyTick(): Promise<void> {
 
   const reflMap = lastRan.get("reflection")!;
   const nudgeMap = lastRan.get("nudge")!;
+  const energyMap = lastRan.get("energy")!;
 
   let reflected = 0;
   let nudged = 0;
+  let energyRuns = 0;
 
   for (const { userId, tz } of users) {
     const { hour, date } = localHourAndDate(tz);
@@ -184,11 +209,21 @@ async function hourlyTick(): Promise<void> {
         console.error(`[scheduler] nudge for ${userId} failed:`, err);
       }
     }
+
+    if (hour === ENERGY_PROFILE_HOUR && energyMap.get(userId) !== date) {
+      energyMap.set(userId, date);
+      try {
+        const ran = await fireEnergyProfile(userId);
+        if (ran) energyRuns++;
+      } catch (err) {
+        console.error(`[scheduler] energy-profile for ${userId} failed:`, err);
+      }
+    }
   }
 
-  if (reflected > 0 || nudged > 0) {
+  if (reflected > 0 || nudged > 0 || energyRuns > 0) {
     console.log(
-      `[scheduler] hourlyTick — reflected=${reflected} nudged=${nudged} users=${users.length}`,
+      `[scheduler] hourlyTick — reflected=${reflected} nudged=${nudged} energy=${energyRuns} users=${users.length}`,
     );
   }
 }
@@ -216,7 +251,7 @@ export function startScheduler(): void {
   );
 
   console.log(
-    `[scheduler] started — hourly tick (UTC); per-user targets: reflection @ ${NIGHTLY_REFLECTION_HOUR}:00 local, nudges @ ${MORNING_NUDGE_HOUR}:00 local`,
+    `[scheduler] started — hourly tick (UTC); per-user targets: reflection @ ${NIGHTLY_REFLECTION_HOUR}:00 local, nudges @ ${MORNING_NUDGE_HOUR}:00 local, energy-profile @ ${ENERGY_PROFILE_HOUR}:00 local`,
   );
 }
 

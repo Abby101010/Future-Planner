@@ -57,7 +57,12 @@ export type CommandKind =
   | "command:expand-plan-week"
   | "command:estimate-task-durations"
   | "command:set-task-time-block"
-  | "command:set-task-project-tag";
+  | "command:set-task-project-tag"
+  | "command:submit-priority-feedback"
+  | "command:pause-goal"
+  | "command:resume-goal"
+  | "command:propose-gap-fillers"
+  | "command:analyze-image";
 
 export type EventKind =
   | "ai:stream-start"
@@ -65,6 +70,7 @@ export type EventKind =
   | "ai:stream-end"
   | "agent:progress"
   | "agent:critique"
+  | "agent:budget-computed"
   | "view:invalidate"
   | "reminder:triggered"
   | "job:complete"

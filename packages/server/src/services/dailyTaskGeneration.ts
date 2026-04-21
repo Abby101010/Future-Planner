@@ -128,7 +128,13 @@ function buildGoalPlanSummaries(goals: Goal[], date: string) {
   };
 
   return goals
-    .filter((g) => g.goalType === "big" || (!g.goalType && g.scope === "big"))
+    .filter(
+      (g) =>
+        // A-5: paused goals sit out daily materialization. Resume flips the
+        // status back to "active" and tasks flow again.
+        g.status !== "paused" &&
+        (g.goalType === "big" || (!g.goalType && g.scope === "big")),
+    )
     .map((g) => {
       const todayTasks: Array<{
         goalId: string;

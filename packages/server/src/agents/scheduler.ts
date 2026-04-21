@@ -8,9 +8,29 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getClient } from "../ai/client";
-import { emitAgentProgress } from "../ws";
+import {
+  emitAgentProgress,
+  emitAgentBudgetComputed,
+  emitViewInvalidate,
+} from "../ws";
 import { getCurrentUserId } from "../middleware/requestContext";
-import { getModelForTask } from "@northstar/core";
+import {
+  getModelForTask,
+  USER_SEGMENTS,
+  type UserSegment,
+  matchTasksToSlots,
+  type AvailabilitySlot,
+  type MatcherTask,
+  type ExistingAssignment,
+  type SlotAssignment,
+  computeDynamicBudget,
+  type BudgetTrend,
+  type DynamicBudgetResult,
+  computeFinalScoreBreakdown,
+  type FinalScoreTier,
+  type HourEnergyWeight,
+} from "@northstar/core";
+import { loadEnergyStatsForDayOfWeek } from "../services/energyProfile";
 import type {
   TaskStateInput,
   GatekeeperResult,
@@ -25,6 +45,12 @@ import type {
   PriorityAnnotation,
   TriagedTask,
 } from "@northstar/core";
+
+const VALID_SEGMENT = new Set<string>(USER_SEGMENTS);
+function resolveSegment(input?: UserSegment | string | null): UserSegment {
+  if (input && VALID_SEGMENT.has(String(input))) return input as UserSegment;
+  return "general";
+}
 import { SCHEDULER_SYSTEM } from "./prompts/scheduler";
 import * as repos from "../repositories";
 
@@ -183,14 +209,31 @@ const TIER_PRIORITY: Record<string, number> = {
 
 const DEFAULT_DAILY_COGNITIVE_BUDGET = 22;
 
-async function resolveDailyCognitiveBudget(): Promise<number> {
+/** A-3: delegate to the pure calculator. Passes `profile` through so trend +
+ *  recent completion rate shape the effective budget. Defaults (trend="stable",
+ *  rate=0.8) reproduce Phase-1 output byte-for-byte when no profile is
+ *  supplied — the ARCHITECTURE_UPGRADES §9 invariant. */
+async function resolveDailyCognitiveBudget(
+  segment: UserSegment = "general",
+  now: Date = new Date(),
+  profile?: { trend?: BudgetTrend; recentCompletionRate?: number } | null,
+): Promise<DynamicBudgetResult> {
+  let base = DEFAULT_DAILY_COGNITIVE_BUDGET;
   try {
     const user = await repos.users.get();
     const n = user?.settings?.dailyCognitiveBudget;
-    return typeof n === "number" && n > 0 ? n : DEFAULT_DAILY_COGNITIVE_BUDGET;
+    if (typeof n === "number" && n > 0) base = n;
   } catch {
-    return DEFAULT_DAILY_COGNITIVE_BUDGET;
+    // fall through to default
   }
+
+  return computeDynamicBudget({
+    base,
+    segment,
+    dayOfWeek: now.getDay(),
+    trend: profile?.trend,
+    recentCompletionRate: profile?.recentCompletionRate,
+  });
 }
 
 /** Sum cognitiveCost across annotated tasks. Tasks without annotations
@@ -211,11 +254,41 @@ function sumCognitiveCost(
  *  cognitiveCost so the heaviest lifetime work anchors the day. Unannotated
  *  tasks keep their original ordering by sliding to the front with a stable
  *  synthetic "unknown" tier that outranks "day" (we don't know if it's low
- *  value, so don't drop it first). */
+ *  value, so don't drop it first).
+ *
+ *  A-4: when `arbitration` is supplied, replace the within-tier tiebreak with
+ *  the blended finalScore (tier weight × priorityScore × recency). Flag-off
+ *  → byte-identical Phase-1 (tier, cost desc) ordering. */
 function orderByTier(
   tasks: TriagedTask[],
   annotations: Record<string, PriorityAnnotation>,
+  _segment: UserSegment = "general",
+  arbitration?: {
+    priorityScores: Record<string, number>;
+    daysSinceLastWorked: Record<string, number>;
+  } | null,
 ): TriagedTask[] {
+  // `_segment` is threaded now so Phase 4 can introduce per-segment ordering
+  // without reshuffling call sites. For Phase 1 the ordering is segment-
+  // agnostic; presence invariants are enforced in enforceCognitiveBudget.
+  if (arbitration) {
+    const scored = tasks.map((t) => {
+      const a = annotations[t.id];
+      const tier = (a?.tier ?? "day") as FinalScoreTier;
+      const breakdown = computeFinalScoreBreakdown({
+        tier,
+        priorityScore: arbitration.priorityScores[t.id],
+        daysSinceLastWorked: arbitration.daysSinceLastWorked[t.id],
+      });
+      return { task: t, breakdown, cost: a?.cognitiveCost ?? 0 };
+    });
+    scored.sort(
+      (x, y) =>
+        y.breakdown.finalScore - x.breakdown.finalScore || x.cost - y.cost,
+    );
+    return scored.map((s) => s.task);
+  }
+
   return tasks.slice().sort((a, b) => {
     const aa = annotations[a.id];
     const ab = annotations[b.id];
@@ -236,6 +309,7 @@ function enforceCognitiveBudget(
   tasks: TriagedTask[],
   annotations: Record<string, PriorityAnnotation>,
   budget: number,
+  segment: UserSegment = "general",
 ): { kept: TriagedTask[]; deferred: string[] } {
   if (tasks.length === 0) return { kept: tasks, deferred: [] };
   const total = sumCognitiveCost(tasks, annotations);
@@ -260,13 +334,185 @@ function enforceCognitiveBudget(
     if (running <= budget) break;
     const a = annotations[t.id];
     if (!a) continue; // never defer unannotated tasks
+
+    // Freelancer: never displace lifetime/quarter tier work with day-tier
+    // admin, even when the budget would otherwise demand it.
+    if (segment === "freelancer" && (a.tier === "lifetime" || a.tier === "quarter")) {
+      continue;
+    }
+
     deferred.add(t.id);
     running -= a.cognitiveCost;
   }
+
+  // Career-transition: at least one quarter-tier task must remain in the
+  // day. If budget-pressure wiped them all out, restore the lowest-cost
+  // deferred quarter task; if that puts us back over budget, trade for the
+  // lowest-value day-tier still kept.
+  if (segment === "career-transition") {
+    const keptHasQuarter = tasks.some(
+      (t) => !deferred.has(t.id) && annotations[t.id]?.tier === "quarter",
+    );
+    if (!keptHasQuarter) {
+      const restorable = Array.from(deferred)
+        .map((id) => ({ id, a: annotations[id] }))
+        .filter((x) => x.a?.tier === "quarter")
+        .sort((x, y) => (x.a!.cognitiveCost ?? 0) - (y.a!.cognitiveCost ?? 0));
+      const restore = restorable[0];
+      if (restore) {
+        deferred.delete(restore.id);
+        running += restore.a!.cognitiveCost;
+        // If we're now over budget, swap in by deferring the lowest-cost
+        // day-tier task currently kept.
+        while (running > budget) {
+          const candidate = tasks
+            .filter((t) => !deferred.has(t.id) && annotations[t.id]?.tier === "day")
+            .sort(
+              (x, y) =>
+                (annotations[x.id]?.cognitiveCost ?? 0) -
+                (annotations[y.id]?.cognitiveCost ?? 0),
+            )[0];
+          if (!candidate) break;
+          deferred.add(candidate.id);
+          running -= annotations[candidate.id]!.cognitiveCost;
+        }
+      }
+    }
+  }
+
   return {
     kept: tasks.filter((t) => !deferred.has(t.id)),
     deferred: Array.from(deferred),
   };
+}
+
+// ── B-2: weeklyAvailability / cognitiveLoad slot assignment ─
+
+/** Convert JS Date.getDay() (0=Sun..6=Sat) into the TimeBlock convention
+ *  used by `weeklyAvailability` (0=Mon..6=Sun). */
+function jsDayToTimeBlockDay(jsDay: number): number {
+  return jsDay === 0 ? 6 : jsDay - 1;
+}
+
+async function assignSlotsForToday(args: {
+  userId: string;
+  date: string;
+  tasks: TriagedTask[];
+  annotations: Record<string, PriorityAnnotation>;
+  timeEstimator: TimeEstimatorResult;
+  weeklyAvailability: NonNullable<
+    Awaited<ReturnType<typeof repos.users.get>>
+  >["weeklyAvailability"];
+  scheduledTasks: TaskStateInput["scheduledTasks"];
+  /** B-3: when true, load per-(hour, dow, category) completion weights and
+   *  pass them to the matcher as a tie-break. Default false → byte-identical B-2. */
+  energyEnabled?: boolean;
+}): Promise<void> {
+  const {
+    userId,
+    date,
+    tasks,
+    annotations,
+    timeEstimator,
+    weeklyAvailability,
+    scheduledTasks,
+    energyEnabled,
+  } = args;
+
+  // Parse YYYY-MM-DD into local calendar date and map to 0=Mon..6=Sun.
+  const [y, m, d] = date.split("-").map((s) => parseInt(s, 10));
+  if (!y || !m || !d) return;
+  const jsDay = new Date(y, m - 1, d).getDay();
+  const tbDay = jsDayToTimeBlockDay(jsDay);
+
+  const slots: AvailabilitySlot[] = (weeklyAvailability ?? [])
+    .filter((tb) => tb.day === tbDay)
+    .map((tb) => ({
+      day: tb.day,
+      hour: tb.hour,
+      importance: tb.importance,
+      label: tb.label,
+    }));
+  if (slots.length === 0) return;
+
+  const existingAssignments: ExistingAssignment[] = [];
+  for (const st of scheduledTasks) {
+    if (!st.scheduledTime || !st.scheduledEndTime) continue;
+    existingAssignments.push({
+      startIso: `${date}T${st.scheduledTime}:00`,
+      endIso: `${date}T${st.scheduledEndTime}:00`,
+    });
+  }
+
+  const matcherTasks: MatcherTask[] = tasks.map((t) => {
+    const est = timeEstimator.estimates[t.id];
+    const duration = est
+      ? est.adjustedMinutes + est.bufferMinutes
+      : t.durationMinutes > 0
+        ? t.durationMinutes
+        : 30;
+    return {
+      id: t.id,
+      cognitiveLoad: annotations[t.id]?.cognitiveLoad,
+      durationMinutes: duration,
+      category: t.category,
+    };
+  });
+
+  // B-3: when data-driven energy matching is on, pull today's energy stats
+  // once and pass them to the matcher as a tie-break. Failure here must not
+  // break B-2's core slot assignment, so we fall back to an empty list.
+  let hourEnergyWeights: HourEnergyWeight[] | undefined;
+  if (energyEnabled) {
+    try {
+      const stats = await loadEnergyStatsForDayOfWeek(tbDay);
+      hourEnergyWeights = stats.map((s) => ({
+        hour: s.hour,
+        dayOfWeek: s.dayOfWeek,
+        category: s.category,
+        completionRate: s.completionRate,
+      }));
+    } catch (err) {
+      console.error("[scheduler] B-3 energy-stats load failed:", err);
+      hourEnergyWeights = undefined;
+    }
+  }
+
+  const assignments: SlotAssignment[] = matchTasksToSlots({
+    tasks: matcherTasks,
+    slots,
+    dateIso: date,
+    existingAssignments,
+    hourEnergyWeights,
+  });
+  if (assignments.length === 0) return;
+
+  for (const a of assignments) {
+    // Matcher emits naive local ISO (`YYYY-MM-DDTHH:MM:00`); derive HH:MM
+    // directly for the legacy payload fields.
+    const startHHMM = a.startIso.slice(11, 16);
+    const endHHMM = a.endIso.slice(11, 16);
+    try {
+      await repos.dailyTasks.update(a.taskId, {
+        scheduledStartIso: a.startIso,
+        scheduledEndIso: a.endIso,
+        payload: {
+          scheduledTime: startHHMM,
+          scheduledEndTime: endHHMM,
+        },
+      });
+    } catch (err) {
+      console.error(
+        `[scheduler] B-2: failed to persist slot for ${a.taskId}:`,
+        err,
+      );
+    }
+  }
+
+  emitViewInvalidate(userId, { viewKinds: ["view:calendar", "view:tasks"] });
+  console.log(
+    `[scheduler] B-2: assigned ${assignments.length} task(s) to availability slots`,
+  );
 }
 
 // ── Main runner ────────────────────────────────────────────
@@ -276,6 +522,10 @@ export async function runScheduler(
   gatekeeper: GatekeeperResult,
   timeEstimator: TimeEstimatorResult,
   priorityAnnotator?: PriorityAnnotatorResult,
+  /** A-3: optional CapacityProfile-shaped object so the dynamic budget can
+   *  consider recent trend + completion rate. When absent, defaults reproduce
+   *  Phase-1 scheduler output byte-for-byte. */
+  capacityProfile?: { trend?: BudgetTrend; recentCompletionRate?: number } | null,
 ): Promise<SchedulerResult> {
   const userId = getCurrentUserId();
   emitAgentProgress(userId, {
@@ -289,19 +539,143 @@ export async function runScheduler(
   // lowest-tier tasks to the pending pool when the user's daily budget is
   // exceeded. Reorder within budget by (tier, cost) so high-value work
   // anchors the day. When no annotations, behaviour is unchanged.
+  //
+  // Segment affects (a) budget multiplier for side-project, (b) a lifetime
+  // /quarter deferral guard for freelancer, (c) a quarter-tier anchor for
+  // career-transition. Unknown or absent segments resolve to "general" and
+  // the logic is byte-identical to pre-segment behaviour.
+  let segment: UserSegment = "general";
+  let user: Awaited<ReturnType<typeof repos.users.get>> | null = null;
+  try {
+    user = await repos.users.get();
+    segment = resolveSegment(user?.settings?.userSegment);
+  } catch {
+    // keep "general"
+  }
+
   const annotations = priorityAnnotator?.annotations ?? {};
   let workingTasks = gatekeeper.filteredTasks;
   let deferredByBudget: string[] = [];
   if (Object.keys(annotations).length > 0) {
-    const budget = await resolveDailyCognitiveBudget();
-    const trimmed = enforceCognitiveBudget(workingTasks, annotations, budget);
-    workingTasks = orderByTier(trimmed.kept, annotations);
+    const now = new Date();
+    // A-3: derive the dynamic profile the calculator needs. Caller may pass
+    // one explicitly (preferred); otherwise fall back to `input.recentCompletionRate`
+    // (a 0..100 percentage) with trend defaulted to "stable". A rate of -1
+    // means "unknown", which the calculator treats as neutral (= Phase-1
+    // byte-identical output).
+    const resolvedProfile =
+      capacityProfile ??
+      (typeof input.recentCompletionRate === "number" &&
+      input.recentCompletionRate >= 0
+        ? { recentCompletionRate: input.recentCompletionRate / 100 }
+        : undefined);
+
+    const budgetResult = await resolveDailyCognitiveBudget(
+      segment,
+      now,
+      resolvedProfile,
+    );
+    const budget = budgetResult.effective;
+
+    // A-3: broadcast the effective budget + base + multipliers. Critique &
+    // harness read this instead of re-deriving. Fire-and-forget; never blocks.
+    try {
+      emitAgentBudgetComputed(userId, {
+        agentId: "scheduler",
+        effectiveBudget: budget,
+        baseBudget: budgetResult.base,
+        segment,
+        dayOfWeek: now.getDay(),
+        multipliers: budgetResult.appliedMultipliers,
+      });
+    } catch {
+      // non-fatal
+    }
+
+    const trimmed = enforceCognitiveBudget(workingTasks, annotations, budget, segment);
+
+    // A-4: opt-in two-channel arbitration. Off by default → byte-identical
+    // Phase-1 (tier, cost desc) ordering. When on, reorder the kept set by
+    // finalScore blended from tier × priorityScore × recency.
+    const arbitrationEnabled =
+      user?.settings?.priorityArbitrationEnabled === true;
+    let arbitration: {
+      priorityScores: Record<string, number>;
+      daysSinceLastWorked: Record<string, number>;
+    } | null = null;
+    if (arbitrationEnabled) {
+      const daysMap: Record<string, number> = {};
+      for (const g of input.goals) {
+        for (const t of g.planTasksToday) {
+          daysMap[t.id] = g.daysSinceLastWorked;
+        }
+      }
+      arbitration = {
+        priorityScores: gatekeeper.priorityScores ?? {},
+        daysSinceLastWorked: daysMap,
+      };
+    }
+    workingTasks = orderByTier(trimmed.kept, annotations, segment, arbitration);
     deferredByBudget = trimmed.deferred;
+
+    console.log(
+      `[scheduler] arbitration=${arbitrationEnabled ? "on" : "off"} (kept=${workingTasks.length})`,
+    );
+    if (arbitrationEnabled && arbitration) {
+      const top5 = workingTasks.slice(0, 5).map((t) => {
+        const a = annotations[t.id];
+        const tier = (a?.tier ?? "day") as FinalScoreTier;
+        const breakdown = computeFinalScoreBreakdown({
+          tier,
+          priorityScore: arbitration!.priorityScores[t.id],
+          daysSinceLastWorked: arbitration!.daysSinceLastWorked[t.id],
+        });
+        return {
+          id: t.id,
+          title: t.title,
+          tier,
+          finalScore: Number(breakdown.finalScore.toFixed(2)),
+          components: {
+            tier: Number(breakdown.tierComponent.toFixed(2)),
+            priority: Number(breakdown.priorityComponent.toFixed(2)),
+            recency: Number(breakdown.recencyComponent.toFixed(2)),
+          },
+        };
+      });
+      console.log("[scheduler] arbitration top5:", JSON.stringify(top5));
+    }
     if (deferredByBudget.length > 0) {
       console.log(
-        `[scheduler] Deferred ${deferredByBudget.length} task(s) over cognitive budget (${budget}):`,
+        `[scheduler] Deferred ${deferredByBudget.length} task(s) over cognitive budget (effective=${budget}, base=${budgetResult.base}, segment=${segment}):`,
         deferredByBudget,
       );
+    }
+
+    // ── B-2: cognitiveLoad → weeklyAvailability slot matching ──
+    // Opt-in via settings.cognitiveLoadMatchingEnabled. When on, map today's
+    // tasks to slots whose `importance` matches the task's cognitiveLoad and
+    // dual-write scheduled_start/end ISO + legacy HH:MM. Default off → no
+    // scheduler-originated time-block writes (byte-identical to pre-B-2).
+    if (
+      user?.settings?.cognitiveLoadMatchingEnabled === true &&
+      Array.isArray(user.weeklyAvailability) &&
+      user.weeklyAvailability.length > 0 &&
+      workingTasks.length > 0
+    ) {
+      try {
+        await assignSlotsForToday({
+          userId,
+          date: input.date,
+          tasks: workingTasks,
+          annotations,
+          timeEstimator,
+          weeklyAvailability: user.weeklyAvailability,
+          scheduledTasks: input.scheduledTasks,
+          energyEnabled: user?.settings?.dataDrivenEnergyEnabled === true,
+        });
+      } catch (err) {
+        console.error("[scheduler] B-2 slot matching failed:", err);
+      }
     }
   }
 

@@ -69,6 +69,9 @@ function computeGoalRotation(input: TaskStateInput): GoalRotation {
 
   for (const g of input.goals) {
     if (g.goalType !== "big") continue;
+    // A-5: paused goals are intentionally parked by the user. Skip them so
+    // the staleness boost doesn't spam their tasks back into the daily plan.
+    if (g.status === "paused") continue;
     const recency = Math.min(g.daysSinceLastWorked, 14);
     const recencyScore = recency / 14;
     rotationScores[g.id] = recencyScore;

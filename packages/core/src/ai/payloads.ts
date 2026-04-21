@@ -154,6 +154,21 @@ export interface AnalyzeQuickTaskPayload extends EnrichedPayload {
   goals?: LooseRow[];
 }
 
+export type ImageToTodosMediaType = "image/jpeg" | "image/png" | "image/webp";
+
+export type ImageToTodosSource = "upload" | "paste" | "screenshot";
+
+export interface ImageToTodosPayload extends EnrichedPayload {
+  /** Raw base64 image data (no `data:` prefix). */
+  imageBase64: string;
+  mediaType: ImageToTodosMediaType;
+  source: ImageToTodosSource;
+  /** Optional user-provided hint about what's in the image. */
+  userHint?: string;
+  /** Caller's effective "today" — anchors suggestedDate resolution. */
+  todayDate?: string;
+}
+
 /** Mapping from RequestType → payload interface. Used by the router to
  *  discriminate and by callers to pick the right shape. */
 export interface AIPayloadMap {
@@ -171,4 +186,5 @@ export interface AIPayloadMap {
   "analyze-monthly-context": AnalyzeMonthlyContextPayload;
   "home-chat": HomeChatPayload;
   "chat": UnifiedChatPayload;
+  "image-to-todos": ImageToTodosPayload;
 }

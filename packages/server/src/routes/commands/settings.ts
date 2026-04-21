@@ -6,8 +6,15 @@ import {
   repos,
   getPool,
   getCurrentUserId,
+  getClient,
 } from "./_helpers";
 import type { UserProfile, UserSettings, TimeBlock } from "./_helpers";
+import { USER_SEGMENTS, type UserSegment } from "@northstar/core";
+import { runOnboardingExtract } from "@northstar/core/handlers";
+
+const USER_SEGMENT_SET = new Set<string>(USER_SEGMENTS);
+
+type ChatMessage = { role: string; content: string };
 
 export async function cmdSaveMonthlyContext(
   body: Record<string, unknown>,
@@ -44,6 +51,21 @@ export async function cmdUpdateSettings(
     await repos.users.updateWeeklyAvailability(weeklyAvail);
   }
   const { weeklyAvailability: _wa, ...settingsPatch } = patch;
+  // Defensive validation for userSegment — strip unknown values so a
+  // malformed harness edit cannot poison the pipeline. Any other field
+  // passes through unchanged (existing behaviour).
+  if (
+    "userSegment" in settingsPatch &&
+    settingsPatch.userSegment !== null &&
+    settingsPatch.userSegment !== undefined &&
+    !USER_SEGMENT_SET.has(String(settingsPatch.userSegment))
+  ) {
+    console.warn(
+      "[update-settings] ignoring unknown userSegment:",
+      settingsPatch.userSegment,
+    );
+    delete settingsPatch.userSegment;
+  }
   if (Object.keys(settingsPatch).length > 0) {
     await repos.users.updateSettings(settingsPatch as Partial<UserSettings>);
   }
@@ -86,6 +108,31 @@ export async function cmdCompleteOnboarding(
   } else {
     await repos.users.completeOnboarding(name, goalRaw, weeklyAvailability);
   }
+
+  // Phase B segment extraction: if the caller passed the onboarding
+  // transcript AND userSegment isn't already set, run a one-shot
+  // classification and persist. Any failure resolves to "general" via
+  // runOnboardingExtract's internal fallback; never blocks onboarding.
+  const messages = body.messages as ChatMessage[] | undefined;
+  const currentSegment = current?.settings?.userSegment;
+  if (
+    Array.isArray(messages) &&
+    messages.length > 0 &&
+    (currentSegment === undefined || currentSegment === null)
+  ) {
+    try {
+      const result = await runOnboardingExtract(getClient(), {
+        messages,
+        goalRaw,
+      });
+      await repos.users.updateSettings({
+        userSegment: result.userSegment as UserSegment,
+      });
+    } catch (err) {
+      console.error("[complete-onboarding] segment extraction failed:", err);
+    }
+  }
+
   return { ok: true };
 }
 

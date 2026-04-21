@@ -13,6 +13,7 @@ import {
   buildMemoryContext,
   computeCapacityProfile,
   emitAgentProgress,
+  emitViewInvalidate,
   generateAndPersistDailyTasks,
   splitPlan,
   mergePlans,
@@ -22,6 +23,13 @@ import {
   getModelForTask,
   personalizeSystem,
 } from "./_helpers";
+import {
+  classifyReschedule,
+  type RescheduleLevel,
+  type RescheduleClassifierOutput,
+} from "@northstar/core";
+import { computeLowCompletionStreak } from "../../services/lowCompletionStreak";
+import { LOCAL_RESCHEDULE_SYSTEM } from "../../agents/prompts/adaptiveReschedule";
 
 /**
  * Lazy Week Expansion (GoalAct pattern) — when a locked week is unlocked,
@@ -344,6 +352,7 @@ export async function cmdRefreshDailyPlan(
       const memoryContext = await buildMemoryContext(memory, "daily");
       const user = await repos.users.get();
       const { runCritique } = await import("../../critique");
+      const { computeDynamicBudget } = await import("@northstar/core");
 
       // Compute a 3-day rolling check for lifetime/quarter tasks so the
       // critique agent has the signal it needs for the rubric without
@@ -357,6 +366,27 @@ export async function cmdRefreshDailyPlan(
         tier: t.tier,
       }));
 
+      // A-3: mirror the scheduler's budget resolution so critique cites the
+      // same effective number the scheduler used for trim decisions. Reaches
+      // Phase-1 byte-identical output when recentCompletionRate is unknown.
+      const recentLogs = await repos.dailyLogs.list(startDate, date);
+      const rate = recentLogs.length > 0
+        ? (() => {
+            const tasks = recentTasks;
+            const total = tasks.length;
+            const completed = tasks.filter((t) => t.completed).length;
+            return total > 0 ? completed / total : -1;
+          })()
+        : -1;
+      const segment = user?.settings?.userSegment ?? "general";
+      const base = user?.settings?.dailyCognitiveBudget ?? 22;
+      const budgetResult = computeDynamicBudget({
+        base,
+        segment,
+        dayOfWeek: new Date(date + "T00:00:00").getDay(),
+        recentCompletionRate: rate >= 0 ? rate : undefined,
+      });
+
       await runCritique({
         userId,
         handler: "regenerate-daily-tasks",
@@ -364,7 +394,10 @@ export async function cmdRefreshDailyPlan(
         memoryContext,
         payload: {
           date,
-          dailyCognitiveBudget: user?.settings?.dailyCognitiveBudget ?? 22,
+          // Preserve the base for rubric context; add effective so critique
+          // can cite what the scheduler actually applied.
+          dailyCognitiveBudget: base,
+          effectiveCognitiveBudget: budgetResult.effective,
           recentTiers, // last 3 days, for the lifetime/quarter streak check
         },
         correlationId: date,
@@ -384,16 +417,46 @@ export async function cmdRegenerateDailyTasks(
   return cmdRefreshDailyPlan(body);
 }
 
+// ── Adaptive reschedule ──────────────────────────────────
+//
+// Phase 1 (Initiative B) splits this into three scopes behind a pure
+// classifier. Plan-level preserves byte-identical behaviour for rollback
+// safety. Local and micro are additive rewriters.
+
+type GoalRow = NonNullable<Awaited<ReturnType<typeof repos.goals.get>>>;
+type GoalPlanT = import("@northstar/core").GoalPlan;
+type GoalPlanTaskT = import("@northstar/core").GoalPlanTask;
+type SplitT = ReturnType<typeof splitPlan>;
+
+const VALID_SCOPE: readonly RescheduleLevel[] = ["micro", "local", "plan"];
+
+function validateScopeOverride(v: unknown): RescheduleLevel | null {
+  if (typeof v !== "string") return null;
+  return (VALID_SCOPE as readonly string[]).includes(v)
+    ? (v as RescheduleLevel)
+    : null;
+}
+
+function clonePlan(plan: GoalPlanT): GoalPlanT {
+  return JSON.parse(JSON.stringify(plan)) as GoalPlanT;
+}
+
 export async function cmdAdaptiveReschedule(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const goalId = (body.goalId as string) || (body.payload as Record<string, unknown>)?.goalId as string;
+  const payload = (body.payload as Record<string, unknown> | undefined) ?? {};
+  const goalId =
+    (body.goalId as string) || (payload.goalId as string);
   if (!goalId) throw new Error("command:adaptive-reschedule requires goalId");
   const goal = await repos.goals.get(goalId);
   if (!goal) throw new Error(`goal ${goalId} not found`);
   if (!goal.plan || !Array.isArray(goal.plan.years)) {
     throw new Error(`goal ${goalId} has no plan to reschedule`);
   }
+
+  const scopeOverride =
+    validateScopeOverride(body.scopeOverride) ??
+    validateScopeOverride(payload.scopeOverride);
 
   const userId = getCurrentUserId();
   const today = getEffectiveDate();
@@ -416,7 +479,80 @@ export async function cmdAdaptiveReschedule(
   );
   const actualPace = capacity.avgTasksCompletedPerDay || 2;
 
-  const { pastPlan, futurePlan, overdueTasks } = splitPlan(goal.plan);
+  const split = splitPlan(goal.plan);
+  const streak = computeLowCompletionStreak(logsForCapacity, today);
+  const classification = classifyReschedule({
+    overdueTasks: split.overdueTasks.map((t) => ({
+      id: t.id,
+      originalWeek: t.originalWeek,
+      originalDay: t.originalDay,
+    })),
+    milestones: goal.plan.milestones ?? [],
+    avgTasksCompletedPerDay: actualPace,
+    lowCompletionStreakDays: streak,
+    scopeOverride,
+  });
+
+  console.log(
+    `[adaptive-reschedule] level=${classification.level} overdue=${split.overdueTasks.length} ` +
+      `weeks=${classification.affectedWeekLabels.length} streak=${streak} override=${scopeOverride ?? "none"}`,
+  );
+
+  if (classification.level === "plan") {
+    return runPlanLevelReschedule({
+      userId,
+      goalId,
+      goal,
+      today,
+      actualPace,
+      split,
+      memory,
+    });
+  }
+  if (classification.level === "local") {
+    return runLocalLevelReschedule({
+      userId,
+      goalId,
+      goal,
+      today,
+      actualPace,
+      split,
+      memory,
+      classification,
+    });
+  }
+  return runMicroLevelReschedule({
+    userId,
+    goalId,
+    goal,
+    today,
+    actualPace,
+    split,
+    memory,
+    classification,
+  });
+}
+
+// ── Plan-level: byte-identical to pre-Phase-1 behaviour ────────────
+
+interface ReschedContext {
+  userId: string;
+  goalId: string;
+  goal: GoalRow;
+  today: string;
+  actualPace: number;
+  split: SplitT;
+  memory: Awaited<ReturnType<typeof loadMemory>>;
+}
+interface ReschedContextWithClassification extends ReschedContext {
+  classification: RescheduleClassifierOutput;
+}
+
+async function runPlanLevelReschedule(
+  ctx: ReschedContext,
+): Promise<unknown> {
+  const { userId, goalId, goal, today, actualPace, split, memory } = ctx;
+  const { pastPlan, futurePlan, overdueTasks } = split;
 
   const futureTasks: Array<{ title: string; description: string; week: string; day: string }> = [];
   for (const yr of futurePlan.years) {
@@ -479,7 +615,7 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
 
   let planUpdated = false;
   if (newFuturePlan && Array.isArray((newFuturePlan as { years?: unknown }).years)) {
-    const typedFuture = newFuturePlan as unknown as import("@northstar/core").GoalPlan;
+    const typedFuture = newFuturePlan as unknown as GoalPlanT;
 
     // Keep past plan exactly as-is — completed tasks stay, incomplete
     // tasks stay in their original positions. The AI has redistributed
@@ -547,6 +683,309 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
   }
 
   return { ok: true, planUpdated, goalId, summary, overdueTasks: overdueTasks.length, actualPace };
+}
+
+// ── Local-level: narrow AI rewrite of a bounded future window ──────
+
+async function runLocalLevelReschedule(
+  ctx: ReschedContextWithClassification,
+): Promise<unknown> {
+  const { userId, goalId, goal, today, actualPace, split, memory, classification } = ctx;
+  const { pastPlan, futurePlan, overdueTasks } = split;
+
+  // Build an ordered list of future weeks with their month-coordinates so
+  // we can splice AI-returned weeks back in place.
+  type WeekLocator = {
+    yearIdx: number;
+    monthIdx: number;
+    weekIdx: number;
+    week: import("@northstar/core").GoalPlanWeek;
+  };
+  const weekList: WeekLocator[] = [];
+  futurePlan.years.forEach((yr, yi) => {
+    yr.months.forEach((mo, mi) => {
+      mo.weeks.forEach((wk, wi) => {
+        weekList.push({ yearIdx: yi, monthIdx: mi, weekIdx: wi, week: wk });
+      });
+    });
+  });
+
+  if (weekList.length === 0) {
+    console.warn(`[adaptive-reschedule] local path found no future weeks for goal ${goalId} — falling back to plan`);
+    return runPlanLevelReschedule(ctx);
+  }
+
+  // Target window: 2-4 weeks, enough to fit overdue load at actualPace.
+  const targetCount = Math.max(
+    2,
+    Math.min(
+      4,
+      Math.ceil((overdueTasks.length + 3) / Math.max(actualPace * 5, 1)) + 1,
+    ),
+  );
+  const targetWeeks = weekList.slice(0, Math.min(targetCount, weekList.length));
+
+  const client = getClient();
+  if (!client) throw new Error("ANTHROPIC_API_KEY not configured");
+
+  const memoryContext = await buildMemoryContext(memory, "daily");
+  const milestoneTitle =
+    classification.affectedMilestoneIds.length > 0
+      ? (goal.plan!.milestones ?? []).find(
+          (m) => m.id === classification.affectedMilestoneIds[0],
+        )?.title ?? ""
+      : "";
+
+  emitAgentProgress(userId, {
+    agentId: "adaptive-reschedule",
+    phase: "running",
+    message: "Adjusting part of your plan",
+  });
+
+  const userMessage = `TODAY: ${today}
+GOAL: "${goal.title}"
+DESCRIPTION: ${goal.description ?? ""}
+MILESTONE CONTEXT: ${milestoneTitle || "(unspecified — rewrite within the window)"}
+
+ACTUAL PACE: ${actualPace} tasks/day (averaged over past 2 weeks)
+
+OVERDUE TASKS (${overdueTasks.length} — need to land inside the window below):
+${overdueTasks.map((t) => `- "${t.title}" (was: ${t.originalWeek}, ${t.originalDay}) — "${t.description}"`).join("\n") || "None"}
+
+MILESTONE WEEKS (window you may rewrite — preserve these week ids in order):
+${JSON.stringify(targetWeeks.map((w) => w.week), null, 2)}
+
+Return ONLY the rewritten weeks for this window as {"weeks":[...]} using the same week ids.`;
+
+  const parsed = await runStreamingHandler<Record<string, unknown>>({
+    handlerKind: "adaptive-reschedule-local",
+    client,
+    createRequest: () => ({
+      model: getModelForTask("reallocate"),
+      max_tokens: 8192,
+      system: personalizeSystem(LOCAL_RESCHEDULE_SYSTEM, memoryContext),
+      messages: [{ role: "user", content: userMessage }],
+    }),
+    parseResult: (text) => {
+      const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      return JSON.parse(cleaned);
+    },
+  });
+
+  emitAgentProgress(userId, { agentId: "adaptive-reschedule", phase: "done" });
+
+  const resultObj = (parsed ?? {}) as Record<string, unknown>;
+  const returnedWeeks = Array.isArray(resultObj.weeks)
+    ? (resultObj.weeks as import("@northstar/core").GoalPlanWeek[])
+    : null;
+
+  if (!returnedWeeks || returnedWeeks.length === 0) {
+    console.warn(`[adaptive-reschedule] local AI returned no valid weeks for goal ${goalId} — plan not updated`);
+    return { ok: true, planUpdated: false, goalId, summary: null, overdueTasks: overdueTasks.length, actualPace };
+  }
+
+  // Splice back by week id
+  const cloned = clonePlan(futurePlan);
+  const returnedById = new Map(returnedWeeks.filter((w) => w && w.id).map((w) => [w.id, w]));
+  let spliced = 0;
+  for (const loc of targetWeeks) {
+    const replacement = returnedById.get(loc.week.id);
+    if (!replacement) continue;
+    const month = cloned.years[loc.yearIdx]?.months?.[loc.monthIdx];
+    if (!month) continue;
+    month.weeks[loc.weekIdx] = {
+      ...loc.week,
+      ...replacement,
+      id: loc.week.id,
+      label: loc.week.label,
+      locked: false,
+    };
+    spliced++;
+  }
+
+  if (spliced === 0) {
+    console.warn(`[adaptive-reschedule] local splice matched 0 weeks for goal ${goalId} — plan not updated`);
+    return { ok: true, planUpdated: false, goalId, summary: null, overdueTasks: overdueTasks.length, actualPace };
+  }
+
+  const merged = mergePlans(pastPlan, cloned);
+  await repos.goalPlan.replacePlan(
+    goalId,
+    merged,
+    goal.createdAt?.split("T")[0],
+    goal.targetDate,
+  );
+  // Local scope does NOT touch targetDate — that's plan-level's job.
+  const updatedGoal = {
+    ...goal,
+    plan: merged,
+    rescheduleBannerDismissed: true,
+  } as typeof goal;
+  await repos.goals.upsert(updatedGoal);
+  await repos.nudges.dismissByContext(goalId);
+
+  try {
+    const pendingTasks = await repos.dailyTasks.listPendingReschedule(today);
+    const goalOverdue = pendingTasks.filter((t) => t.goalId === goalId);
+    for (const t of goalOverdue) {
+      await repos.dailyTasks.update(t.id, { payload: { rescheduleDismissed: true } });
+    }
+    if (goalOverdue.length > 0) {
+      console.log(`[adaptive-reschedule] Dismissed ${goalOverdue.length} overdue daily_tasks for goal ${goalId} (local)`);
+    }
+  } catch (err) {
+    console.warn(`[adaptive-reschedule] Failed to dismiss overdue tasks for goal ${goalId}:`, err);
+  }
+
+  emitViewInvalidate(userId, {
+    viewKinds: ["view:goal-plan", "view:dashboard", "view:tasks", "view:calendar"],
+  });
+
+  console.log(
+    `[adaptive-reschedule] local path rewrote ${spliced} week(s) for goal ${goalId}. overdue=${overdueTasks.length}`,
+  );
+
+  void (async () => {
+    try {
+      const { runCritique } = await import("../../critique");
+      await runCritique({
+        userId,
+        handler: "adaptive-reschedule-local",
+        primaryOutput: { weeks: returnedWeeks, reasoning: classification.reasoning },
+        memoryContext,
+        payload: { goalId, level: "local", overdueCount: overdueTasks.length, actualPace },
+        correlationId: goalId,
+      });
+    } catch (err) {
+      console.error("[critique] adaptive-reschedule-local dispatch failed:", err);
+    }
+  })();
+
+  return { ok: true, planUpdated: true, goalId, summary: null, overdueTasks: overdueTasks.length, actualPace };
+}
+
+// ── Micro-level: deterministic placement, no AI ────────────────────
+
+async function runMicroLevelReschedule(
+  ctx: ReschedContextWithClassification,
+): Promise<unknown> {
+  const { userId, goalId, goal, today, actualPace, split, memory, classification } = ctx;
+  const { pastPlan, futurePlan, overdueTasks } = split;
+
+  if (overdueTasks.length === 0) {
+    // Caught-up goal: classifier routes here; no work to do.
+    emitViewInvalidate(userId, {
+      viewKinds: ["view:dashboard", "view:tasks", "view:calendar"],
+    });
+    return { ok: true, planUpdated: false, goalId, summary: null, overdueTasks: 0, actualPace };
+  }
+
+  if (overdueTasks.length > 3) {
+    // Forced scopeOverride=micro on a slip the micro path isn't sized for.
+    console.log(
+      `[adaptive-reschedule] micro path received ${overdueTasks.length} overdue tasks (>3) → falling back to local`,
+    );
+    return runLocalLevelReschedule(ctx);
+  }
+
+  const capacity = Math.max(Math.ceil(actualPace), 1);
+  const cloned = clonePlan(futurePlan);
+  const placements: Array<{ taskId: string; title: string; newDay: string }> = [];
+  const toPlace = overdueTasks.slice(0, 3);
+
+  for (const task of toPlace) {
+    let placed = false;
+    outer: for (const yr of cloned.years) {
+      for (const mo of yr.months) {
+        for (const wk of mo.weeks) {
+          for (const dy of wk.days) {
+            if (!dy.label || !/^\d{4}-\d{2}-\d{2}$/.test(dy.label)) continue;
+            if (dy.label < today) continue;
+            const dayTasks = dy.tasks ?? [];
+            if (dayTasks.length < capacity) {
+              const moved: GoalPlanTaskT = {
+                id: task.id,
+                title: task.title,
+                description: task.description,
+                durationMinutes: task.durationMinutes,
+                priority: task.priority,
+                category: task.category,
+                completed: false,
+              };
+              dy.tasks = [...dayTasks, moved];
+              placements.push({ taskId: task.id, title: task.title, newDay: dy.label });
+              placed = true;
+              break outer;
+            }
+          }
+        }
+      }
+    }
+    if (!placed) {
+      console.log(
+        `[adaptive-reschedule] micro-path capacity exhausted → falling back to local`,
+      );
+      return runLocalLevelReschedule(ctx);
+    }
+  }
+
+  const merged = mergePlans(pastPlan, cloned);
+  await repos.goalPlan.replacePlan(
+    goalId,
+    merged,
+    goal.createdAt?.split("T")[0],
+    goal.targetDate,
+  );
+  const updatedGoal = {
+    ...goal,
+    plan: merged,
+    rescheduleBannerDismissed: true,
+  } as typeof goal;
+  await repos.goals.upsert(updatedGoal);
+  await repos.nudges.dismissByContext(goalId);
+
+  const placedTitles = new Set(placements.map((p) => p.title));
+  try {
+    const pendingTasks = await repos.dailyTasks.listPendingReschedule(today);
+    const matches = pendingTasks.filter(
+      (t) => t.goalId === goalId && placedTitles.has(t.title),
+    );
+    for (const t of matches) {
+      await repos.dailyTasks.update(t.id, { payload: { rescheduleDismissed: true } });
+    }
+    if (matches.length > 0) {
+      console.log(`[adaptive-reschedule] Dismissed ${matches.length} overdue daily_tasks for goal ${goalId} (micro)`);
+    }
+  } catch (err) {
+    console.warn(`[adaptive-reschedule] Failed to dismiss overdue tasks for goal ${goalId}:`, err);
+  }
+
+  emitViewInvalidate(userId, {
+    viewKinds: ["view:dashboard", "view:tasks", "view:calendar"],
+  });
+
+  console.log(
+    `[adaptive-reschedule] micro path placed ${placements.length}/${overdueTasks.length} overdue tasks for goal ${goalId}`,
+  );
+
+  void (async () => {
+    try {
+      const memoryContext = await buildMemoryContext(memory, "daily");
+      const { runCritique } = await import("../../critique");
+      await runCritique({
+        userId,
+        handler: "adaptive-reschedule-micro",
+        primaryOutput: { placements, reasoning: classification.reasoning },
+        memoryContext,
+        payload: { goalId, level: "micro", overdueCount: overdueTasks.length, actualPace },
+        correlationId: goalId,
+      });
+    } catch (err) {
+      console.error("[critique] adaptive-reschedule-micro dispatch failed:", err);
+    }
+  })();
+
+  return { ok: true, planUpdated: true, goalId, summary: null, overdueTasks: overdueTasks.length, actualPace };
 }
 
 /**
@@ -747,6 +1186,18 @@ export async function cmdAcceptTaskProposal(
   }
 
   const id = (proposal.id as string) ?? crypto.randomUUID();
+
+  // B-4: gap-filler proposals ride in with a `proposedSlot` so we can dual-
+  // write the time block at accept time. Other proposal sources have no
+  // slot and this block is skipped entirely.
+  const proposedSlot = (proposal.proposedSlot as
+    | { startIso?: string; endIso?: string }
+    | undefined) ?? undefined;
+  const hasSlot =
+    proposedSlot !== undefined &&
+    typeof proposedSlot.startIso === "string" &&
+    typeof proposedSlot.endIso === "string";
+
   await repos.dailyTasks.insert({
     id,
     date: today,
@@ -763,9 +1214,26 @@ export async function cmdAcceptTaskProposal(
       priority: (proposal.priority as string) ?? "should-do",
       category: (proposal.category as string) ?? "planning",
       whyToday: (proposal.whyToday as string) ?? "",
-      source: "ai-generated",
+      source: hasSlot ? "gap-filler" : "ai-generated",
+      ...(hasSlot
+        ? {
+            scheduledTime: proposedSlot!.startIso!.slice(11, 16),
+            scheduledEndTime: proposedSlot!.endIso!.slice(11, 16),
+          }
+        : {}),
     },
   });
+
+  if (hasSlot) {
+    try {
+      await repos.dailyTasks.update(id, {
+        scheduledStartIso: proposedSlot!.startIso!,
+        scheduledEndIso: proposedSlot!.endIso!,
+      });
+    } catch (err) {
+      console.error("[accept-task-proposal] failed to dual-write slot:", err);
+    }
+  }
 
   return { ok: true, taskId: id };
 }
@@ -823,4 +1291,78 @@ export async function cmdHealAllGoalPlans(): Promise<unknown> {
   }
 
   return { ok: true, healed: results.filter((r) => r.healed).length, total: bigGoals.length, results };
+}
+
+// ── Priority feedback (A-2) ─────────────────────────────────
+
+/**
+ * Explicit priority feedback from the UI ("this shouldn't be priority 1
+ * today"). Writes a priority_feedback signal that reflection later
+ * distills into ranking-preference rules.
+ *
+ * Implicit feedback (complete/skip/defer) is captured automatically from
+ * the task command handlers; this path is the explicit "wrong priority"
+ * button.
+ */
+export async function cmdSubmitPriorityFeedback(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  const signal = body.signal as string | undefined;
+  const reason = body.reason as string | undefined;
+  if (!taskId) throw new Error("command:submit-priority-feedback requires args.taskId");
+  if (!signal) throw new Error("command:submit-priority-feedback requires args.signal");
+  const allowed = new Set(["complete", "skip", "defer", "wrong_priority"]);
+  if (!allowed.has(signal)) {
+    throw new Error(
+      `command:submit-priority-feedback signal must be one of complete|skip|defer|wrong_priority, got ${signal}`,
+    );
+  }
+  const task = await repos.dailyTasks.get(taskId);
+  if (!task) return { ok: true, noop: true };
+  const pl = task.payload as Record<string, unknown>;
+  const category = (pl?.category as string) ?? "planning";
+  const tier = (pl?.tier as string) ?? undefined;
+  const dayOfWeek = new Date(task.date + "T00:00:00").getDay();
+  const { recordPriorityFeedback } = await import("../../services/signalRecorder");
+  await recordPriorityFeedback(task.title, signal as "complete" | "skip" | "defer" | "wrong_priority", {
+    category,
+    tier,
+    dayOfWeek,
+    reason,
+  });
+  return { ok: true };
+}
+
+// ── Gap fillers (B-4) ──────────────────────────────────────
+
+/**
+ * B-4: detect today's calendar gaps, pick short plan tasks that fit, and
+ * write them into `pending_tasks` with `status="ready"` so the existing
+ * `command:accept-task-proposal` path can promote them into daily_tasks.
+ *
+ * Flag-gated — when `settings.gapFillersEnabled` is not true the command
+ * returns `{ ok: true, skipped: true }` without reading gaps or writing
+ * proposals. That keeps B-4 additive for pre-upgrade users.
+ */
+export async function cmdProposeGapFillers(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const date = (body.date as string) || getEffectiveDate();
+  const { proposeGapFillers } = await import("../../services/gapFiller");
+  const result = await proposeGapFillers(date);
+  if (result.skipped) {
+    return { ok: true, skipped: true, reason: result.reason ?? "skipped" };
+  }
+  return {
+    ok: true,
+    proposals: result.proposals.map((p) => ({
+      id: p.proposalId,
+      title: p.task.title,
+      goalId: p.task.goalId,
+      durationMinutes: p.task.durationMinutes,
+      proposedSlot: { startIso: p.gap.startIso, endIso: p.gap.endIso },
+    })),
+    gapsDetected: result.gaps.length,
+  };
 }

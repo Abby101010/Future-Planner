@@ -281,6 +281,127 @@ async function bumpReflectionMeta(userId: string): Promise<void> {
   );
 }
 
+// ── Priority feedback synthesis (A-2) ───────────────────
+
+const DAY_NAMES_A2 = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+interface PriorityFeedbackParsed {
+  signal: "complete" | "skip" | "defer" | "wrong_priority" | "unknown";
+  category: string | null;
+  dayOfWeek: number | null;
+  timestamp: string;
+}
+
+function parsePriorityFeedbackValue(
+  value: string,
+  timestamp: string,
+): PriorityFeedbackParsed {
+  const parts = value.split(",").map((s) => s.trim());
+  let signal: PriorityFeedbackParsed["signal"] = "unknown";
+  let category: string | null = null;
+  let dayOfWeek: number | null = null;
+  for (const p of parts) {
+    const [k, ...rest] = p.split(":");
+    const v = rest.join(":");
+    if (k === "signal") {
+      if (v === "complete" || v === "skip" || v === "defer" || v === "wrong_priority") {
+        signal = v;
+      }
+    } else if (k === "category") {
+      category = v || null;
+    } else if (k === "dow") {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0 && n <= 6) dayOfWeek = n;
+    }
+  }
+  return { signal, category, dayOfWeek, timestamp };
+}
+
+/**
+ * Walk priority_feedback signals from the last 14 days, bucket by
+ * (category, dayOfWeek), and upsert an "avoid" or "prefer" preference
+ * when the skip:complete ratio crosses a confident threshold.
+ *
+ * Returns the number of preferences written.
+ */
+export async function synthesizePriorityFeedbackRules(
+  userId: string,
+  allSignals: MemoryStore["signals"],
+  existingPrefs: SemanticPreference[],
+): Promise<number> {
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const sinceIso = fourteenDaysAgo.toISOString();
+
+  const buckets = new Map<
+    string,
+    { category: string; dow: number; completes: number; skips: number; defers: number; wrongs: number }
+  >();
+
+  for (const sig of allSignals) {
+    if (sig.type !== "priority_feedback") continue;
+    if (sig.timestamp < sinceIso) continue;
+    const parsed = parsePriorityFeedbackValue(sig.value, sig.timestamp);
+    if (parsed.category === null || parsed.dayOfWeek === null) continue;
+    const key = `${parsed.category}|${parsed.dayOfWeek}`;
+    let b = buckets.get(key);
+    if (!b) {
+      b = { category: parsed.category, dow: parsed.dayOfWeek, completes: 0, skips: 0, defers: 0, wrongs: 0 };
+      buckets.set(key, b);
+    }
+    if (parsed.signal === "complete") b.completes++;
+    else if (parsed.signal === "skip") b.skips++;
+    else if (parsed.signal === "defer") b.defers++;
+    else if (parsed.signal === "wrong_priority") b.wrongs++;
+  }
+
+  let written = 0;
+  for (const b of buckets.values()) {
+    const samples = b.completes + b.skips + b.defers + b.wrongs;
+    if (samples < 5) continue;
+    const negatives = b.skips + b.defers + b.wrongs;
+    const positives = b.completes;
+    const dayName = DAY_NAMES_A2[b.dow] ?? `dow${b.dow}`;
+
+    // Avoid rule — skip/defer/wrong dominate.
+    if (positives === 0 ? negatives >= 3 : negatives / Math.max(positives, 1) >= 3) {
+      await upsertPreference(
+        userId,
+        existingPrefs,
+        `Avoid ${b.category} tasks on ${dayName}s — ${negatives} of ${samples} got skipped/deferred in the last 2 weeks`,
+        ["priority", `category:${b.category}`, `dow:${b.dow}`, "avoid", "daily", "planning"],
+        -0.7,
+        `priority_feedback: category=${b.category}, dow=${b.dow}, negatives=${negatives}/${samples}`,
+      );
+      written++;
+      continue;
+    }
+
+    // Prefer rule — completes dominate.
+    if (negatives === 0 ? positives >= 3 : positives / Math.max(negatives, 1) >= 3) {
+      await upsertPreference(
+        userId,
+        existingPrefs,
+        `Prefer ${b.category} tasks on ${dayName}s — ${positives} of ${samples} completed in the last 2 weeks`,
+        ["priority", `category:${b.category}`, `dow:${b.dow}`, "prefer", "daily", "planning"],
+        0.7,
+        `priority_feedback: category=${b.category}, dow=${b.dow}, completes=${positives}/${samples}`,
+      );
+      written++;
+    }
+  }
+
+  return written;
+}
+
 // ── runReflection ───────────────────────────────────────
 
 /**
@@ -444,6 +565,18 @@ Include day names and times in your fact values and preference tags.`;
         );
         insightCount++;
       }
+    }
+
+    // A-2: distill priority_feedback signals into ranking preferences.
+    try {
+      const added = await synthesizePriorityFeedbackRules(
+        userId,
+        memory.signals,
+        memory.preferences,
+      );
+      insightCount += added;
+    } catch (err) {
+      console.warn("[reflection] priority_feedback synthesis failed:", err);
     }
 
     await bumpReflectionMeta(userId);
