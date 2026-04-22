@@ -1,8 +1,8 @@
 {
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": ["backend", "backend/core", "frontend"],
   "scripts": {
-    "typecheck": "tsc -b packages/core packages/server packages/desktop",
+    "typecheck": "tsc -b backend/core backend frontend",
     "build:server": "npm --workspace @northstar/server run build",
     "build:desktop": "npm --workspace @northstar/desktop run build",
     "dev:server": "npm --workspace @northstar/server run dev",
