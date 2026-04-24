@@ -3,8 +3,8 @@
 Source-of-truth mapping: Page → Feature → Interaction → API.
 Frontend runs locally (Electron/Vite). Backend runs remotely. They communicate only over HTTP (plus WebSocket for view-invalidation events).
 
-Last audited: 2026-04-23.
-Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across every identifier.** Brand/display (191 files), Chinese subtitle 北极星 → 星程 (22 call sites), internal npm packages `@northstar/*` → `@starward/*` (200 imports + 3 package.json names + 1 vite alias; workspace symlinks regenerated), BullMQ queue `northstar-bg` → `starward-bg`, Fly app name `northstar-api` → `starward-api` (in `fly.toml`, `frontend/package.json` scripts, `frontend/.env.production`, `frontend/index.html` CSP, `.github/workflows/deploy-backend.yml`, backend/frontend READMEs, all architecture docs), Upstash Redis instance `northstar-redis` → `starward-redis` in docs. ⚠ **OPS BLOCKERS — read before the next deploy or Electron build:** (1) Fly app names are immutable — the deployed app is STILL named `northstar-api` in Fly. Next `fly deploy` will fail because `fly.toml` says `app = "starward-api"`. You must either (a) create a new `starward-api` Fly app, copy secrets (`fly secrets list -a northstar-api` → `fly secrets set ... -a starward-api`), deploy, swap DNS/traffic, then destroy the old app; or (b) revert `fly.toml`'s `app = "..."` line until the Fly app is recreated. (2) Same for `starward-redis` — the deployed Upstash instance is `northstar-redis`; the string change is documentation-only unless you create a new instance and rewire `REDIS_URL`. (3) Running `electron:dev` or `electron:build:*` now sets `VITE_CLOUD_API_URL=https://starward-api.fly.dev` — DNS for that host does NOT resolve yet, so the Electron app CANNOT reach the backend until the Fly app rename is complete. Earlier this session: **Tasks page contract cleanup + Calendar view extended + onboarding rebuild + time map removal.** Earlier this session: **Tasks page contract cleanup + Calendar view extended + onboarding rebuild + time map removal.** Tasks page "Image-to-todos" merged into a single "Add task" feature (text + image are two input modes on one widget, both resolve to `command:create-task`). "Active goals" pause/resume feature removed from Today — lives on Planning / Goal Plan / per-goal Dashboard instead. No backend changes for either. Earlier this session: Calendar view extended, onboarding rebuild, time map removal. `view:calendar` now returns `reminders` (filtered to the date range) and `countsByDate` (per-date task + reminder tallies) so the pending month-grid UI can render count badges and a click-a-date side view without extra queries. Drag-and-drop in day/week views maps to the existing `command:set-task-time-block` (move/resize) and `command:reschedule-task` (cross-day) — no new commands. Reminder commands now invalidate `view:calendar`. Earlier this session: **Onboarding rebuild + time map removal.** Backend-complete 7-step conversational onboarding (2 new agents, 5 new commands, new `view:onboarding` shape with step/messages/proposedGoal/firstTaskId/memoryFacts/memoryPreferences). Time map (`weeklyAvailability` / `TimeBlock`) fully removed from types, runtime, and frontend. **UI pending — see "Onboarding UI to build" under audit notes.** Prior updates: Dashboard Phases 2–6 + goalBreakdown tree (`view:goal-dashboard`, `goalClarifier` + `dashboardInsightAgent`, 5 dashboard commands, 9 methodology KB files).
+Last audited: 2026-04-24.
+Last updated: 2026-04-24 — **Goal methodology alignment (migration 0013 + planner upgrade).** ⚠ **NEW RESPONSE FIELDS — READ BEFORE BUILDING FE:** (1) `view:goal-plan` now returns flat `milestones: GoalPlanMilestone[]` alongside `plan` (FE was ported to read `data.milestones`; backend previously only nested them under `plan.milestones`). `progress` gains `paceDelta?: string`. Observable-state table updated. (2) `view:planning` goals now carry the full card-render field set FE GoalCard expects: `pace` (required; `"on-track" | "ahead" | "behind" | "paused"`; defaults to `"on-track"` until the planningView derivePace helper is replaced with a snapshot-aware reader), `paceDelta?`, `pct?`, `horizon?`, `nextMilestone?`, `nextDue?`, `openTasks?`. (3) Migration `0013_goal_methodology.sql` adds 9 columns on `goals`: `weekly_hours_target`, `current_phase`, `funnel_metrics jsonb`, `skill_map jsonb`, `labor_market_data jsonb`, `plan_rationale`, `pace_tasks_per_day`, `pace_last_computed_at`, `override_log jsonb`. Fully additive — existing goals default to empty / null. No `goal_templates` table (keyword-triggered template invocation stays in RAG retrieval from `knowledge_chunks`). (4) `GoalPlanMilestone` gains optional `rationale`. `GoalPlanTask` gains optional `rationale` + `taskType ∈ {"application"|"skill-building"|"practice"|"targeted-prep"|"other"}`. Planner prompt emits them on every new plan. Readers default to undefined / `"other"` when absent. (5) Dashboard edit commands (`update-goal-notes`, `edit-goal-title`, `edit-milestone`) now append to `goals.override_log` when the value changes. (6) `labor_market_data` is populated by a gated stub (env `STARWARD_LABOR_MARKET_ENABLED=1`) today — provider wiring lands in a follow-up session. — **NorthStar → Starward rename COMPLETE across every identifier.** Brand/display (191 files), Chinese subtitle 北极星 → 星程 (22 call sites), internal npm packages `@northstar/*` → `@starward/*` (200 imports + 3 package.json names + 1 vite alias; workspace symlinks regenerated), BullMQ queue `northstar-bg` → `starward-bg`, Fly app name `northstar-api` → `starward-api` (in `fly.toml`, `frontend/package.json` scripts, `frontend/.env.production`, `frontend/index.html` CSP, `.github/workflows/deploy-backend.yml`, backend/frontend READMEs, all architecture docs), Upstash Redis instance `northstar-redis` → `starward-redis` in docs. ⚠ **OPS BLOCKERS — read before the next deploy or Electron build:** (1) Fly app names are immutable — the deployed app is STILL named `northstar-api` in Fly. Next `fly deploy` will fail because `fly.toml` says `app = "starward-api"`. You must either (a) create a new `starward-api` Fly app, copy secrets (`fly secrets list -a northstar-api` → `fly secrets set ... -a starward-api`), deploy, swap DNS/traffic, then destroy the old app; or (b) revert `fly.toml`'s `app = "..."` line until the Fly app is recreated. (2) Same for `starward-redis` — the deployed Upstash instance is `northstar-redis`; the string change is documentation-only unless you create a new instance and rewire `REDIS_URL`. (3) Running `electron:dev` or `electron:build:*` now sets `VITE_CLOUD_API_URL=https://starward-api.fly.dev` — DNS for that host does NOT resolve yet, so the Electron app CANNOT reach the backend until the Fly app rename is complete. Earlier this session: **Tasks page contract cleanup + Calendar view extended + onboarding rebuild + time map removal.** Earlier this session: **Tasks page contract cleanup + Calendar view extended + onboarding rebuild + time map removal.** Tasks page "Image-to-todos" merged into a single "Add task" feature (text + image are two input modes on one widget, both resolve to `command:create-task`). "Active goals" pause/resume feature removed from Today — lives on Planning / Goal Plan / per-goal Dashboard instead. No backend changes for either. Earlier this session: Calendar view extended, onboarding rebuild, time map removal. `view:calendar` now returns `reminders` (filtered to the date range) and `countsByDate` (per-date task + reminder tallies) so the pending month-grid UI can render count badges and a click-a-date side view without extra queries. Drag-and-drop in day/week views maps to the existing `command:set-task-time-block` (move/resize) and `command:reschedule-task` (cross-day) — no new commands. Reminder commands now invalidate `view:calendar`. Earlier this session: **Onboarding rebuild + time map removal.** Backend-complete 7-step conversational onboarding (2 new agents, 5 new commands, new `view:onboarding` shape with step/messages/proposedGoal/firstTaskId/memoryFacts/memoryPreferences). Time map (`weeklyAvailability` / `TimeBlock`) fully removed from types, runtime, and frontend. **UI pending — see "Onboarding UI to build" under audit notes.** Prior updates: Dashboard Phases 2–6 + goalBreakdown tree (`view:goal-dashboard`, `goalClarifier` + `dashboardInsightAgent`, 5 dashboard commands, 9 methodology KB files).
 
 ---
 
@@ -285,7 +285,7 @@ Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across eve
 | Delete goal | POST /commands/delete-goal | Body: `{goalId}`. |
 | Pause goal | POST /commands/pause-goal | Body: `{goalId}`. |
 | Resume goal | POST /commands/resume-goal | Body: `{goalId}`. |
-| Confirm goal plan | POST /commands/confirm-goal-plan | Body: `{goalId}`. |
+| Confirm goal plan | POST /commands/confirm-goal-plan | Body: `{goalId}`. Flips `planConfirmed=true`, materializes next 14d of daily_tasks, and (0013) seeds `goals.pace_tasks_per_day` from `total plan tasks / days-to-target`. |
 | Expand plan week | POST /commands/expand-plan-week | Body: `{goalId, weekId}`. |
 
 #### Tasks
@@ -327,9 +327,9 @@ Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across eve
 #### Plan regeneration (async jobs — return jobId)
 | Feature | API | Usage |
 |---|---|---|
-| Regenerate goal plan | POST /commands/regenerate-goal-plan | Body: `{goalId}`. Returns `{jobId, async:true}`. |
+| Regenerate goal plan | POST /commands/regenerate-goal-plan | Body: `{goalId}`. Returns `{jobId, async:true}`. Side effects beyond plan replacement (0013): populates `goals.plan_rationale` (from planner output), `goals.current_phase` (from phaseResolver), `goals.labor_market_data` (from stub fetcher unless env-enabled). Planner now emits `planRationale` top-level + per-milestone `rationale` + per-task `rationale`/`taskType`. |
 | Reallocate goal plan | POST /commands/reallocate-goal-plan | Body: `{goalId, adjustments}`. |
-| Adaptive reschedule | POST /commands/adaptive-reschedule | Body: `{date?}`. Returns `{jobId, async:true}`. |
+| Adaptive reschedule | POST /commands/adaptive-reschedule | Body: `{date?}`. Returns `{jobId, async:true}`. Side effect (0013): writes `goals.pace_tasks_per_day` + `pace_last_computed_at` on every run. |
 | Adjust all overloaded plans | POST /commands/adjust-all-overloaded-plans | Body: `{}`. Returns `{jobId, async:true}`. |
 | Heal all goal plans | POST /commands/heal-all-goal-plans | Body: `{}`. |
 
@@ -369,9 +369,9 @@ Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across eve
 #### Per-goal Dashboard (Phase 6)
 | Feature | API | Usage |
 |---|---|---|
-| Update goal notes | POST /commands/update-goal-notes | Body: `{goalId, notes}`. Writes `goals.user_notes`. |
-| Edit goal title | POST /commands/edit-goal-title | Body: `{goalId, newTitle}`. Updates `goals.title`. |
-| Edit milestone | POST /commands/edit-milestone | Body: `{milestoneId, newTitle?, newDate?}`. Updates the matching `goal_plan_nodes` row. |
+| Update goal notes | POST /commands/update-goal-notes | Body: `{goalId, notes}`. Writes `goals.user_notes`. (0013) Appends `{field:"userNotes"}` to `goals.override_log` when notes change. |
+| Edit goal title | POST /commands/edit-goal-title | Body: `{goalId, newTitle}`. Updates `goals.title`. (0013) Appends `{field:"title"}` to `goals.override_log` when title changes. |
+| Edit milestone | POST /commands/edit-milestone | Body: `{milestoneId, newTitle?, newDate?}`. Updates the matching `goal_plan_nodes` row. (0013) Appends `{field:"milestone.<id>.title"}` and/or `{field:"milestone.<id>.targetDate"}` to `goals.override_log` — separate entries per changed sub-field. |
 | Regenerate insights | POST /commands/regenerate-insights | Body: `{goalId}`. Force-reruns `dashboardInsightAgent` and caches cards on `goal_metadata.cachedInsightCards`. |
 | Add goal reflection | POST /commands/add-goal-reflection | Body: `{goalId, reflection, timestamp?}`. Appends to `goal_metadata.reflections[]`. |
 
@@ -520,9 +520,9 @@ Every endpoint without a FE caller has been reclassified into one of two buckets
 - **Per-goal Dashboard — Phase 6 commands** ✓ — 5 new commands in `backend/src/routes/commands/dashboard.ts`: `update-goal-notes`, `edit-goal-title`, `edit-milestone`, `regenerate-insights`, `add-goal-reflection`. All wired in `commands.ts` dispatcher, `commands/index.ts` barrel, and `_invalidation.ts` invalidation map (each emits `view:invalidate` for `view:goal-dashboard` and related views).
 - **New core types** ✓ — `InsightCard`, `DashboardProgressData`, `AIObservation` in `backend/core/src/types/index.ts`. `QueryKind` gains `view:goal-dashboard`; `CommandKind` gains the 5 new command kinds. Model tiers `goal-clarifier` (medium) and `dashboard-insight` (light) added to `TASK_TIERS`.
 
-## Goals table schema (post-0012 migration)
+## Goals table schema (post-0013 migration)
 
-Columns on `goals` (see migrations `0002_entity_tables.sql`, `0003_goals_metadata_rename.sql`, `0005_goal_slots.sql`, `0012_goal_dashboard.sql`):
+Columns on `goals` (see migrations `0002_entity_tables.sql`, `0003_goals_metadata_rename.sql`, `0005_goal_slots.sql`, `0012_goal_dashboard.sql`, `0013_goal_methodology.sql`):
 
 | Column | Type | Default | Purpose |
 |---|---|---|---|
@@ -539,12 +539,33 @@ Columns on `goals` (see migrations `0002_entity_tables.sql`, `0003_goals_metadat
 | plan_confirmed | boolean | false | User confirmed AI plan |
 | progress_percent | integer | NULL | 0–100 |
 | goal_slot | text | NULL | @deprecated |
-| payload | jsonb | `'{}'` | Soft fields: planChat, plan, flatPlan, scopeReasoning, repeatSchedule, suggestedTimeSlot, notes, rescheduleBannerDismissed |
-| **goal_description** | text | `''` | **NEW (0012)** — raw user-stated goal text; drives RAG retrieval context |
-| **goal_metadata** | jsonb | `'{}'` | **NEW (0012)** — flexible per-goal data, no enforced shape |
-| **user_notes** | text | `''` | **NEW (0012)** — Dashboard-editable user notes |
-| **clarification_answers** | jsonb | `'{}'` | **NEW (0012)** — answers from goalClarifier onboarding (Phase 3) |
+| payload | jsonb | `'{}'` | Runtime/plan bag: planChat, plan, flatPlan, scopeReasoning, repeatSchedule, suggestedTimeSlot, notes, rescheduleBannerDismissed. **Contract split:** `payload` holds plan runtime state; `goal_metadata` (below) holds dashboard-surface state. Do not merge — readers know the split. |
+| goal_description | text | `''` | Raw user-stated goal text; drives RAG retrieval context. Added 0012. |
+| goal_metadata | jsonb | `'{}'` | Dashboard-surface bag: cachedInsightCards, reflections[], aiObservations. Added 0012. |
+| user_notes | text | `''` | Dashboard-editable user notes. Added 0012. |
+| clarification_answers | jsonb | `'{}'` | Answers from goalClarifier onboarding. Added 0012. |
+| **weekly_hours_target** | numeric(5,2) | NULL | **NEW (0013)** — user's committed hours/week for this goal; seeded from onboarding. Planner caps weekly task minutes at this value ±20%. |
+| **current_phase** | text | NULL | **NEW (0013)** — lifecycle phase. Job-search uses `prep`/`apply`/`interview`/`decide`; generic uses `early`/`mid`/`late`/`wrap`. Resolved by `phaseResolver` from deadline distance. |
+| **funnel_metrics** | jsonb | `'{}'` | **NEW (0013)** — archetype-specific funnel params. Job-search: `{applications, replies, firstRounds, finalRounds, offers, targetOffers, backSolvedWeeklyApps}`. Empty for other archetypes. |
+| **skill_map** | jsonb | `'{}'` | **NEW (0013)** — T-shaped skill map: `{horizontal: [{skill, score}], vertical: [{skill, score}]}`. Planner weights skill-building on lowest-scored entries. |
+| **labor_market_data** | jsonb | `'{}'` | **NEW (0013)** — live labor-market data: `{openRoleCount, salaryRange, topSkills, hiringCadence, fetchedAt}`. Populated by `fetchLaborMarketData` (gated stub today; provider wiring later). |
+| **plan_rationale** | text | NULL | **NEW (0013)** — top-level "why this plan shape" paragraph emitted by the planner. Dashboard shows it when the user asks "why this plan?". |
+| **pace_tasks_per_day** | numeric(4,2) | NULL | **NEW (0013)** — measured pace snapshot. Seeded by `cmdConfirmGoalPlan` from the plan; refreshed by `cmdAdaptiveReschedule` from capacity.avgTasksCompletedPerDay. |
+| **pace_last_computed_at** | timestamptz | NULL | **NEW (0013)** — when `pace_tasks_per_day` was last written. |
+| **override_log** | jsonb | `'[]'` | **NEW (0013)** — append-only audit trail of user edits: `[{ts, actor, field, oldValue, newValue, reason?}]`. Written by dashboard commands (`update-goal-notes`, `edit-goal-title`, `edit-milestone`) when the value changes. Planner reads this on regeneration to explain why it's adjusting around user edits. |
 | created_at, updated_at | timestamptz | now() | Timestamps |
+
+### Plan node / task jsonb additions (Phase D/E — contract only, no schema)
+
+On `goal_plan_nodes.payload`:
+- `rationale?: string` — one-sentence "why THIS checkpoint at THIS date" for milestone nodes.
+- `taskType?: "application" | "skill-building" | "practice" | "targeted-prep" | "other"` — methodology taxonomy for task nodes.
+- `paceExplanation?: string`, `paceSuggestions?: string[]`, `paceExplanationDate?: string` — cached pace-explainer output (existing).
+
+On `daily_tasks.payload` (reader-side):
+- Same `rationale?` and `taskType?` when materialized from a plan node. `rationale` also written by `durationEstimator` / `priorityAnnotator`.
+
+Readers default to `"other"` for missing `taskType` and `undefined` for missing `rationale`.
 
 ## Audit notes still open
 
