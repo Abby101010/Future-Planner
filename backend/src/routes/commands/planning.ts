@@ -376,15 +376,22 @@ export async function cmdRegenerateGoalPlan(
   // for the date-range gap-fill + planConfirmed flip below.
   const goalStartDate = existing.createdAt?.split("T")[0];
   const goalEndDate = existing.targetDate;
-  await repos.goalPlan.replacePlan(goalId, plan, goalStartDate, goalEndDate);
+
   // Persist methodology-layer state produced by the planner/coordinator:
   //   - laborMarketData: from the (stubbed) web_search fetcher run in
   //     parallel with research + personalization (Phase C).
   //   - planRationale: top-level "why this shape" string from the AI's
   //     plan response (Phase E).
   //   - currentPhase: deterministic resolution from deadline distance.
-  // Flip planConfirmed on the goal so dashboards/goal-plan view stop
-  // showing the "not planned" state.
+  //
+  // ⚠ Order matters: we flip `planConfirmed = true` BEFORE replacePlan.
+  // goalPlanRepo.replacePlan auto-materializes daily_tasks only for
+  // goals with planConfirmed=true (see its JSDoc). If we upserted after
+  // replacePlan, materialization would read the pre-flip value (false)
+  // and skip — leaving the Tasks page + Calendar empty for every
+  // first-time plan generation. Flipping first keeps the helper's
+  // invariant consistent with our intent here ("regenerate AND
+  // confirm").
   const planRationale =
     typeof resultObj.planRationale === "string"
       ? (resultObj.planRationale as string)
@@ -398,6 +405,7 @@ export async function cmdRegenerateGoalPlan(
     planRationale,
     currentPhase: currentPhase ?? existing.currentPhase,
   });
+  await repos.goalPlan.replacePlan(goalId, plan, goalStartDate, goalEndDate);
 
   // If a Project Agent Context wasn't already loaded on this goal, save
   // the research + personalization from the coordinator so follow-up plan
