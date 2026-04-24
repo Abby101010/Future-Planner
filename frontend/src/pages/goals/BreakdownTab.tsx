@@ -23,6 +23,7 @@ interface BreakdownTask {
 interface BreakdownDay {
   id?: string;
   date?: string;
+  dayName?: string;
   tasks?: BreakdownTask[];
 }
 interface BreakdownWeek {
@@ -256,11 +257,6 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
                           (m.weeks ?? []).map((w) => {
                             const wKey = `w:${w.id}`;
                             const wOpen = expanded.has(wKey);
-                            const dayCount = (w.days ?? []).length;
-                            const taskCount = (w.days ?? []).reduce(
-                              (n, d) => n + (d.tasks ?? []).length,
-                              0,
-                            );
                             return (
                               <div key={w.id}>
                                 <div
@@ -284,64 +280,83 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
                                     {w.label ?? w.id}
                                   </span>
                                   <Pill mono>week</Pill>
-                                  <span
-                                    className="tnum"
-                                    style={{ marginLeft: "auto", color: "var(--fg-faint)" }}
-                                  >
-                                    {dayCount}d · {taskCount}t
-                                  </span>
                                 </div>
                                 {wOpen &&
-                                  (w.days ?? []).map((d) => (
-                                    <div key={d.id ?? d.date}>
-                                      {(d.tasks ?? []).map((t) => (
+                                  (w.days ?? [])
+                                    .filter((d) => (d.tasks ?? []).length > 0)
+                                    .map((d) => (
+                                      <div key={d.id ?? d.date}>
                                         <div
-                                          key={t.id}
-                                          data-testid={`breakdown-task-${t.id}`}
                                           style={{
                                             display: "flex",
                                             alignItems: "center",
                                             gap: 8,
                                             padding: "4px 0",
-                                            paddingLeft: 100,
+                                            paddingLeft: 80,
                                             borderTop: "1px dashed var(--border-soft)",
+                                            fontSize: 10,
+                                            letterSpacing: "0.08em",
+                                            textTransform: "uppercase",
+                                            color: "var(--fg-faint)",
+                                            fontWeight: 600,
                                           }}
                                         >
-                                          <span
-                                            style={{
-                                              width: 12,
-                                              height: 12,
-                                              border: "1.2px solid var(--border-strong)",
-                                              borderRadius: "50%",
-                                              background: t.completed ? "var(--navy)" : "transparent",
-                                            }}
-                                          />
-                                          <span
-                                            style={{
-                                              fontSize: "var(--t-sm)",
-                                              fontFamily: "var(--font-sans)",
-                                              color: t.completed
-                                                ? "var(--fg-faint)"
-                                                : "var(--user-color)",
-                                              textDecoration: t.completed ? "line-through" : "none",
-                                            }}
-                                          >
-                                            {t.title}
-                                          </span>
-                                          <Pill mono>task</Pill>
-                                          <span
-                                            className="tnum"
-                                            style={{
-                                              marginLeft: "auto",
-                                              color: "var(--fg-faint)",
-                                            }}
-                                          >
-                                            {t.estimatedDurationMinutes ?? t.duration ?? "?"}m
-                                          </span>
+                                          <Icon name="calendar" size={11} />
+                                          <span className="tnum">{d.date || "—"}</span>
+                                          {d.dayName && (
+                                            <span style={{ textTransform: "none", fontWeight: 500 }}>
+                                              · {d.dayName}
+                                            </span>
+                                          )}
                                         </div>
-                                      ))}
-                                    </div>
-                                  ))}
+                                        {(d.tasks ?? []).map((t) => (
+                                          <div
+                                            key={t.id}
+                                            data-testid={`breakdown-task-${t.id}`}
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 8,
+                                              padding: "4px 0",
+                                              paddingLeft: 100,
+                                              borderTop: "1px dashed var(--border-soft)",
+                                            }}
+                                          >
+                                            <span
+                                              style={{
+                                                width: 12,
+                                                height: 12,
+                                                border: "1.2px solid var(--border-strong)",
+                                                borderRadius: "50%",
+                                                background: t.completed ? "var(--navy)" : "transparent",
+                                              }}
+                                            />
+                                            <span
+                                              style={{
+                                                fontSize: "var(--t-sm)",
+                                                fontFamily: "var(--font-sans)",
+                                                color: t.completed
+                                                  ? "var(--fg-faint)"
+                                                  : "var(--user-color)",
+                                                textDecoration: t.completed ? "line-through" : "none",
+                                              }}
+                                            >
+                                              {t.title}
+                                            </span>
+                                            <Pill mono>task</Pill>
+                                            <span
+                                              className="tnum"
+                                              style={{
+                                                marginLeft: "auto",
+                                                color: "var(--fg-faint)",
+                                              }}
+                                            >
+                                              {t.estimatedDurationMinutes ?? t.duration ?? "?"}m
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ))}
                               </div>
                             );
                           })}
