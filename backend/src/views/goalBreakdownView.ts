@@ -4,6 +4,15 @@
  * AND a full GoalBreakdown tree reconstructed from the goal_plan_nodes rows.
  * When no goalId is provided, returns a global 90-day scheduled-tasks view
  * (legacy behaviour for the old cross-goal page).
+ *
+ * ⚠ Canonical consumer: frontend/src/pages/goals/BreakdownTab.tsx
+ *   - Year row reads  `y.label ?? y.id`            (BreakdownTab.tsx:226)
+ *   - Week row reads  `w.label ?? w.id`            (:284)
+ *   - Task row reads  `t.estimatedDurationMinutes
+ *                       ?? t.duration ?? "?"`      (:339)
+ *   - Task row keys on `t.id`                      (:299)
+ * Emission here MUST populate those fields. Renames or additions that
+ * change the shape must be updated in BreakdownTab at the same time.
  */
 
 import * as repos from "../repositories";
@@ -72,15 +81,19 @@ function toBreakdownPriority(
 }
 
 /** Map a GoalPlanTask to a BreakdownTask. Fills in conservative defaults
- *  for fields GoalPlan doesn't carry (whyToday). */
+ *  for fields GoalPlan doesn't carry (whyToday). Emits `id` and
+ *  `estimatedDurationMinutes` for BreakdownTab.tsx — see file banner. */
 function toBreakdownTask(t: GoalPlanTask): BreakdownTask {
+  const minutes = t.durationMinutes ?? 30;
   return {
     title: t.title,
     description: t.description ?? "",
-    durationMinutes: t.durationMinutes ?? 30,
+    durationMinutes: minutes,
     category: toBreakdownCategory(t.category),
     whyToday: "",
     priority: toBreakdownPriority(t.priority),
+    id: t.id,
+    estimatedDurationMinutes: minutes,
   };
 }
 
@@ -127,6 +140,7 @@ function mapWeek(week: GoalPlanWeek): WeekPlan {
       isVacation: false,
       isWeekend,
       tasks,
+      id: dy.id,
     };
   });
 
@@ -142,6 +156,8 @@ function mapWeek(week: GoalPlanWeek): WeekPlan {
     estimatedHours: Math.round((totalMinutes / 60) * 10) / 10,
     intensity: intensityForWeek(totalMinutes),
     days,
+    id: week.id,
+    label: week.label ?? "",
   };
 }
 
@@ -176,6 +192,8 @@ function mapYear(plan: GoalPlan, yearIdx: number): YearPlan {
     theme: yearNode.objective ?? yearNode.label ?? "",
     outcome: yearNode.objective ?? "",
     months,
+    id: yearNode.id,
+    label: yearNode.label ?? "",
   };
 }
 

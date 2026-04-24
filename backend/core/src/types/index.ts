@@ -177,6 +177,13 @@ export interface YearPlan {
   theme: string;
   outcome: string;
   months: MonthPlan[];
+  /** Stable id from the underlying goal_plan_nodes row. BreakdownTab.tsx
+   *  reads `y.id` as a React key and expand-state key — must be set by
+   *  any emitter populating YearPlan for the goal-breakdown view. */
+  id?: string;
+  /** Display label ("2026"). BreakdownTab.tsx reads `y.label`; the
+   *  legacy `year` numeric is kept for any programmatic reader. */
+  label?: string;
 }
 
 export interface MonthPlan {
@@ -199,6 +206,12 @@ export interface WeekPlan {
   estimatedHours: number;
   intensity: "light" | "normal" | "heavy";
   days: DayPlan[];
+  /** Stable id from the underlying goal_plan_nodes row. BreakdownTab.tsx
+   *  reads `w.id` for expand state + React keys. */
+  id?: string;
+  /** Display label ("Apr 14 – Apr 20"). BreakdownTab.tsx reads `w.label`;
+   *  `focus`/`startDate`/`endDate` are kept for any programmatic reader. */
+  label?: string;
 }
 
 export interface DayPlan {
@@ -208,6 +221,9 @@ export interface DayPlan {
   isVacation: boolean;
   isWeekend: boolean;
   tasks: BreakdownTask[];
+  /** Stable id from the underlying goal_plan_nodes row. BreakdownTab.tsx
+   *  keys day rows on `d.id ?? d.date`. */
+  id?: string;
 }
 
 export interface BreakdownTask {
@@ -217,6 +233,13 @@ export interface BreakdownTask {
   category: "learning" | "building" | "networking" | "reflection" | "planning";
   whyToday: string;
   priority: "must-do" | "should-do" | "bonus";
+  /** Stable id from the underlying goal_plan_nodes row. BreakdownTab.tsx
+   *  keys task rows on `t.id` and uses it for data-testid selectors. */
+  id?: string;
+  /** Alias of `durationMinutes` the FE reads on the breakdown view.
+   *  Emitted by `view:goal-breakdown` so BreakdownTab doesn't render "?m"
+   *  — see BreakdownTab.tsx:339. Keep in sync with durationMinutes. */
+  estimatedDurationMinutes?: number;
 }
 
 export interface ReallocationSummary {
