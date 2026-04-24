@@ -173,29 +173,6 @@ export async function classifyGoal(
   });
 }
 
-/** Send a message in the goal planning chat — AI develops the plan iteratively */
-export async function sendGoalPlanMessage(
-  goalTitle: string,
-  targetDate: string,
-  importance: GoalImportance,
-  isHabit: boolean,
-  description: string,
-  chatHistory: GoalPlanMessage[],
-  userMessage: string,
-  currentPlan?: GoalPlan | null
-): Promise<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }> {
-  return aiRequest<{ reply: string; plan?: GoalPlan; planReady: boolean; planPatch?: Record<string, unknown> | null }>("goal-plan-chat", {
-    goalTitle,
-    targetDate,
-    importance,
-    isHabit,
-    description,
-    chatHistory,
-    userMessage,
-    currentPlan: currentPlan || null,
-  });
-}
-
 /** Analyze a direct inline edit to the goal plan — AI reviews before committing */
 export async function analyzeGoalPlanEdit(
   goalTitle: string,

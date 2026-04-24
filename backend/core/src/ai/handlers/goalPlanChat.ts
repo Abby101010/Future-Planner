@@ -119,12 +119,32 @@ export function buildGoalPlanChatRequest(
   system: string;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
 } {
-  const { goalTitle, targetDate, importance, isHabit, userMessage } = payload;
+  const { goalTitle, targetDate, importance, isHabit, userInput } = payload;
+
+  // Boundary guard. The four chat handlers all read `userInput`; a caller
+  // that sends the old name (`userMessage`) or nothing at all used to slip
+  // through and push `{role:"user", content: undefined}` onto the messages
+  // array, which Anthropic rejects with the opaque
+  // "messages.N.content: Field required". Fail loudly at the boundary
+  // with a message that names the actual root cause.
+  if (typeof userInput !== "string" || userInput.trim().length === 0) {
+    throw new Error(
+      "goal-plan-chat: `userInput` is required (non-empty string). " +
+        "If you're a new caller, note that all chat handlers in this repo " +
+        "read the current turn from `userInput`, not `userMessage`.",
+    );
+  }
+
   const description = payload.description ?? "";
   const rawHistory = payload.chatHistory ?? [];
   // Trim history to the last 8 turns — full-session history isn't useful
   // for a plan-editing agent and blows out input tokens on long chats.
-  const chatHistory = rawHistory.slice(-8);
+  // Also filter out empty-content turns — a failed prior stream can
+  // persist a blank assistant message that would again produce a missing
+  // content field on Anthropic's side.
+  const chatHistory = rawHistory
+    .filter((m) => typeof m.content === "string" && m.content.trim().length > 0)
+    .slice(-8);
   const currentPlan = payload.currentPlan ?? null;
 
   const messages: Array<{ role: "user" | "assistant"; content: string }> =
@@ -136,12 +156,12 @@ export function buildGoalPlanChatRequest(
         m.role === "assistant" ? extractReplyFromText(m.content) : m.content,
     }));
 
-  // chatHistory already contains the current userMessage as its last
-  // entry (the client appends it). Only push a separate message if the
-  // history is empty or doesn't end with the current userMessage.
+  // Clients send only prior turns in chatHistory — not the current one.
+  // The defensive check below still guards against an alternate caller
+  // that accidentally duplicates the current message at the tail.
   const lastMsg = messages[messages.length - 1];
-  if (!lastMsg || lastMsg.role !== "user" || lastMsg.content !== userMessage) {
-    messages.push({ role: "user", content: userMessage });
+  if (!lastMsg || lastMsg.role !== "user" || lastMsg.content !== userInput) {
+    messages.push({ role: "user", content: userInput });
   }
 
   const goalContext = [

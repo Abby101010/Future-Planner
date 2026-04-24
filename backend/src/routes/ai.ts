@@ -517,12 +517,12 @@ aiRouter.post(
             const nextChat: GoalPlanMessage[] = [...(goal.planChat ?? [])];
             if (
               payload.userMessageId &&
-              typeof payload.userMessage === "string"
+              typeof payload.userInput === "string"
             ) {
               nextChat.push({
                 id: payload.userMessageId,
                 role: "user",
-                content: payload.userMessage,
+                content: payload.userInput,
                 timestamp: new Date().toISOString(),
               });
             }

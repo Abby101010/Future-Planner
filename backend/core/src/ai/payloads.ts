@@ -48,6 +48,12 @@ export interface GenerateGoalPlanPayload extends EnrichedPayload {
   _clarificationAnswers?: Record<string, unknown>;
 }
 
+/** Chat-family payload contract:
+ *  All chat handlers (chat, homeChat, goalPlanChat, onboarding) read the
+ *  current turn from `userInput`. Do NOT add a new chat handler that uses
+ *  a different field name — `goalPlanChat` used to call it `userMessage`
+ *  and the divergence silently produced undefined content fields that
+ *  Anthropic rejected with "messages.N.content: Field required". */
 export interface GoalPlanChatPayload extends EnrichedPayload {
   goalId?: string;
   goalTitle: string;
@@ -56,7 +62,7 @@ export interface GoalPlanChatPayload extends EnrichedPayload {
   isHabit: boolean;
   description?: string;
   chatHistory?: ChatMessage[];
-  userMessage: string;
+  userInput: string;
   currentPlan?: Record<string, unknown> | null;
 }
 
