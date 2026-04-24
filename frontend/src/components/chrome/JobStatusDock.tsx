@@ -35,19 +35,25 @@ async function pollJob(id: string) {
   const deadline = Date.now() + 5 * 60 * 1000; // 5-minute safety timeout
   while (Date.now() < deadline) {
     try {
-      const res = (await getJson<{
+      // Backend returns { ok: true, job: { id, type, status, result, error } }
+      // (see backend/src/routes/commands.ts:93-102). Unwrap the envelope.
+      const res = await getJson<{
+        ok?: boolean;
+        job?: { status?: string; state?: string; progress?: number };
+        // Fallback shapes for older handlers that didn't nest under `job`.
         state?: string;
         status?: string;
         progress?: number;
-      }>(`/commands/job-status/${id}`));
-      const raw = (res?.state ?? res?.status ?? "").toLowerCase();
+      }>(`/commands/job-status/${id}`);
+      const jobBody = res?.job ?? res;
+      const raw = (jobBody?.state ?? jobBody?.status ?? "").toLowerCase();
       const status: Job["status"] =
-        raw === "done" || raw === "completed"
+        raw === "done" || raw === "completed" || raw === "succeeded"
           ? "done"
-          : raw === "error" || raw === "failed"
+          : raw === "error" || raw === "failed" || raw === "cancelled"
             ? "error"
             : "running";
-      const progress = typeof res?.progress === "number" ? res.progress : 0;
+      const progress = typeof jobBody?.progress === "number" ? jobBody.progress : 0;
       const idx = jobsStore.findIndex((j) => j.id === id);
       if (idx >= 0) {
         jobsStore[idx] = { ...jobsStore[idx], status, progress };
@@ -174,16 +180,40 @@ export default function JobStatusDock() {
               background: "var(--bg-sunken)",
               borderRadius: 2,
               overflow: "hidden",
+              position: "relative",
             }}
           >
-            <div
-              style={{
-                height: "100%",
-                width: `${Math.min(100, Math.max(0, j.progress))}%`,
-                background: "var(--accent)",
-                transition: "width .25s",
-              }}
-            />
+            {j.status === "running" && j.progress <= 0 ? (
+              // Server doesn't report a numeric progress, so show an
+              // indeterminate shimmer band to signal "still working".
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: "100%",
+                  width: "40%",
+                  background:
+                    "linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)",
+                  animation: "ns-indeterminate 1.2s ease-in-out infinite",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  height: "100%",
+                  width: `${
+                    j.status === "done"
+                      ? 100
+                      : j.status === "error"
+                        ? 100
+                        : Math.min(100, Math.max(0, j.progress))
+                  }%`,
+                  background: j.status === "error" ? "var(--danger)" : "var(--accent)",
+                  transition: "width .25s",
+                }}
+              />
+            )}
           </div>
           <div
             style={{

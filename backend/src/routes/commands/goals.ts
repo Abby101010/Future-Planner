@@ -6,6 +6,27 @@ import type { GoalPlan, GoalPlanTask } from "@starward/core";
 import { repos } from "./_helpers";
 import { onGoalConfirmed } from "../../coordinators/bigGoalCoordinator";
 
+/**
+ * Create / upsert a goal row.
+ *
+ * ⚠  **Pure upsert — does NOT generate a plan.** Callers that want a plan
+ * must enqueue `command:regenerate-goal-plan` as a separate second call
+ * (the FE chat-confirm and "New goal" flows do this explicitly). The
+ * async plan job will then call `cmdRegenerateGoalPlan` in the worker
+ * and set `goal.plan`, `goal.planConfirmed`, and emit
+ * `view:invalidate[view:goal-plan, view:planning, view:dashboard]`.
+ *
+ * Why separate commands: creating a goal and generating a plan are two
+ * distinct operations with different cost profiles (upsert vs. 30s LLM
+ * job). Some callers — imports, test harnesses, the onboarding
+ * confirm-onboarding-goal path — create a goal WITHOUT wanting a plan
+ * kicked off from this handler. Keeping create pure avoids surprise
+ * duplicate jobs.
+ *
+ * Body shape: `{ goal: { id, title, ... } }` — the FE must generate the
+ * goal id (client-side UUID is fine; see PlanningPage.createGoal /
+ * FloatingChat's PendingGoalCard).
+ */
 export async function cmdCreateGoal(
   body: Record<string, unknown>,
 ): Promise<unknown> {

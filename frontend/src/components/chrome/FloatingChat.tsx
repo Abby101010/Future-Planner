@@ -11,13 +11,17 @@
  * Absorbs the logic that lived in components/Chat.tsx. */
 
 import { useEffect, useRef, useState } from "react";
+import type { AppView, Goal } from "@starward/core";
 import useStore from "../../store/useStore";
+import { useQuery } from "../../hooks/useQuery";
 import { postSseStream } from "../../services/transport";
 import { useCommand } from "../../hooks/useCommand";
 import { dispatchChatIntent } from "../../utils/dispatchChatIntent";
 import Icon from "../primitives/Icon";
 import Button from "../primitives/Button";
 import ChatSessionsWindow from "./ChatSessionsWindow";
+import PendingGoalCard from "./PendingGoalCard";
+import { startJob } from "./JobStatusDock";
 
 type ChatChannel = "home" | "chat" | "goal-plan";
 
@@ -61,14 +65,23 @@ export default function FloatingChat() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSessions, setShowSessions] = useState(false);
+  /** Goal the AI proposed in its reply. User must click "Create goal" to
+   *  actually POST /commands/create-goal — matches the old planner flow. */
+  const [pendingGoal, setPendingGoal] = useState<Partial<Goal> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { run } = useCommand();
+  const setView = useStore((s) => s.setView);
+  const setResearchTopic = useStore((s) => s.setResearchTopic);
+
+  // Read current goals so manage-* intents can resolve a goal by id.
+  const { data: planningView } = useQuery<{ goals?: Goal[] }>("view:planning");
+  const goals = planningView?.goals ?? [];
 
   const ch = CHANNEL_META[channel];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999 });
-  }, [messages, streaming]);
+  }, [messages, streaming, pendingGoal]);
 
   // Auto-send any pre-seeded message from the store when the panel opens.
   useEffect(() => {
@@ -91,13 +104,25 @@ export default function FloatingChat() {
     setInput("");
     setStreaming(true);
 
+    // Build chatHistory for the API — all three backend handlers
+    // (chat, home-chat, goal-plan-chat) map `chatHistory` directly into the
+    // Claude messages array, so the current user message MUST be included as
+    // the last entry (see backend/core/src/ai/handlers/{chat,homeChat,goalPlanChat}.ts).
+    // Strip the local "∟streaming∟" placeholder prefix we use for in-flight
+    // assistant deltas — the history must only contain clean turns. Cap at
+    // 50 turns; the goalPlanChat handler further trims to 8 on its side.
+    const cleanHistory = messages
+      .filter((m) => !(m.role === "assistant" && m.text.startsWith("∟streaming∟")))
+      .map((m) => ({ role: m.role, content: m.text }));
+    const chatHistory = [...cleanHistory, { role: "user" as const, content: text }].slice(-50);
+
     let acc = "";
     const body: Record<string, unknown> =
       channel === "chat"
-        ? { userInput: text, chatHistory: [], context: {}, goals: [], todayTasks: [], activeReminders: [] }
+        ? { userInput: text, chatHistory, context: {}, goals: [], todayTasks: [], activeReminders: [] }
         : channel === "home"
-          ? { userInput: text, chatHistory: [] }
-          : { userInput: text, goalId, chatHistory: [] };
+          ? { userInput: text, chatHistory }
+          : { userInput: text, goalId, chatHistory };
 
     try {
       await postSseStream<StreamResult>(ch.api, body, {
@@ -111,7 +136,7 @@ export default function FloatingChat() {
             return [...m, { role: "assistant", text: `∟streaming∟${acc}` }];
           });
         },
-        onDone: (result) => {
+        onDone: async (result) => {
           const finalText = (result?.reply as string | undefined) || acc;
           setMessages((m) => {
             const last = m[m.length - 1];
@@ -121,8 +146,28 @@ export default function FloatingChat() {
             return [...m, { role: "assistant", text: finalText }];
           });
           if (result?.intents && Array.isArray(result.intents)) {
-            for (const intent of result.intents) {
-              void dispatchChatIntent(intent as never, run as never);
+            const todayDate = new Date().toISOString().slice(0, 10);
+            for (const rawIntent of result.intents) {
+              try {
+                const signal = await dispatchChatIntent(rawIntent, {
+                  run,
+                  goals,
+                  todayTasks: [],
+                  activeReminders: [],
+                  todayDate,
+                  setView: (v) => setView(v as AppView),
+                  setResearchTopic,
+                });
+                // Goal intents aren't auto-dispatched — show a confirmation
+                // card so the user can review/edit before committing. This
+                // mirrors the old planner's Chat.tsx behavior.
+                if (signal === "pending-goal") {
+                  const i = rawIntent as { entity?: Partial<Goal> };
+                  if (i.entity) setPendingGoal(i.entity);
+                }
+              } catch (err) {
+                console.warn("[FloatingChat] intent dispatch error:", err);
+              }
             }
           }
         },
@@ -326,6 +371,63 @@ export default function FloatingChat() {
                 />
               ))}
             </div>
+          )}
+          {pendingGoal && (
+            <PendingGoalCard
+              goal={pendingGoal}
+              onConfirm={async () => {
+                const draft = { ...pendingGoal };
+                setPendingGoal(null);
+                try {
+                  // Backend expects { goal: { id, ... } } with a
+                  // pre-generated id (backend/src/routes/commands/goals.ts:13).
+                  const id =
+                    draft.id ??
+                    (crypto as unknown as { randomUUID?: () => string }).randomUUID?.() ??
+                    `goal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                  const goalToCreate = { ...draft, id, status: draft.status ?? "active" };
+                  await run("command:create-goal", { goal: goalToCreate });
+
+                  // Two-call sequence: `command:create-goal` is a pure
+                  // upsert (see backend/src/routes/commands/goals.ts:9) —
+                  // it does NOT auto-generate a plan. We enqueue the
+                  // async plan-generation job explicitly so the Goal Plan
+                  // page can surface a "Planning…" state via the
+                  // `inFlight` field on view:goal-plan. The job worker
+                  // picks this up and emits WS view:invalidate when done.
+                  try {
+                    const job = await run<{ jobId?: string; async?: boolean }>(
+                      "command:regenerate-goal-plan",
+                      { goalId: id },
+                    );
+                    if (job?.jobId) {
+                      startJob(
+                        job.jobId,
+                        `Generating plan for ${goalToCreate.title ?? "new goal"}`,
+                      );
+                    }
+                  } catch (jobErr) {
+                    // Goal is already created — surface the plan-enqueue
+                    // error but don't undo the create; user can click
+                    // "Regenerate" on the Goal Plan page to retry.
+                    console.warn(
+                      "[FloatingChat] plan enqueue failed after create-goal:",
+                      jobErr,
+                    );
+                  }
+
+                  setView(`goal-plan-${id}` as AppView);
+                } catch (err) {
+                  setError((err as Error).message);
+                  // Put the draft back so the user can retry.
+                  setPendingGoal(draft);
+                }
+              }}
+              onReject={() => setPendingGoal(null)}
+              onUpdate={(updates) =>
+                setPendingGoal((prev) => (prev ? { ...prev, ...updates } : prev))
+              }
+            />
           )}
         </div>
 

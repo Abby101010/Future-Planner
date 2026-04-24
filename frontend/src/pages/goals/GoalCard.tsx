@@ -83,7 +83,7 @@ export default function GoalCard({ goal: g, onOpen, onPause, onResume, onDelete 
             }}
           >
             {g.horizon && <Pill>{g.horizon}</Pill>}
-            <PaceBadge pace={g.pace} delta={g.paceDelta} />
+            <PaceBadge pace={g.pace} delta={g.paceDelta} inFlight={g.inFlight} />
           </div>
         </div>
         <div

@@ -17,6 +17,7 @@ import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type 
 import { loadMemory, computeCapacityProfile } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
+import { findActivePlanJob, type PlanJobDescriptor } from "../job-db";
 
 export interface GoalPlanViewArgs {
   goalId: string;
@@ -28,6 +29,22 @@ export interface GoalPlanProgress {
   percent: number;
 }
 
+/** Observable state of a goal's plan. The FE should branch on these three
+ *  combinations to choose what to render:
+ *
+ *    no plan, no job:   `plan: null, inFlight: null`
+ *      → goal was created but no plan was ever requested; show "Generate plan" CTA.
+ *
+ *    generating:        `plan: null, inFlight: { jobId, status, startedAt }`
+ *      → a `command:regenerate-goal-plan` job is pending or running;
+ *        show "Planning…" skeleton with indeterminate progress.
+ *
+ *    ready:             `plan: { years, milestones, ... }, inFlight: null`
+ *      → plan is live; render milestones, progress, tasks.
+ *
+ *  A plan can also be ready AND have a new job in flight (user clicked
+ *  "Regenerate" on an existing plan). In that case render the existing
+ *  plan with a "Regenerating…" badge rather than blowing it away. */
 export interface GoalPlanView {
   goal: Goal | null;
   plan: GoalPlan | null;
@@ -40,6 +57,9 @@ export interface GoalPlanView {
   paceMismatch: PaceMismatch | null;
   /** Cross-goal overload advisory (null if no overload detected). */
   overloadAdvisory: OverloadAdvisory | null;
+  /** In-flight `regenerate-goal-plan` job descriptor, or null if no plan
+   *  job is queued/running for this goal. Populated by `findActivePlanJob`. */
+  inFlight: PlanJobDescriptor | null;
 }
 
 function computePlanProgress(plan: GoalPlan | null): GoalPlanProgress {
@@ -75,7 +95,14 @@ export async function resolveGoalPlanView(
   args: GoalPlanViewArgs,
 ): Promise<GoalPlanView> {
   const { goalId } = args;
-  const goal = await repos.goals.get(goalId);
+  const userId = getCurrentUserId();
+  // Look up an in-flight plan-generation job concurrently with the goal
+  // fetch — it's cheap (one indexed query) and it's the FE's signal that
+  // we should render a "Planning…" state even when plan is still null.
+  const [goal, inFlight] = await Promise.all([
+    repos.goals.get(goalId),
+    findActivePlanJob(userId, goalId),
+  ]);
 
   if (!goal) {
     return {
@@ -86,6 +113,7 @@ export async function resolveGoalPlanView(
       scheduledTasks: [],
       paceMismatch: null,
       overloadAdvisory: null,
+      inFlight: null,
     };
   }
 
@@ -128,7 +156,6 @@ export async function resolveGoalPlanView(
   let paceMismatch: PaceMismatch | null = null;
   let overloadAdvisory: OverloadAdvisory | null = null;
   try {
-    const userId = getCurrentUserId();
     const [memory, userProfile, allGoals] = await Promise.all([
       loadMemory(userId), repos.users.get(), repos.goals.list(),
     ]);
@@ -208,5 +235,6 @@ export async function resolveGoalPlanView(
     scheduledTasks,
     paceMismatch,
     overloadAdvisory,
+    inFlight,
   };
 }

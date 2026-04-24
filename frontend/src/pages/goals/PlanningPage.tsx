@@ -19,6 +19,7 @@ import Button from "../../components/primitives/Button";
 import Card from "../../components/primitives/Card";
 import Banner from "../../components/primitives/Banner";
 import Icon from "../../components/primitives/Icon";
+import { startJob } from "../../components/chrome/JobStatusDock";
 import GoalCard from "./GoalCard";
 import type { PlanningGoal } from "./planningTypes";
 import type { Pace } from "./PaceBadge";
@@ -50,6 +51,10 @@ function normalize(raw: Partial<PlanningGoal> & { id: string; title: string; sta
     paceDelta: raw.paceDelta,
     tasksThisWeek: raw.tasksThisWeek,
     openTasks: raw.openTasks,
+    // Pass through the inFlight descriptor from view:planning unchanged
+    // (annotated per-goal in backend/src/views/planningView.ts). When
+    // present, GoalCard → PaceBadge swaps in a "Planning…" pill.
+    inFlight: raw.inFlight ?? null,
   };
 }
 
@@ -73,11 +78,40 @@ export default function PlanningPage() {
     if (!newTitle.trim()) return;
     setCmdError(null);
     try {
+      // Backend expects args.goal with a pre-generated id (see
+      // backend/src/routes/commands/goals.ts:13). FE generates the id.
+      const id = (crypto as unknown as { randomUUID?: () => string }).randomUUID?.()
+        ?? `goal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const goalTitle = newTitle.trim();
       await run("command:create-goal", {
-        title: newTitle.trim(),
-        description: newDescription.trim(),
-        horizon: newHorizon,
+        goal: {
+          id,
+          title: goalTitle,
+          description: newDescription.trim(),
+          horizon: newHorizon,
+          status: "active",
+        },
       });
+
+      // Two-call sequence: `command:create-goal` is a pure upsert on the
+      // backend — it doesn't auto-generate a plan. Enqueue the async job
+      // explicitly so the card shows "Planning…" via view:planning's
+      // per-goal `inFlight` field and the JobStatusDock tracks progress.
+      try {
+        const job = await run<{ jobId?: string; async?: boolean }>(
+          "command:regenerate-goal-plan",
+          { goalId: id },
+        );
+        if (job?.jobId) startJob(job.jobId, `Generating plan for ${goalTitle}`);
+      } catch (jobErr) {
+        // Goal is created; plan-enqueue failing is recoverable via the
+        // "Regenerate" button on the Goal Plan page. Keep the create.
+        console.warn(
+          "[PlanningPage] plan enqueue failed after create-goal:",
+          jobErr,
+        );
+      }
+
       setShowCreate(false);
       setNewTitle("");
       setNewDescription("");
@@ -87,29 +121,29 @@ export default function PlanningPage() {
     }
   }
 
-  async function onPause(id: string) {
+  async function onPause(goalId: string) {
     setCmdError(null);
     try {
-      await run("command:pause-goal", { id });
+      await run("command:pause-goal", { goalId });
       refetch();
     } catch (e) {
       setCmdError((e as Error).message);
     }
   }
-  async function onResume(id: string) {
+  async function onResume(goalId: string) {
     setCmdError(null);
     try {
-      await run("command:resume-goal", { id });
+      await run("command:resume-goal", { goalId });
       refetch();
     } catch (e) {
       setCmdError((e as Error).message);
     }
   }
-  async function onDelete(id: string) {
+  async function onDelete(goalId: string) {
     if (!window.confirm("Delete this goal? (can't be undone)")) return;
     setCmdError(null);
     try {
-      await run("command:delete-goal", { id });
+      await run("command:delete-goal", { goalId });
       refetch();
     } catch (e) {
       setCmdError((e as Error).message);

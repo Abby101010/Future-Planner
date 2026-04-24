@@ -4,6 +4,17 @@
 
 import type { Pace } from "./PaceBadge";
 
+/** In-flight `regenerate-goal-plan` job descriptor surfaced on each goal
+ *  by the `view:planning` resolver (see
+ *  backend/src/views/planningView.ts). Null when no plan job is queued
+ *  or running for this goal. When present, the goal card renders a
+ *  "Planning…" pill in place of the pace badge. */
+export interface PlanningInFlightDescriptor {
+  jobId: string;
+  status: "pending" | "running";
+  startedAt: string;
+}
+
 export interface PlanningGoal {
   id: string;
   title: string;
@@ -18,4 +29,6 @@ export interface PlanningGoal {
   paceDelta?: string;
   tasksThisWeek?: number;
   openTasks?: number;
+  /** Populated by `view:planning`; null when no plan job is in flight. */
+  inFlight?: PlanningInFlightDescriptor | null;
 }

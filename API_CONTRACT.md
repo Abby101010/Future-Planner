@@ -262,11 +262,11 @@ Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across eve
 | Tasks view | GET /view/tasks | Returns TasksView. `tasksView.ts`. |
 | Calendar view | GET /view/calendar | Args: `{startDate?, endDate?, viewMode?}` where viewMode ∈ month/week/day/project. Returns `{rangeStart, rangeEnd, viewMode, tasks, goalPlanTasks, goals, vacationMode, reminders, countsByDate, projectAllocation?}`. `reminders` is filtered to the range; `countsByDate[YYYY-MM-DD] = {tasks, reminders}` powers month-grid badges. `calendarView.ts`. |
 | Roadmap view | GET /view/roadmap | No args. Returns single legacy Roadmap. `roadmapView.ts:17`. |
-| Planning view | GET /view/planning | Returns all goals + progress. `planningView.ts:65`. |
+| Planning view | GET /view/planning | Returns all goals + progress. Each goal in `goals[]` (and the `bigGoals` / `everydayGoals` / `repeatingGoals` splits) carries an optional `inFlight: { jobId, status: "pending"\|"running", startedAt } \| null` field — populated from `job_queue` when a `command:regenerate-goal-plan` job is queued or running for that goal. Goal cards render a "Planning…" pill in place of the pace badge when `inFlight` is non-null. `planningView.ts:65`. |
 | Settings view | GET /view/settings | `settingsView.ts`. |
 | News Feed view | GET /view/news-feed | Args: topic?. `newsFeedView.ts`. |
 | Onboarding view | GET /view/onboarding | Returns `{step, messages, proposedGoal, currentGoalId, firstTaskId, memoryFacts, memoryPreferences, onboardingComplete, timezone, greetingName, goalRaw}`. Step server-computed. `onboardingView.ts`. |
-| Goal Plan view | GET /view/goal-plan | Args: goalId (required). Per-goal plan + progress + paceMismatch. `goalPlanView.ts:74`. |
+| Goal Plan view | GET /view/goal-plan | Args: goalId (required). Per-goal plan + progress + paceMismatch. Response also includes `inFlight: { jobId, status: "pending"\|"running", startedAt } \| null` — non-null when a `command:regenerate-goal-plan` job is queued or running for this goal. Three observable states: **(a) no plan, no job** → `plan: null, inFlight: null` (show "Generate plan" CTA); **(b) generating** → `plan: null, inFlight: {...}` (show Planning… skeleton); **(c) ready** → `plan: {...}, inFlight: null` (render milestones). A plan that is being regenerated is state (c) + `inFlight: {...}` — keep the existing plan visible with a "Regenerating…" badge. `goalPlanView.ts:74`. |
 | Goal Breakdown view | GET /view/goal-breakdown | Args: goalId?. When present, filters scheduledTasks to that goal AND reconstructs full `GoalBreakdown` tree (years → months → weeks → days → tasks) from `goal_plan_nodes`. `goalBreakdownView.ts`. |
 | Goal Dashboard view | GET /view/goal-dashboard | Args: goalId (required). Returns `{goal, milestones, progress, insightCards, recentActivity, aiObservations}`. Calls `dashboardInsightAgent` for RAG-driven card mix. `goalDashboardView.ts`. |
 
@@ -275,11 +275,11 @@ Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across eve
 #### Goals
 | Feature | API | Usage |
 |---|---|---|
-| Create goal | POST /commands/create-goal | Body: `{title, description?, targetDate?, ...}`. |
-| Update goal | POST /commands/update-goal | Body: `{id, updates}`. |
-| Delete goal | POST /commands/delete-goal | Body: `{id}`. |
-| Pause goal | POST /commands/pause-goal | Body: `{id}`. |
-| Resume goal | POST /commands/resume-goal | Body: `{id}`. |
+| Create goal | POST /commands/create-goal | Body: `{goal: {id, title, description?, targetDate?, ...}}`. FE generates the goal id client-side (uuid); backend upserts the full Goal row. **Pure upsert — does NOT auto-generate a plan.** Callers that want a plan must fire a second `command:regenerate-goal-plan` with the same `{goalId}` after create-goal succeeds. The Goal Plan page then reads `view:goal-plan.inFlight` to show the "Planning…" state. Onboarding's `command:confirm-onboarding-goal` already chains these two internally. |
+| Update goal | POST /commands/update-goal | Body: `{goal: {id, ...fields}}`. Same shape as create; backend upserts. |
+| Delete goal | POST /commands/delete-goal | Body: `{goalId}`. |
+| Pause goal | POST /commands/pause-goal | Body: `{goalId}`. |
+| Resume goal | POST /commands/resume-goal | Body: `{goalId}`. |
 | Confirm goal plan | POST /commands/confirm-goal-plan | Body: `{goalId}`. |
 | Expand plan week | POST /commands/expand-plan-week | Body: `{goalId, weekId}`. |
 

@@ -9,6 +9,8 @@
 
 import * as repos from "../repositories";
 import type { Goal, MonthlyContext } from "@starward/core";
+import { findActivePlanJobsByUser, type PlanJobDescriptor } from "../job-db";
+import { getCurrentUserId } from "../middleware/requestContext";
 
 export interface PlanProgress {
   completed: number;
@@ -16,16 +18,25 @@ export interface PlanProgress {
   percent: number;
 }
 
+/** A goal plus any in-flight plan-generation descriptor. Kept as an
+ *  intersection so existing callers that read `Goal` fields still work,
+ *  while new FE code can branch on `inFlight != null` to render a
+ *  "Planning…" pill in place of the pace badge. Null when no
+ *  `regenerate-goal-plan` job is queued or running for this goal. */
+export type PlanningGoal = Goal & {
+  inFlight: PlanJobDescriptor | null;
+};
+
 export interface PlanningView {
-  goals: Goal[];
+  goals: PlanningGoal[];
   monthlyContexts: MonthlyContext[];
   currentMonthContext: MonthlyContext | null;
   /** Goals whose plan has not been confirmed yet — PlanningPage surfaces
    *  these in a dedicated "needs review" list. */
-  goalsNeedingPlanReview: Goal[];
-  bigGoals: Goal[];
-  everydayGoals: Goal[];
-  repeatingGoals: Goal[];
+  goalsNeedingPlanReview: PlanningGoal[];
+  bigGoals: PlanningGoal[];
+  everydayGoals: PlanningGoal[];
+  repeatingGoals: PlanningGoal[];
   /** Per-goal plan progress keyed by goal id. Empty map entry means the
    *  goal has no plan yet; the page renders a 0% bar. */
   bigGoalProgressById: Record<string, PlanProgress>;
@@ -63,10 +74,23 @@ function planProgress(goal: Goal): PlanProgress {
 }
 
 export async function resolvePlanningView(): Promise<PlanningView> {
-  const [goals, monthlyContexts] = await Promise.all([
+  const userId = getCurrentUserId();
+  // `findActivePlanJobsByUser` runs a single indexed query returning a map
+  // of goalId → in-flight descriptor. Fetching alongside goals + monthly
+  // contexts keeps the view to three parallel DB round-trips.
+  const [rawGoals, monthlyContexts, inFlightByGoalId] = await Promise.all([
     repos.goals.list(),
     repos.monthlyContext.list(),
+    findActivePlanJobsByUser(userId),
   ]);
+
+  // Annotate every goal with an `inFlight` descriptor (or null). Every
+  // downstream split below operates on PlanningGoal so the FE receives a
+  // consistent shape regardless of which filter bucket a goal lands in.
+  const goals: PlanningGoal[] = rawGoals.map((g) => ({
+    ...g,
+    inFlight: inFlightByGoalId.get(g.id) ?? null,
+  }));
 
   const monthKey = currentMonthKey();
   const currentMonthContext =

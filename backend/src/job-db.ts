@@ -124,3 +124,79 @@ export async function getJob(
   );
   return rows.length > 0 ? rows[0] : null;
 }
+
+/** Descriptor for an in-flight plan-generation job, surfaced on view
+ *  payloads so the FE can render a "Planning…" state without a separate
+ *  poll of /commands/job-status/:id. */
+export interface PlanJobDescriptor {
+  jobId: string;
+  /** 'pending' = queued; 'running' = worker picked it up. */
+  status: "pending" | "running";
+  /** ISO8601 timestamp of job creation; used by the FE to render an
+   *  elapsed-time counter. */
+  startedAt: string;
+}
+
+interface PlanJobRow {
+  id: string;
+  status: string;
+  created_at: string;
+  goal_id: string | null;
+}
+
+/** Return the most recent pending/running plan-generation job for a goal,
+ *  or null. Used by `view:goal-plan` to surface an `inFlight` field when
+ *  a `regenerate-goal-plan` job is queued or executing. */
+export async function findActivePlanJob(
+  userId: string,
+  goalId: string,
+): Promise<PlanJobDescriptor | null> {
+  const rows = await query<PlanJobRow>(
+    `SELECT id, status, created_at::text, payload->>'goalId' AS goal_id
+       FROM job_queue
+      WHERE user_id = $1
+        AND type = 'regenerate-goal-plan'
+        AND status IN ('pending', 'running')
+        AND payload->>'goalId' = $2
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [userId, goalId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    jobId: r.id,
+    status: r.status === "running" ? "running" : "pending",
+    startedAt: r.created_at,
+  };
+}
+
+/** Return a map of goalId → active plan-job descriptor for every goal
+ *  that currently has a pending or running `regenerate-goal-plan` job.
+ *  Used by `view:planning` to annotate goal cards with a "Planning…" pill
+ *  in one indexed query rather than N per-goal round-trips. */
+export async function findActivePlanJobsByUser(
+  userId: string,
+): Promise<Map<string, PlanJobDescriptor>> {
+  const rows = await query<PlanJobRow>(
+    `SELECT DISTINCT ON (payload->>'goalId')
+            id, status, created_at::text, payload->>'goalId' AS goal_id
+       FROM job_queue
+      WHERE user_id = $1
+        AND type = 'regenerate-goal-plan'
+        AND status IN ('pending', 'running')
+        AND payload->>'goalId' IS NOT NULL
+      ORDER BY payload->>'goalId', created_at DESC`,
+    [userId],
+  );
+  const out = new Map<string, PlanJobDescriptor>();
+  for (const r of rows) {
+    if (!r.goal_id) continue;
+    out.set(r.goal_id, {
+      jobId: r.id,
+      status: r.status === "running" ? "running" : "pending",
+      startedAt: r.created_at,
+    });
+  }
+  return out;
+}

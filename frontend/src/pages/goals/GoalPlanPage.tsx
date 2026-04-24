@@ -15,6 +15,7 @@ import Tabs from "../../components/primitives/Tabs";
 import PlanTab from "./PlanTab";
 import BreakdownTab from "./BreakdownTab";
 import DashboardTab from "./DashboardTab";
+import PlanningInFlight from "./PlanningInFlight";
 
 interface GoalPlanMilestone {
   id: string;
@@ -26,6 +27,22 @@ interface GoalPlanMilestone {
   percent?: number;
 }
 
+interface InFlightDescriptor {
+  jobId: string;
+  status: "pending" | "running";
+  startedAt: string;
+}
+
+/** Mirrors backend/src/views/goalPlanView.ts GoalPlanView. Three states
+ *  are observable here; see the JSDoc on the backend interface for a
+ *  full explanation. The FE chooses its render branch by checking
+ *  `data.plan` and `data.inFlight`:
+ *
+ *    loading  — `data == null` (HTTP fetch in flight)
+ *    generating — `data.inFlight != null` (optionally plan == null)
+ *    ready    — `data.plan != null`
+ *    empty    — `data.plan == null && data.inFlight == null` (never requested)
+ */
 interface GoalPlanView {
   goal?: {
     id: string;
@@ -35,9 +52,11 @@ interface GoalPlanView {
     targetDate?: string;
     startedAt?: string;
   };
+  plan?: unknown;
   milestones?: GoalPlanMilestone[];
   progress?: { percent?: number; paceDelta?: string };
   paceMismatch?: unknown;
+  inFlight?: InFlightDescriptor | null;
 }
 
 export default function GoalPlanPage({ goalId }: { goalId: string }) {
@@ -50,11 +69,19 @@ export default function GoalPlanPage({ goalId }: { goalId: string }) {
   const goal = data?.goal;
   const title = goal?.title ?? goalId;
   const milestones = (data?.milestones ?? []) as GoalPlanMilestone[];
+  // The page has four distinct render states. Keep this flag explicit so
+  // every branch below is unambiguous; see the GoalPlanView JSDoc above.
+  //   data.inFlight != null && !data.plan → show PlanningInFlight
+  //   data.inFlight != null &&  data.plan → show plan WITH "Regenerating" badge
+  //   data.plan               != null     → show plan normally
+  //   otherwise                           → empty-state (existing milestone list empty)
+  const inFlight = data?.inFlight ?? null;
+  const isGeneratingFirstPlan = !!inFlight && !data?.plan && milestones.length === 0;
 
   async function onPause() {
     setCmdError(null);
     try {
-      await run("command:pause-goal", { id: goalId });
+      await run("command:pause-goal", { goalId });
       refetch();
     } catch (e) {
       setCmdError((e as Error).message);
@@ -64,7 +91,7 @@ export default function GoalPlanPage({ goalId }: { goalId: string }) {
     if (!window.confirm("Delete this goal?")) return;
     setCmdError(null);
     try {
-      await run("command:delete-goal", { id: goalId });
+      await run("command:delete-goal", { goalId });
       setView("planning");
     } catch (e) {
       setCmdError((e as Error).message);
@@ -120,17 +147,36 @@ export default function GoalPlanPage({ goalId }: { goalId: string }) {
         }
       />
 
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { id: "plan", label: "Plan", icon: "planning" },
-          { id: "breakdown", label: "Breakdown", icon: "tree", badge: milestones.length },
-          { id: "dashboard", label: "Dashboard", icon: "target" },
-        ]}
-      />
+      {/* Tabs only rendered once a plan exists; while generating the first
+          plan, the tabs would point at empty content (Breakdown: nothing
+          to show; Dashboard: 0% everything). Hiding them keeps the user
+          focused on the in-flight state. */}
+      {!isGeneratingFirstPlan && (
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "plan", label: "Plan", icon: "planning" },
+            { id: "breakdown", label: "Breakdown", icon: "tree", badge: milestones.length },
+            { id: "dashboard", label: "Dashboard", icon: "target" },
+          ]}
+        />
+      )}
 
-      <div style={{ maxWidth: 1280, margin: "0 auto", width: "100%", padding: "24px 32px 96px" }}>
+      <div
+        data-state={
+          loading && !data
+            ? "loading"
+            : error
+              ? "error"
+              : isGeneratingFirstPlan
+                ? "planning-inflight"
+                : data?.plan
+                  ? "ready"
+                  : "empty"
+        }
+        style={{ maxWidth: 1280, margin: "0 auto", width: "100%", padding: "24px 32px 96px" }}
+      >
         {loading && !data && (
           <div data-testid="goal-plan-loading" style={{ padding: 40, textAlign: "center", color: "var(--fg-faint)" }}>
             Loading goal…
@@ -153,7 +199,19 @@ export default function GoalPlanPage({ goalId }: { goalId: string }) {
           </div>
         )}
 
-        {tab === "plan" && (
+        {/* First-plan-generating branch: render the full skeleton instead
+            of the empty PlanTab. When the WS view:invalidate fires on
+            job completion, useQuery refetches and this condition flips
+            false, falling through to the normal tab content. */}
+        {!loading && !error && isGeneratingFirstPlan && inFlight && (
+          <PlanningInFlight
+            startedAt={inFlight.startedAt}
+            status={inFlight.status}
+            horizon={goal?.horizon}
+          />
+        )}
+
+        {!isGeneratingFirstPlan && tab === "plan" && (
           <PlanTab
             goalId={goalId}
             goalTitle={title}
@@ -164,8 +222,10 @@ export default function GoalPlanPage({ goalId }: { goalId: string }) {
             onRefetch={refetch}
           />
         )}
-        {tab === "breakdown" && <BreakdownTab goalId={goalId} goalTitle={title} />}
-        {tab === "dashboard" && <DashboardTab goalId={goalId} />}
+        {!isGeneratingFirstPlan && tab === "breakdown" && (
+          <BreakdownTab goalId={goalId} goalTitle={title} />
+        )}
+        {!isGeneratingFirstPlan && tab === "dashboard" && <DashboardTab goalId={goalId} />}
       </div>
     </>
   );

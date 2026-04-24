@@ -820,7 +820,9 @@ function StepClarification({
   async function saveAndAdvance() {
     if (!goalId) return;
     try {
-      await run("command:update-goal", { id: goalId, updates: { clarificationAnswers: answers } });
+      // Backend expects args.goal with an id (see
+      // backend/src/routes/commands/goals.ts:20-28) — wrap the patch.
+      await run("command:update-goal", { goal: { id: goalId, clarificationAnswers: answers } });
       // Kick off the async plan-regeneration job so step 6 has something to show.
       const r = await run<{ jobId?: string }>("command:regenerate-goal-plan", { goalId });
       if (r?.jobId) startJob(r.jobId, "Generating goal plan");

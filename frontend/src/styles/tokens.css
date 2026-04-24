@@ -179,6 +179,14 @@ input, textarea, select { font: inherit; color: inherit; }
 @keyframes ns-fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 @keyframes ns-dot-blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 
+/* Indeterminate progress shimmer — a band sliding across a faint track.
+ * Use on the inner bar of a job-status progress indicator when the
+ * server doesn't report a numeric percent. */
+@keyframes ns-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 .spin { animation: ns-spin 0.9s linear infinite; }
 .dot-blink { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); display: inline-block; animation: ns-dot-blink 1.2s ease-in-out infinite; }
 .refreshed-flash { animation: ns-flash 1.2s ease-out; }

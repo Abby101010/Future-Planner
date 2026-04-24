@@ -187,6 +187,38 @@ export async function cmdExpandPlanWeek(
   };
 }
 
+/**
+ * Generate (or regenerate) a big goal's plan.
+ *
+ * This handler runs inside the async job worker — `command:regenerate-goal-plan`
+ * dispatches to `insertJob` in `commands.ts:202`, and the worker pulls the
+ * row off job_queue and invokes us here.
+ *
+ * Pipeline (routes through bigGoalCoordinator for effort-aware planning,
+ * matching `/ai/goal-plan-chat/stream` which has always used the same
+ * coordinator for realtime plan edits):
+ *
+ *   1. Fetch the goal from `goals` table.
+ *   2. Call `coordinateBigGoal`:
+ *        • Haiku effort router classifies HIGH vs LOW.
+ *        • HIGH → parallel research agent + personalization agent.
+ *        • LOW  → quick personalization only.
+ *      Returns `{ research, personalization, memoryContext, capacityContext }`.
+ *   3. Build an enriched AI payload — goal fields (title/description/
+ *      targetDate/importance/isHabit) plus `_researchSummary` +
+ *      `_researchFindings` the prompt expects.
+ *   4. Call `handleAIRequest("generate-goal-plan", …)` directly with the
+ *      coordinator's memoryContext (skip `runAI` — it would rebuild a
+ *      plainer memoryContext and clobber the coordinator's personalized one).
+ *   5. Validate the plan shape, persist via `goalPlan.replacePlan`, flip
+ *      `goal.planConfirmed`, emit view:invalidate via the command dispatcher.
+ *
+ * The old path called `runAI("generate-goal-plan", payload, "planning")` with
+ * only `{goalId}` on the payload — the handler received `goalTitle:
+ * undefined`, `targetDate: undefined`, etc. and generated a prompt with
+ * literal "Goal: undefined". That's fixed here by fetching the goal and
+ * explicitly populating the payload fields the handler reads.
+ */
 export async function cmdRegenerateGoalPlan(
   body: Record<string, unknown>,
 ): Promise<unknown> {
@@ -198,7 +230,113 @@ export async function cmdRegenerateGoalPlan(
       "command:regenerate-goal-plan requires args.payload.goalId",
     );
   }
-  const result = await runAI("generate-goal-plan", payload, "planning");
+
+  // Step 1: Fetch the goal (needed for coordinator input + payload enrichment).
+  const existing = await repos.goals.get(goalId);
+  if (!existing) {
+    throw new Error(`Goal ${goalId} not found`);
+  }
+
+  // Step 2: Route through the big-goal coordinator so the plan receives
+  // research + personalization + personalized memoryContext. Graceful
+  // fallback: if the coordinator fails (e.g. ANTHROPIC_API_KEY missing
+  // on effort-router), we fall back to a plain memoryContext build so
+  // the job still produces something.
+  const todayISO = new Date().toISOString().split("T")[0];
+  const [allGoals, todayTaskRecords] = await Promise.all([
+    repos.goals.list(),
+    repos.dailyTasks.listForDate(todayISO),
+  ]);
+  const currentCognitiveLoad = todayTaskRecords.reduce((sum, t) => {
+    const w = (t.payload as Record<string, unknown>).cognitiveWeight;
+    return sum + (typeof w === "number" ? w : 2);
+  }, 0);
+
+  const { coordinateBigGoal } = await import("../../coordinators/bigGoalCoordinator");
+  let coordResult: Awaited<ReturnType<typeof coordinateBigGoal>> | null = null;
+  try {
+    coordResult = await coordinateBigGoal({
+      userMessage: `Generate a plan for: ${existing.title}`,
+      goal: {
+        id: existing.id,
+        title: existing.title,
+        description: existing.description ?? "",
+        targetDate: existing.targetDate ?? "",
+        importance: existing.importance ?? "medium",
+        goalType: existing.goalType ?? "big",
+      },
+      existingGoals: allGoals
+        .filter((g) => g.id !== goalId)
+        .map((g) => ({
+          title: g.title,
+          goalType: g.goalType ?? "big",
+          status: g.status,
+        })),
+      todayTaskCount: todayTaskRecords.length,
+      currentCognitiveLoad,
+    });
+  } catch (err) {
+    console.warn(
+      "[cmdRegenerateGoalPlan] bigGoalCoordinator failed, falling back to plain memoryContext:",
+      err,
+    );
+  }
+
+  // Step 3: Build the enriched AI payload. The generate-goal-plan handler
+  // reads goalTitle/description/targetDate/importance/isHabit directly off
+  // `payload`, plus `_researchSummary` and `_researchFindings` injected by
+  // the coordinator. See backend/core/src/ai/handlers/generateGoalPlan.ts.
+  const researchSummary = coordResult?.research?.summary ?? "";
+  // `ResearchResult.findings` is a structured object (see
+  // bigGoal/researchAgent.ts ResearchResult). The generate-goal-plan
+  // handler expects `_researchFindings` as string[], so we flatten into
+  // one bullet per finding category — Opus reads them as numbered lines.
+  const researchFindings: string[] = [];
+  const f = coordResult?.research?.findings;
+  if (f) {
+    if (f.estimatedTotalHours > 0)
+      researchFindings.push(`Estimated total hours: ${f.estimatedTotalHours}`);
+    if (f.suggestedTimeline)
+      researchFindings.push(`Suggested timeline: ${f.suggestedTimeline}`);
+    if (f.keyMilestones?.length)
+      researchFindings.push(`Key milestones: ${f.keyMilestones.join("; ")}`);
+    if (f.bestPractices?.length)
+      researchFindings.push(`Best practices: ${f.bestPractices.join("; ")}`);
+    if (f.commonPitfalls?.length)
+      researchFindings.push(`Common pitfalls: ${f.commonPitfalls.join("; ")}`);
+    if (f.dependencies?.length)
+      researchFindings.push(`Dependencies: ${f.dependencies.join("; ")}`);
+    if (f.domainAdvice)
+      researchFindings.push(`Domain advice: ${f.domainAdvice}`);
+  }
+  const enrichedPayload: Record<string, unknown> = {
+    ...payload,
+    goalId,
+    goalTitle: existing.title,
+    description: existing.description ?? "",
+    targetDate: existing.targetDate ?? "",
+    importance: existing.importance ?? "medium",
+    isHabit: existing.isHabit ?? false,
+    startDate: existing.createdAt?.split("T")[0] ?? todayISO,
+    _researchSummary: researchSummary,
+    _researchFindings: researchFindings,
+  };
+
+  // Step 4: Call the AI handler directly so we can pass the coordinator's
+  // personalized memoryContext. `runAI` would rebuild a plainer memoryContext
+  // via buildMemoryContext and overwrite ours.
+  const userId = getCurrentUserId();
+  let memoryContext = coordResult?.memoryContext ?? "";
+  if (!memoryContext) {
+    const memory = await loadMemory(userId);
+    memoryContext = await buildMemoryContext(memory, "planning");
+  }
+  const { handleAIRequest } = await import("../../ai/router");
+  const result = await handleAIRequest(
+    "generate-goal-plan",
+    enrichedPayload,
+    memoryContext,
+  );
   // handleGenerateGoalPlan returns the raw parsed JSON. The prompt asks
   // for { reply, plan: {...} } but be tolerant of a bare plan.
   const resultObj = (result ?? {}) as Record<string, unknown>;
@@ -212,21 +350,54 @@ export async function cmdRegenerateGoalPlan(
     throw new Error("AI returned invalid plan shape");
   }
   const plan = planCandidate as unknown as import("@starward/core").GoalPlan;
-  // Fetch goal for date range to enable timeline gap-fill
-  const existing = await repos.goals.get(goalId);
-  const goalStartDate = existing?.createdAt?.split("T")[0];
-  const goalEndDate = existing?.targetDate;
+  // Goal was already fetched at the top for coordinator input; reuse it
+  // for the date-range gap-fill + planConfirmed flip below.
+  const goalStartDate = existing.createdAt?.split("T")[0];
+  const goalEndDate = existing.targetDate;
   await repos.goalPlan.replacePlan(goalId, plan, goalStartDate, goalEndDate);
   // Flip planConfirmed on the goal so dashboards/goal-plan view stop
   // showing the "not planned" state.
-  if (existing) {
-    await repos.goals.upsert({
-      ...existing,
-      plan,
-      planConfirmed: true,
-      status: existing.status === "planning" ? "active" : existing.status,
-    });
+  await repos.goals.upsert({
+    ...existing,
+    plan,
+    planConfirmed: true,
+    status: existing.status === "planning" ? "active" : existing.status,
+  });
+
+  // If a Project Agent Context wasn't already loaded on this goal, save
+  // the research + personalization from the coordinator so follow-up plan
+  // edits (via /ai/goal-plan-chat/stream) can skip the research step. This
+  // mirrors what `cmdConfirmGoalPlan` does via the onGoalConfirmed hook.
+  if (
+    coordResult &&
+    coordResult.effort === "high" &&
+    !coordResult.projectContextLoaded &&
+    coordResult.research
+  ) {
+    try {
+      const { saveProjectContext } = await import(
+        "../../coordinators/bigGoal/projectAgentContext"
+      );
+      await saveProjectContext(goalId, {
+        research: coordResult.research,
+        personalization: {
+          avgTasksPerDay: coordResult.personalization?.avgTasksPerDay ?? 0,
+          completionRate: coordResult.personalization?.completionRate ?? 0,
+          maxDailyWeight: coordResult.personalization?.maxDailyWeight ?? 10,
+          overwhelmRisk: coordResult.personalization?.overwhelmRisk ?? "low",
+          trend: coordResult.personalization?.trend ?? "stable",
+        },
+        decisions: [],
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn(
+        "[cmdRegenerateGoalPlan] saveProjectContext failed (non-fatal):",
+        err,
+      );
+    }
   }
+
   const reply = resultObj.reply as string | undefined;
 
   // ── Phase 2 pilot: detached critique pass ──
