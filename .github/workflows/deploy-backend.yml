@@ -32,8 +32,13 @@ jobs:
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
 
+      # fly.toml lives at repo root (it references backend/Dockerfile and
+      # needs backend/ + backend/core/ in the build context). flyctl must
+      # run from the repo root so it can find fly.toml — the old
+      # `working-directory: backend` broke every deploy after the
+      # monorepo split with "missing an app name" because flyctl
+      # couldn't see the root fly.toml.
       - name: Deploy to Fly
-        working-directory: backend
         run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
