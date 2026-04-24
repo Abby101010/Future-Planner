@@ -309,6 +309,20 @@ export async function cmdRegenerateGoalPlan(
     if (f.domainAdvice)
       researchFindings.push(`Domain advice: ${f.domainAdvice}`);
   }
+  // Resolve the goal's current phase from deadline distance so the
+  // planner prompt can bias toward phase-appropriate work. Generic
+  // archetype vocabulary ("early/mid/late/wrap") — job-search uses
+  // "prep/apply/interview/decide" when archetype is hinted.
+  const { resolvePhase } = await import(
+    "../../coordinators/bigGoal/phaseResolver"
+  );
+  const resolvedPhase = resolvePhase({
+    startDate: existing.createdAt?.split("T")[0] ?? todayISO,
+    targetDate: existing.targetDate ?? "",
+    today: todayISO,
+  });
+  const currentPhase = existing.currentPhase ?? resolvedPhase;
+
   const enrichedPayload: Record<string, unknown> = {
     ...payload,
     goalId,
@@ -320,6 +334,14 @@ export async function cmdRegenerateGoalPlan(
     startDate: existing.createdAt?.split("T")[0] ?? todayISO,
     _researchSummary: researchSummary,
     _researchFindings: researchFindings,
+    // Methodology-layer fields (Phase D/E). Optional on the payload;
+    // planner prompt only renders the block when any are present.
+    _weeklyHoursTarget: existing.weeklyHoursTarget,
+    _currentPhase: currentPhase,
+    _funnelMetrics: existing.funnelMetrics,
+    _skillMap: existing.skillMap,
+    _laborMarketData: coordResult?.laborMarket ?? existing.laborMarketData,
+    _clarificationAnswers: existing.clarificationAnswers,
   };
 
   // Step 4: Call the AI handler directly so we can pass the coordinator's
@@ -358,8 +380,9 @@ export async function cmdRegenerateGoalPlan(
   // Persist methodology-layer state produced by the planner/coordinator:
   //   - laborMarketData: from the (stubbed) web_search fetcher run in
   //     parallel with research + personalization (Phase C).
-  //   - planRationale: optional top-level "why this shape" string from
-  //     the AI's plan response (Phase E — tolerated today).
+  //   - planRationale: top-level "why this shape" string from the AI's
+  //     plan response (Phase E).
+  //   - currentPhase: deterministic resolution from deadline distance.
   // Flip planConfirmed on the goal so dashboards/goal-plan view stop
   // showing the "not planned" state.
   const planRationale =
@@ -373,6 +396,7 @@ export async function cmdRegenerateGoalPlan(
     status: existing.status === "planning" ? "active" : existing.status,
     laborMarketData: coordResult?.laborMarket ?? existing.laborMarketData,
     planRationale,
+    currentPhase: currentPhase ?? existing.currentPhase,
   });
 
   // If a Project Agent Context wasn't already loaded on this goal, save

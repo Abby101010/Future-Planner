@@ -38,6 +38,14 @@ export interface GenerateGoalPlanPayload extends EnrichedPayload {
   importance: string;
   isHabit: boolean;
   description?: string;
+  /** ─ Methodology-layer inputs (Phase D/E) ──
+   *  All optional; planner skips the block when absent. */
+  _weeklyHoursTarget?: number;
+  _currentPhase?: string;
+  _funnelMetrics?: Record<string, unknown>;
+  _skillMap?: Record<string, unknown>;
+  _laborMarketData?: Record<string, unknown>;
+  _clarificationAnswers?: Record<string, unknown>;
 }
 
 export interface GoalPlanChatPayload extends EnrichedPayload {

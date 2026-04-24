@@ -716,6 +716,9 @@ export interface GoalPlanMilestone {
   description: string;       // 1 sentence max
   targetDate: string;         // ISO date or relative like "Month 3"
   completed: boolean;
+  /** One-sentence "why THIS checkpoint at THIS date" — emitted by the
+   *  planner for every milestone. Dashboard shows it on hover. */
+  rationale?: string;
   /** Number of tasks that fall under this milestone */
   totalTasks?: number;
   /** Number of completed tasks that fall under this milestone */
@@ -754,6 +757,19 @@ export interface GoalPlanDay {
   tasks: GoalPlanTask[];
 }
 
+/** The four first-class task types from the methodology.
+ *  - "application"    — quantity-type (submit, send, file)
+ *  - "skill-building" — learning-type (read, practice new technique)
+ *  - "practice"       — repetition-type (leetcode, mocks, drills)
+ *  - "targeted-prep"  — tailored prep scoped to a specific target
+ *  - "other"          — anything that doesn't cleanly fit the four */
+export type GoalPlanTaskType =
+  | "application"
+  | "skill-building"
+  | "practice"
+  | "targeted-prep"
+  | "other";
+
 /** A single task within a day */
 export interface GoalPlanTask {
   id: string;
@@ -764,6 +780,13 @@ export interface GoalPlanTask {
   category: "learning" | "building" | "networking" | "reflection" | "planning";
   completed: boolean;
   completedAt?: string;
+  /** One-sentence "why THIS task today for THIS user" — emitted by the
+   *  planner. Drives the FE's "why today?" tooltip. Optional because
+   *  older plans don't carry it. */
+  rationale?: string;
+  /** Methodology task-type enum (Phase E). Defaults to "other" in
+   *  readers when missing. */
+  taskType?: GoalPlanTaskType;
 }
 
 /** A goal plan task projected onto a calendar date range. */

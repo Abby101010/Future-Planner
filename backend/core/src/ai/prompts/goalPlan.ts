@@ -513,6 +513,38 @@ PRIORITY & FREQUENCY RULES (based on goal importance — provided in context):
 ALWAYS follow these rules when assigning task priority, frequency, and duration.
 Never assign "must-do" to a low-importance goal's tasks.
 
+METHODOLOGY LAYER — BACK-SOLVING FROM FRAMEWORKS:
+When the user's context includes any of the following, USE them to back-solve the
+plan shape. Document the back-solving in planRationale so the user understands
+the "why" behind this plan.
+
+- WEEKLY HOURS TARGET — if provided, every week's total task minutes should sum
+  to roughly this budget (±20%). Do NOT exceed it.
+- CURRENT PHASE — if provided (prep / apply / interview / decide for job search;
+  early / mid / late / wrap for generic), bias task mix toward phase-appropriate
+  work. Early/Prep weights skill-building; Mid/Apply weights quantity actions
+  (applications, submissions); Late/Interview weights targeted-prep (company
+  research, mocks); Wrap/Decide weights decision work.
+- FUNNEL METRICS — if provided (e.g. {targetOffers, applications, replies, ...}),
+  back-solve weekly application quotas from target outcomes using the industry-
+  standard conversion funnel (~100 apps → 20 replies → 10 first-rounds → 5 final
+  rounds → 2 offers). Explain the math in planRationale.
+- T-SHAPED SKILL MAP — if provided (e.g. {horizontal:[{skill,score}],
+  vertical:[{skill,score}]}), prioritize skill-building tasks on the lowest-
+  scored entries. Don't rebuild strengths; fix gaps.
+- LABOR-MARKET DATA — if provided (open-role count, salary range, top JD skills,
+  hiring cadence), use topSkills to shape practice tasks and hiringCadence to
+  shape outreach frequency.
+- CLARIFICATION ANSWERS — always defer to these when they conflict with
+  assumptions. The user is a collaborator, not a recipient.
+
+ASK YOURSELF BEFORE EMITTING:
+- Did I back-solve weekly pace from the user's inputs rather than guessing?
+- Is planRationale specific ("I reduced weekly apps from 25 to 15 because your
+  quality-over-quantity preference + 20% reply rate suggests ...") rather than
+  generic?
+- Does every milestone have a rationale explaining why THIS checkpoint?
+
 PLAN STRUCTURE (hierarchical):
 1. MILESTONES — Timeline overview. Key checkpoints in the journey (3-6 milestones).
 2. YEARS — Only include if the goal spans >1 year or is a habit. Each year has a 1-sentence objective.
@@ -523,15 +555,41 @@ PLAN STRUCTURE (hierarchical):
 
 For goals shorter than 1 year, use a single year entry as a wrapper.
 
+TASK TYPE TAXONOMY (emit on every task):
+Every task MUST carry a "taskType" field. Use the first matching category:
+- "application"     — quantity-type work (submit a resume, file an application,
+                      send a pitch, ship an outreach email). One unit = one send.
+- "skill-building"  — learning-type work (read a chapter, take a course module,
+                      watch a tutorial, practice a new technique).
+- "practice"        — repetition-type work (leetcode, mock interviews, drills,
+                      rehearsals). Skill already learned; reps matter.
+- "targeted-prep"   — tailored-prep work scoped to a specific target (deep-
+                      research company X, tailor resume for role Y, rehearse
+                      specific question Z).
+- "other"           — anything that doesn't cleanly fit the above four.
+Default to "other" when unsure — don't force a bad fit.
+
+RATIONALE FIELDS (emit on every task + milestone + top-level):
+- Top-level "planRationale": ONE paragraph explaining the plan's shape — the
+  timeline compression, the weekly pace, the phase bias. Reference specific
+  user inputs ("you said 3 months, so I back-solved to ~X/week"). This is
+  what the dashboard shows when the user asks "why this plan?".
+- Per-milestone "rationale": ONE sentence. Why THIS checkpoint at THIS date.
+- Per-task "rationale": ONE sentence. Why THIS task today for THIS user
+  (e.g. "you've been on prep for 2 weeks — it's time to apply"). This is
+  what drives the user's "why today?" tooltip.
+
 Respond ONLY with valid JSON:
 {
   "reply": "A brief encouraging overview of the plan",
+  "planRationale": "One paragraph. Back-solves the plan shape from user inputs.",
   "plan": {
     "milestones": [
       {
         "id": "ms-1",
         "title": "Milestone name",
         "description": "One sentence on what this milestone represents.",
+        "rationale": "One sentence on why THIS checkpoint at THIS date.",
         "targetDate": "YYYY-MM-DD or relative like 'Month 3'",
         "completed": false
       }
@@ -561,6 +619,8 @@ Respond ONLY with valid JSON:
                         "id": "task-7e8f9a0b",
                         "title": "Specific goal-relevant task title",
                         "description": "One sentence: why this matters for this goal.",
+                        "rationale": "One sentence: why THIS task today for THIS user.",
+                        "taskType": "application",
                         "durationMinutes": 30,
                         "priority": "must-do",
                         "category": "learning",
