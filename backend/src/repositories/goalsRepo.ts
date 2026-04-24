@@ -9,7 +9,15 @@
  * No business logic lives here — pure CRUD.
  */
 
-import type { Goal, GoalImportance, GoalPlan, GoalScope, GoalType } from "@starward/core";
+import type {
+  Goal,
+  GoalImportance,
+  GoalPlan,
+  GoalScope,
+  GoalType,
+  LaborMarketData,
+  OverrideLogEntry,
+} from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
@@ -36,8 +44,29 @@ interface GoalRow {
   goal_metadata: Record<string, unknown> | string | null;
   user_notes: string;
   clarification_answers: Record<string, unknown> | string | null;
+  // 0013 methodology columns
+  weekly_hours_target: string | number | null;
+  current_phase: string | null;
+  funnel_metrics: Record<string, unknown> | string | null;
+  skill_map: Record<string, unknown> | string | null;
+  labor_market_data: Record<string, unknown> | string | null;
+  plan_rationale: string | null;
+  pace_tasks_per_day: string | number | null;
+  pace_last_computed_at: string | Date | null;
+  override_log: unknown[] | string | null;
   created_at: string;
   updated_at: string;
+}
+
+function nullableNumber(v: string | number | null | undefined): number | undefined {
+  if (v === null || v === undefined) return undefined;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function nullableTimestamp(v: string | Date | null | undefined): string | undefined {
+  if (!v) return undefined;
+  return v instanceof Date ? v.toISOString() : String(v);
 }
 
 function rowToGoal(r: GoalRow): Goal {
@@ -72,6 +101,19 @@ function rowToGoal(r: GoalRow): Goal {
     rescheduleBannerDismissed: meta.rescheduleBannerDismissed as
       | boolean
       | undefined,
+    // 0013 methodology fields
+    weeklyHoursTarget: nullableNumber(r.weekly_hours_target),
+    currentPhase: r.current_phase ?? undefined,
+    funnelMetrics: parseJson(r.funnel_metrics),
+    skillMap: parseJson(r.skill_map),
+    laborMarketData: parseJson(r.labor_market_data) as LaborMarketData,
+    planRationale: r.plan_rationale ?? undefined,
+    paceTasksPerDay: nullableNumber(r.pace_tasks_per_day),
+    paceLastComputedAt: nullableTimestamp(r.pace_last_computed_at),
+    overrideLog: (() => {
+      const parsed: unknown = parseJson(r.override_log);
+      return Array.isArray(parsed) ? (parsed as OverrideLogEntry[]) : [];
+    })(),
   };
 }
 
@@ -117,10 +159,15 @@ export async function upsert(goal: Goal): Promise<void> {
        goal_type, scope, is_habit, icon, plan_confirmed, progress_percent,
        goal_slot, payload,
        goal_description, goal_metadata, user_notes, clarification_answers,
+       weekly_hours_target, current_phase, funnel_metrics, skill_map,
+       labor_market_data, plan_rationale, pace_tasks_per_day,
+       pace_last_computed_at, override_log,
        updated_at
      ) values (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb,
-       $16, $17::jsonb, $18, $19::jsonb, now()
+       $16, $17::jsonb, $18, $19::jsonb,
+       $20, $21, $22::jsonb, $23::jsonb, $24::jsonb, $25, $26, $27, $28::jsonb,
+       now()
      )
      on conflict (user_id, id) do update set
        title = excluded.title,
@@ -140,6 +187,15 @@ export async function upsert(goal: Goal): Promise<void> {
        goal_metadata = excluded.goal_metadata,
        user_notes = excluded.user_notes,
        clarification_answers = excluded.clarification_answers,
+       weekly_hours_target = excluded.weekly_hours_target,
+       current_phase = excluded.current_phase,
+       funnel_metrics = excluded.funnel_metrics,
+       skill_map = excluded.skill_map,
+       labor_market_data = excluded.labor_market_data,
+       plan_rationale = excluded.plan_rationale,
+       pace_tasks_per_day = excluded.pace_tasks_per_day,
+       pace_last_computed_at = excluded.pace_last_computed_at,
+       override_log = excluded.override_log,
        updated_at = now()`,
     [
       goal.id,
@@ -161,6 +217,15 @@ export async function upsert(goal: Goal): Promise<void> {
       JSON.stringify(goal.goalMetadata ?? {}),
       goal.userNotes ?? "",
       JSON.stringify(goal.clarificationAnswers ?? {}),
+      goal.weeklyHoursTarget ?? null,
+      goal.currentPhase ?? null,
+      JSON.stringify(goal.funnelMetrics ?? {}),
+      JSON.stringify(goal.skillMap ?? {}),
+      JSON.stringify(goal.laborMarketData ?? {}),
+      goal.planRationale ?? null,
+      goal.paceTasksPerDay ?? null,
+      goal.paceLastComputedAt ?? null,
+      JSON.stringify(goal.overrideLog ?? []),
     ],
   );
 }
@@ -210,6 +275,43 @@ export async function setGoalSlot(
         set goal_slot = $3, updated_at = now()
       where user_id = $1 and id = $2`,
     [userId, id, slot],
+  );
+}
+
+/** Append an entry to `goals.override_log`. Used by dashboard edit commands
+ *  so user modifications persist as an auditable trail separate from AI
+ *  output — the planner reads this on regeneration to explain why it's
+ *  adjusting around the user instead of overwriting them. */
+export async function appendOverrideEntry(
+  id: string,
+  entry: Omit<OverrideLogEntry, "ts"> & { ts?: string },
+): Promise<void> {
+  const userId = requireUserId();
+  const full: OverrideLogEntry = { ts: entry.ts ?? new Date().toISOString(), ...entry };
+  await query(
+    `update goals
+        set override_log = coalesce(override_log, '[]'::jsonb) || $3::jsonb,
+            updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, id, JSON.stringify([full])],
+  );
+}
+
+/** Persist a pace snapshot on `goals`. Written by cmdConfirmGoalPlan and
+ *  the adaptive-reschedule job so the FE never waits on on-the-fly pace
+ *  detection. Null `tasksPerDay` clears the snapshot. */
+export async function setPaceSnapshot(
+  id: string,
+  tasksPerDay: number | null,
+): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update goals
+        set pace_tasks_per_day = $3,
+            pace_last_computed_at = case when $3 is null then null else now() end,
+            updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, id, tasksPerDay],
   );
 }
 

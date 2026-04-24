@@ -225,6 +225,13 @@ export async function cmdConfirmOnboardingGoal(
     },
     userNotes: "",
     clarificationAnswers: {},
+    // 0013 methodology fields — hours budget seeds from onboarding;
+    // everything else starts empty and is filled in by the planner.
+    weeklyHoursTarget: typeof hoursPerWeek === "number" ? hoursPerWeek : undefined,
+    funnelMetrics: {},
+    skillMap: {},
+    laborMarketData: {},
+    overrideLog: [],
   };
 
   await repos.goals.upsert(newGoal);

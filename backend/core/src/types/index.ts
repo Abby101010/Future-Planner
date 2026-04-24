@@ -551,6 +551,36 @@ export interface RepeatSchedule {
   until?: string;
 }
 
+/** A single entry in a goal's override audit log. Appended whenever a
+ *  user edits a dashboard-surface field (title, milestone, notes, etc.).
+ *  Lets the planner explain why it's adjusting around a user decision
+ *  instead of silently overwriting AI output on regeneration. */
+export interface OverrideLogEntry {
+  /** ISO timestamp when the edit happened. */
+  ts: string;
+  /** Who made the change — always "user" today; reserved for agents. */
+  actor: "user" | "agent";
+  /** Dotted field path that changed (e.g. "title", "milestone.m123.title"). */
+  field: string;
+  /** Previous value (stringified for display). */
+  oldValue: string;
+  /** New value. */
+  newValue: string;
+  /** Optional user-supplied rationale. */
+  reason?: string;
+}
+
+/** Live labor-market data for a goal. Populated by the (pending) web_search
+ *  path; stub returns {} today. Shape intentionally flexible because providers
+ *  and archetypes differ. */
+export interface LaborMarketData {
+  openRoleCount?: number;
+  salaryRange?: { low: number; high: number; currency?: string };
+  topSkills?: string[];
+  hiringCadence?: string;
+  fetchedAt?: string;
+}
+
 /** A user-created goal */
 export interface Goal {
   id: string;
@@ -596,6 +626,34 @@ export interface Goal {
   rescheduleBannerDismissed?: boolean;
   /** @deprecated — slot system removed. Column kept for backward compat but no longer used. */
   goalSlot?: "primary" | "secondary" | "personal" | null;
+
+  // ── 0013 methodology fields ──
+  /** Hours/week the user committed to for this goal. From the clarifier. */
+  weeklyHoursTarget?: number;
+  /** Current lifecycle phase. Archetype-specific: job-search uses
+   *  "prep" | "apply" | "interview" | "decide"; learning archetypes use
+   *  their own labels. Undefined until the planner resolves it from
+   *  deadline distance + completion signal. */
+  currentPhase?: string;
+  /** Archetype-specific funnel parameters. For job search:
+   *  `{ applications, replies, firstRounds, finalRounds, offers,
+   *     targetOffers, backSolvedWeeklyApps }`. Empty for other archetypes. */
+  funnelMetrics: Record<string, unknown>;
+  /** T-shaped skill map. For job search:
+   *  `{ horizontal: [{skill, score}], vertical: [{skill, score}] }`. */
+  skillMap: Record<string, unknown>;
+  /** Live labor-market data. {} until web_search lands. */
+  laborMarketData: LaborMarketData;
+  /** Plan-level rationale: one paragraph "why this shape". Set by the
+   *  planner when it emits the plan. Per-milestone rationale lives on
+   *  each `goal_plan_nodes.payload.rationale`. */
+  planRationale?: string;
+  /** Pace snapshot — computed tasks/day actual over the last window. */
+  paceTasksPerDay?: number;
+  /** When the pace snapshot was last computed (ISO timestamp). */
+  paceLastComputedAt?: string;
+  /** User override audit trail (append-only). */
+  overrideLog: OverrideLogEntry[];
 }
 
 /** A message in the goal planning chat */
