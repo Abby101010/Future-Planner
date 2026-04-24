@@ -29,6 +29,14 @@ export async function cmdUpdateGoalNotes(
   }
   const existing = await repos.goals.get(goalId);
   if (!existing) throw new Error(`goal ${goalId} not found`);
+  if (existing.userNotes !== notes) {
+    await repos.goals.appendOverrideEntry(goalId, {
+      actor: "user",
+      field: "userNotes",
+      oldValue: existing.userNotes ?? "",
+      newValue: notes,
+    });
+  }
   await repos.goals.upsert({ ...existing, userNotes: notes });
   return { ok: true, goalId };
 }
@@ -46,7 +54,16 @@ export async function cmdEditGoalTitle(
   }
   const existing = await repos.goals.get(goalId);
   if (!existing) throw new Error(`goal ${goalId} not found`);
-  await repos.goals.upsert({ ...existing, title: newTitle.trim() });
+  const trimmed = newTitle.trim();
+  if (existing.title !== trimmed) {
+    await repos.goals.appendOverrideEntry(goalId, {
+      actor: "user",
+      field: "title",
+      oldValue: existing.title,
+      newValue: trimmed,
+    });
+  }
+  await repos.goals.upsert({ ...existing, title: trimmed });
   return { ok: true, goalId };
 }
 
@@ -76,11 +93,33 @@ export async function cmdEditMilestone(
     updatedPayload.targetDate = newDate.trim();
   }
 
+  const resolvedTitle =
+    typeof newTitle === "string" && newTitle.trim() ? newTitle.trim() : node.title;
+  const resolvedEndDate =
+    typeof newDate === "string" && newDate.trim() ? newDate.trim() : node.endDate;
+
+  if (resolvedTitle !== node.title) {
+    await repos.goals.appendOverrideEntry(node.goalId, {
+      actor: "user",
+      field: `milestone.${milestoneId}.title`,
+      oldValue: node.title,
+      newValue: resolvedTitle,
+    });
+  }
+  if (resolvedEndDate !== node.endDate) {
+    await repos.goals.appendOverrideEntry(node.goalId, {
+      actor: "user",
+      field: `milestone.${milestoneId}.targetDate`,
+      oldValue: node.endDate ?? "",
+      newValue: resolvedEndDate ?? "",
+    });
+  }
+
   await repos.goalPlan.upsertNodes(node.goalId, [
     {
       ...node,
-      title: typeof newTitle === "string" && newTitle.trim() ? newTitle.trim() : node.title,
-      endDate: typeof newDate === "string" && newDate.trim() ? newDate.trim() : node.endDate,
+      title: resolvedTitle,
+      endDate: resolvedEndDate,
       payload: updatedPayload,
     },
   ]);
