@@ -684,6 +684,15 @@ export async function cmdAdaptiveReschedule(
   );
   const actualPace = capacity.avgTasksCompletedPerDay || 2;
 
+  // Phase G: persist the measured pace on the goal so the FE has a fresh
+  // snapshot after every reschedule without running pace detection on
+  // every view fetch. `setPaceSnapshot` stamps pace_last_computed_at.
+  try {
+    await repos.goals.setPaceSnapshot(goalId, actualPace);
+  } catch (err) {
+    console.warn("[adaptive-reschedule] pace snapshot write failed:", err);
+  }
+
   const split = splitPlan(goal.plan);
   const streak = computeLowCompletionStreak(logsForCapacity, today);
   const classification = classifyReschedule({

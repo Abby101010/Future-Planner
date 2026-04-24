@@ -98,6 +98,14 @@ export async function cmdConfirmGoalPlan(
   if (!existing) throw new Error(`goal ${goalId} not found`);
   await repos.goals.upsert({ ...existing, planConfirmed: true });
 
+  // Seed an initial pace snapshot from the plan itself so the FE has a
+  // numeric value to render before any completion data arrives. Phase G
+  // adaptive-reschedule pass replaces this with the actual measured pace.
+  const plannedPace = computePlannedTasksPerDay(existing.plan, existing.targetDate);
+  if (plannedPace !== null) {
+    await repos.goals.setPaceSnapshot(goalId, plannedPace);
+  }
+
   // Materialize plan tasks into daily_tasks for the next 14 days.
   // These become pre-committed future tasks the Daily Planner respects.
   const materialized = await materializePlanTasks(goalId, existing.plan);
@@ -120,6 +128,36 @@ export async function cmdConfirmGoalPlan(
 }
 
 // ── Plan task materialization ────────────────────────────────
+
+/** Baseline pace: total tasks in the plan divided by days remaining to
+ *  the target date. Returns `null` when either is unknown or
+ *  non-positive. The adaptive-reschedule job replaces this with the
+ *  measured actual pace once completion data starts flowing. */
+function computePlannedTasksPerDay(
+  plan: GoalPlan | null,
+  targetDate: string,
+): number | null {
+  if (!plan || !Array.isArray(plan.years) || !targetDate) return null;
+  let total = 0;
+  for (const y of plan.years) {
+    for (const m of y.months) {
+      for (const w of m.weeks) {
+        for (const d of w.days) {
+          total += d.tasks.length;
+        }
+      }
+    }
+  }
+  const target = new Date(targetDate);
+  const today = new Date();
+  if (isNaN(target.getTime())) return null;
+  const daysRemaining = Math.max(
+    1,
+    Math.round((target.getTime() - today.getTime()) / 86400000),
+  );
+  if (total <= 0) return null;
+  return Math.round((total / daysRemaining) * 100) / 100;
+}
 
 /** Walk the plan hierarchy, resolve day labels to dates, and insert
  *  daily_tasks rows for any task within the next 14 days. */
