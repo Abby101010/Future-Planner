@@ -12,6 +12,7 @@ import type {
   Goal,
   GoalPlan,
   GoalPlanMessage,
+  GoalPlanMilestone,
 } from "@starward/core";
 import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type OverloadAdvisory } from "../services/paceDetection";
 import { loadMemory, computeCapacityProfile } from "../memory";
@@ -27,6 +28,9 @@ export interface GoalPlanProgress {
   total: number;
   completed: number;
   percent: number;
+  /** Human-readable pace delta (e.g. "3d late") derived from paceMismatch.
+   *  Undefined when the goal is on track. Rendered on the pace badge. */
+  paceDelta?: string;
 }
 
 /** Observable state of a goal's plan. The FE should branch on these three
@@ -48,6 +52,10 @@ export interface GoalPlanProgress {
 export interface GoalPlanView {
   goal: Goal | null;
   plan: GoalPlan | null;
+  /** Flat milestones convenience field — the FE reads this directly
+   *  (`data.milestones`) rather than drilling into `plan.milestones`.
+   *  Always an array; empty when no plan exists. */
+  milestones: GoalPlanMilestone[];
   planChat: GoalPlanMessage[];
   progress: GoalPlanProgress;
   /** Scheduled tasks over the plan's date range — GoalPlanPage passes
@@ -91,6 +99,11 @@ function todayISO(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+function formatPaceDelta(pm: PaceMismatch): string {
+  const days = Math.max(1, Math.round(pm.estimatedDelayDays));
+  return days < 14 ? `${days}d late` : `${Math.round(days / 7)}wk late`;
+}
+
 export async function resolveGoalPlanView(
   args: GoalPlanViewArgs,
 ): Promise<GoalPlanView> {
@@ -108,6 +121,7 @@ export async function resolveGoalPlanView(
     return {
       goal: null,
       plan: null,
+      milestones: [],
       planChat: [],
       progress: { total: 0, completed: 0, percent: 0 },
       scheduledTasks: [],
@@ -227,11 +241,16 @@ export async function resolveGoalPlanView(
     // pace detection is best-effort
   }
 
+  const progressWithDelta: GoalPlanProgress = paceMismatch
+    ? { ...progress, paceDelta: formatPaceDelta(paceMismatch) }
+    : progress;
+
   return {
     goal,
     plan,
+    milestones: plan?.milestones ?? [],
     planChat: goal.planChat ?? [],
-    progress,
+    progress: progressWithDelta,
     scheduledTasks,
     paceMismatch,
     overloadAdvisory,

@@ -8,7 +8,7 @@
  */
 
 import * as repos from "../repositories";
-import type { Goal, MonthlyContext } from "@starward/core";
+import type { Goal, MonthlyContext, GoalPlanMilestone } from "@starward/core";
 import { findActivePlanJobsByUser, type PlanJobDescriptor } from "../job-db";
 import { getCurrentUserId } from "../middleware/requestContext";
 
@@ -18,13 +18,28 @@ export interface PlanProgress {
   percent: number;
 }
 
+/** Mirrors frontend/src/pages/goals/PaceBadge.tsx `Pace` union. Kept as a
+ *  string union so the backend doesn't have to import FE types. */
+export type Pace = "on-track" | "ahead" | "behind" | "paused";
+
 /** A goal plus any in-flight plan-generation descriptor. Kept as an
  *  intersection so existing callers that read `Goal` fields still work,
  *  while new FE code can branch on `inFlight != null` to render a
  *  "Planning…" pill in place of the pace badge. Null when no
- *  `regenerate-goal-plan` job is queued or running for this goal. */
+ *  `regenerate-goal-plan` job is queued or running for this goal.
+ *
+ *  Also carries the FE-facing card fields (pace/paceDelta/pct/etc.) so
+ *  GoalCard can render without any derivation on the client. Pace is
+ *  always populated; defaults to "on-track" when no mismatch is detected. */
 export type PlanningGoal = Goal & {
   inFlight: PlanJobDescriptor | null;
+  pace: Pace;
+  paceDelta?: string;
+  pct?: number;
+  horizon?: string;
+  nextMilestone?: string;
+  nextDue?: string | null;
+  openTasks?: number;
 };
 
 export interface PlanningView {
@@ -73,6 +88,34 @@ function planProgress(goal: Goal): PlanProgress {
   };
 }
 
+/** Derive pace for a goal from its status alone, as a safe default. Phase G
+ *  will replace this with a real pace snapshot persisted on `goals`. */
+function derivePace(goal: Goal): Pace {
+  if (goal.status === "paused") return "paused";
+  return "on-track";
+}
+
+/** Format a goal's target date as a human horizon string (e.g. "12 months").
+ *  Returns undefined for habits / targetless goals so the FE pill hides. */
+function deriveHorizon(goal: Goal): string | undefined {
+  if (!goal.targetDate) return undefined;
+  const target = new Date(goal.targetDate);
+  const start = new Date(goal.createdAt || new Date().toISOString());
+  if (isNaN(target.getTime()) || isNaN(start.getTime())) return undefined;
+  const days = Math.max(1, Math.round((target.getTime() - start.getTime()) / 86400000));
+  if (days < 14) return `${days}d`;
+  if (days < 90) return `${Math.round(days / 7)}wk`;
+  if (days < 730) return `${Math.round(days / 30)}mo`;
+  return `${Math.round(days / 365)}y`;
+}
+
+/** Next incomplete milestone title + target date from the reconstructed plan. */
+function deriveNextMilestone(goal: Goal): { title?: string; due?: string } {
+  const ms: GoalPlanMilestone[] = goal.plan?.milestones ?? [];
+  const next = ms.find((m) => !m.completed);
+  return { title: next?.title, due: next?.targetDate };
+}
+
 export async function resolvePlanningView(): Promise<PlanningView> {
   const userId = getCurrentUserId();
   // `findActivePlanJobsByUser` runs a single indexed query returning a map
@@ -84,13 +127,26 @@ export async function resolvePlanningView(): Promise<PlanningView> {
     findActivePlanJobsByUser(userId),
   ]);
 
-  // Annotate every goal with an `inFlight` descriptor (or null). Every
+  // Annotate every goal with an `inFlight` descriptor (or null) plus the
+  // card-render fields the FE PlanningGoal expects (pace, paceDelta, pct,
+  // horizon, nextMilestone, nextDue, openTasks). Pace defaults to
+  // "on-track" — Phase G will replace this with a real snapshot. Every
   // downstream split below operates on PlanningGoal so the FE receives a
   // consistent shape regardless of which filter bucket a goal lands in.
-  const goals: PlanningGoal[] = rawGoals.map((g) => ({
-    ...g,
-    inFlight: inFlightByGoalId.get(g.id) ?? null,
-  }));
+  const goals: PlanningGoal[] = rawGoals.map((g) => {
+    const progress = planProgress(g);
+    const next = deriveNextMilestone(g);
+    return {
+      ...g,
+      inFlight: inFlightByGoalId.get(g.id) ?? null,
+      pace: derivePace(g),
+      pct: progress.total > 0 ? progress.percent : undefined,
+      horizon: deriveHorizon(g),
+      nextMilestone: next.title,
+      nextDue: next.due ?? null,
+      openTasks: progress.total - progress.completed,
+    };
+  });
 
   const monthKey = currentMonthKey();
   const currentMonthContext =
