@@ -355,13 +355,24 @@ export async function cmdRegenerateGoalPlan(
   const goalStartDate = existing.createdAt?.split("T")[0];
   const goalEndDate = existing.targetDate;
   await repos.goalPlan.replacePlan(goalId, plan, goalStartDate, goalEndDate);
+  // Persist methodology-layer state produced by the planner/coordinator:
+  //   - laborMarketData: from the (stubbed) web_search fetcher run in
+  //     parallel with research + personalization (Phase C).
+  //   - planRationale: optional top-level "why this shape" string from
+  //     the AI's plan response (Phase E — tolerated today).
   // Flip planConfirmed on the goal so dashboards/goal-plan view stop
   // showing the "not planned" state.
+  const planRationale =
+    typeof resultObj.planRationale === "string"
+      ? (resultObj.planRationale as string)
+      : existing.planRationale;
   await repos.goals.upsert({
     ...existing,
     plan,
     planConfirmed: true,
     status: existing.status === "planning" ? "active" : existing.status,
+    laborMarketData: coordResult?.laborMarket ?? existing.laborMarketData,
+    planRationale,
   });
 
   // If a Project Agent Context wasn't already loaded on this goal, save

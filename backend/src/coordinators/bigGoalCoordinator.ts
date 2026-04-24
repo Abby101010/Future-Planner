@@ -16,10 +16,11 @@
 import { emitAgentProgress } from "../ws";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { routeEffort, type EffortRouterInput } from "./effortRouter";
-import { classifyEffort } from "@starward/core";
+import { classifyEffort, type LaborMarketData } from "@starward/core";
 import { runResearchAgent, type ResearchResult } from "./bigGoal/researchAgent";
 import { runPersonalizationAgent, type PersonalizationResult } from "./bigGoal/personalizationAgent";
 import { loadProjectContext, saveProjectContext, type ProjectAgentContext } from "./bigGoal/projectAgentContext";
+import { fetchLaborMarketData } from "../services/laborMarketData";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -52,6 +53,9 @@ export interface BigGoalResult {
   research: ResearchResult | null;
   /** Personalization data */
   personalization: PersonalizationResult | null;
+  /** Live labor-market data. `null` on the low-effort path; `{}` when the
+   *  stub fetcher is disabled (STARWARD_LABOR_MARKET_ENABLED != "1"). */
+  laborMarket: LaborMarketData | null;
   /** Whether Project Agent Context was loaded (follow-up on existing goal) */
   projectContextLoaded: boolean;
   /** Memory context string for prompt injection */
@@ -137,8 +141,8 @@ async function runHighEffortPath(
     message: "Running research + personalization agents in parallel...",
   });
 
-  // Run both sub-agents in parallel
-  const [research, personalization] = await Promise.all([
+  // Run sub-agents + labor-market fetch in parallel.
+  const [research, personalization, laborMarket] = await Promise.all([
     // Skip research if we already have it from a prior session
     existingContext?.research
       ? Promise.resolve(existingContext.research)
@@ -149,6 +153,14 @@ async function runHighEffortPath(
           importance: request.goal?.importance ?? "medium",
         }),
     runPersonalizationAgent(),
+    // Labor-market fetcher is gated on STARWARD_LABOR_MARKET_ENABLED.
+    // Best-effort: a failure never blocks the plan generation.
+    fetchLaborMarketData({
+      role: request.goal?.title ?? request.userMessage,
+    }).catch((err) => {
+      console.warn("[coordinateBigGoal] laborMarket fetch failed:", err);
+      return {} as LaborMarketData;
+    }),
   ]);
 
   emitAgentProgress(userId, {
@@ -161,6 +173,7 @@ async function runHighEffortPath(
     effort: "high",
     research,
     personalization,
+    laborMarket,
     projectContextLoaded,
     memoryContext: personalization.memoryContext,
     capacityContext: personalization.capacityContext,
@@ -189,6 +202,7 @@ async function runLowEffortPath(
     effort: "low",
     research: null,
     personalization,
+    laborMarket: null,
     projectContextLoaded: false,
     memoryContext: personalization.memoryContext,
     capacityContext: personalization.capacityContext,
