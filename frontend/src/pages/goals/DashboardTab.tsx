@@ -23,7 +23,7 @@ import type {
 } from "@starward/core";
 import Button from "../../components/primitives/Button";
 import Pill from "../../components/primitives/Pill";
-import Icon from "../../components/primitives/Icon";
+import InsightCardView from "./InsightCardView";
 
 interface GoalDashboardActivity {
   date: string;
@@ -378,38 +378,7 @@ export default function DashboardTab({ goalId }: DashboardTabProps) {
               </div>
             )}
             {insightCards.map((c) => (
-              <div
-                key={c.id}
-                data-testid={`dashboard-insight-${c.id}`}
-                style={{
-                  padding: "12px 14px",
-                  background: "var(--gold-faint)",
-                  border: "1px solid var(--gold-line-faint)",
-                  borderRadius: "var(--r-md)",
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "flex-start",
-                }}
-              >
-                <Icon name="sparkle" size={13} style={{ color: "var(--accent)", marginTop: 2 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "var(--t-sm)", fontWeight: 600, color: "var(--fg)" }}>
-                    {c.title}
-                  </div>
-                  <pre
-                    style={{
-                      fontSize: 11,
-                      color: "var(--fg-mute)",
-                      marginTop: 3,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  >
-                    {JSON.stringify(c.props, null, 2)}
-                  </pre>
-                </div>
-                <Pill mono>{c.cardType}</Pill>
-              </div>
+              <InsightCardView key={c.id} card={c} />
             ))}
           </div>
         </section>
