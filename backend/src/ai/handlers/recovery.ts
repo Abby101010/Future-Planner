@@ -1,14 +1,14 @@
-/* NorthStar — Recovery handler */
+/* Starward — Recovery handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
 import { runReflection } from "../../reflection";
 import { query } from "../../db/pool";
 import { getCurrentUserId } from "../../middleware/requestContext";
-import { getModelForTask } from "@northstar/core";
-import { RECOVERY_SYSTEM } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { RecoveryPayload } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { RECOVERY_SYSTEM } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { RecoveryPayload } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 

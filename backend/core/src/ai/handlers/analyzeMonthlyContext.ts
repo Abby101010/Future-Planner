@@ -1,4 +1,4 @@
-/* NorthStar — Analyze Monthly Context handler */
+/* Starward — Analyze Monthly Context handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";

@@ -1,4 +1,4 @@
-/* NorthStar — Classify Goal handler (big / everyday / repeating) */
+/* Starward — Classify Goal handler (big / everyday / repeating) */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";

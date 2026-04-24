@@ -1,4 +1,4 @@
-/* NorthStar server — Tools module barrel (Phase 5) */
+/* Starward server — Tools module barrel (Phase 5) */
 
 export { runToolLoop } from "./loop";
 export type { RunToolLoopInput, RunToolLoopResult, ToolCallTrace } from "./loop";

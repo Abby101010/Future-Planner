@@ -1,4 +1,4 @@
-/* NorthStar server — monthly-context routes
+/* Starward server — monthly-context routes
  *
  * HTTP mirror of electron/ipc/monthlyContext.ts. Scoped by req.userId.
  * The "analyze" endpoint proxies to the AI handler chain (analyze-monthly-context).

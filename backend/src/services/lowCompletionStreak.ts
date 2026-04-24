@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Low-Completion Streak (Initiative B Phase 1)
+   Starward — Low-Completion Streak (Initiative B Phase 1)
 
    Consumes the logsByDate structure already built inside
    cmdAdaptiveReschedule — no extra DB reads. Walks backward

@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Reschedule Classifier (Initiative B Phase 1)
+   Starward — Reschedule Classifier (Initiative B Phase 1)
 
    Pure function that picks a reschedule scope (micro | local |
    plan) from the shape of the slippage. Runs BEFORE any AI call

@@ -1,4 +1,4 @@
-/* NorthStar server — daily logs repository
+/* Starward server — daily logs repository
  *
  * Wraps `daily_logs` (migration 0002). PK is (user_id, log_date). Stable
  * fields (mood, energy, notes, reflection) are columns; the variable-shape
@@ -7,11 +7,11 @@
  *
  * Note: this repository owns the log row ONLY. The daily_tasks list for a
  * given date is owned by dailyTasksRepo; callers that need a hydrated
- * DailyLog in the @northstar/core shape should join the two in a view
+ * DailyLog in the @starward/core shape should join the two in a view
  * resolver (Task 12).
  */
 
-import type { DailyLog, MoodEntry } from "@northstar/core";
+import type { DailyLog, MoodEntry } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
@@ -30,7 +30,7 @@ interface DailyLogRow {
 
 /** DB-shaped daily log row. View resolvers will hydrate this into a full
  *  DailyLog (with tasks joined from daily_tasks). We intentionally don't
- *  return the full @northstar/core DailyLog from this repo because the
+ *  return the full @starward/core DailyLog from this repo because the
  *  tasks array doesn't live in this table. */
 export interface DailyLogRecord {
   date: string; // ISO date (YYYY-MM-DD)

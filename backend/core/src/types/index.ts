@@ -1,4 +1,54 @@
-/* NorthStar - shared type definitions */
+/* Starward - shared type definitions */
+
+// ── Per-goal Dashboard types (Phase 5) ────────────────────────
+
+/** A single card rendered on the per-goal Dashboard. The dashboardInsightAgent
+ *  decides which cards to emit for a given goal based on retrieved methodology
+ *  chunks + the goal's metadata/clarification answers. Card rendering is the
+ *  frontend's job — the agent only emits the typed descriptor. */
+export interface InsightCard {
+  /** Stable id within a dashboard render (used as React key). */
+  id: string;
+  /** One of a fixed set of renderable card types. Add new types when you
+   *  add a new generic card component on the frontend. */
+  cardType:
+    | "progress-bar"
+    | "funnel"
+    | "streak"
+    | "checklist"
+    | "tracker-table"
+    | "heatmap"
+    | "phase-tracker"
+    | "countdown"
+    | "summary";
+  title: string;
+  /** Freeform per-card props. The frontend card component knows its own shape. */
+  props: Record<string, unknown>;
+}
+
+/** Dashboard progress snapshot — numeric summary at a glance. */
+export interface DashboardProgressData {
+  completedTasks: number;
+  totalTasks: number;
+  percent: number;
+  currentMilestoneIndex: number;
+  totalMilestones: number;
+  projectedCompletion: string; // ISO date
+  status: "on-track" | "ahead" | "behind" | "adjusting";
+}
+
+/** A proactive AI-generated observation or nudge surfaced on the dashboard.
+ *  Kept intentionally generic; specific rendering is the frontend's choice. */
+export interface AIObservation {
+  id: string;
+  text: string;
+  /** Approximate severity / attention level. Never red/green UI hints; the
+   *  frontend picks neutral tones per design rules. */
+  tone: "info" | "encouragement" | "caution";
+  createdAt: string;
+}
+
+
 
 // User
 export interface UserProfile {
@@ -15,17 +65,8 @@ export interface UserProfile {
   constraints?: string;
   moodBaseline?: string;
   onboardingComplete?: boolean;
-  weeklyAvailability?: TimeBlock[];
   createdAt: string;
   settings: UserSettings;
-}
-
-/** A single time block in the weekly availability grid */
-export interface TimeBlock {
-  day: number;        // 0=Mon, 1=Tue, ... 6=Sun
-  hour: number;       // 0-23
-  importance: 1 | 2 | 3;  // saturation level: 1=light, 2=medium, 3=high
-  label: string;      // brief description of what this time is for
 }
 
 export const USER_SEGMENTS = [
@@ -50,9 +91,9 @@ export interface UserSettings {
   /** Phase B segment: drives priorityAnnotator RAG + prompt + scheduler
    *  deferral policy. Undefined / null behaves identically to "general". */
   userSegment?: UserSegment | null;
-  /** B-2: when true, scheduler matches today's tasks to weeklyAvailability
-   *  slots based on cognitiveLoad and writes scheduled_start/end ISO. Default
-   *  false → no scheduler-originated time-block writes (byte-identical). */
+  /** B-2 (legacy — time map removed): previously controlled scheduler-driven
+   *  time-block assignment against the weekly availability grid. Kept on the
+   *  type for backwards compatibility; scheduler no longer reads it. */
   cognitiveLoadMatchingEnabled?: boolean;
   /** A-4: when true, scheduler uses the blended finalScore (tier × priorityScore
    *  × recency) to order tasks within a budget-kept set. Default false preserves
@@ -74,6 +115,36 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+}
+
+/** Finite steps of the rebuilt onboarding flow. Computed server-side from
+ *  user + goal state; the FE renders a different layer per step. */
+export type OnboardingStep =
+  | "welcome"        // first visit, no messages yet
+  | "discovery"      // conversational intake (AI asks open questions)
+  | "goal-naming"    // AI has summarized; user confirms or edits
+  | "clarification"  // goalClarifier asks methodology-specific questions
+  | "plan-reveal"    // narrative plan presented; user edits
+  | "first-task"     // plan accepted; one concrete task for today
+  | "complete";      // onboardingComplete = true
+
+/** One turn in the onboarding conversation. Stored as JSONB on the user row. */
+export interface OnboardingMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+/** AI-proposed goal shape produced by the onboardingSummarizer agent at
+ *  the end of step 3. Not yet committed to the goals table — the user
+ *  either confirms (→ command:confirm-onboarding-goal) or edits first. */
+export interface ProposedOnboardingGoal {
+  title: string;
+  description: string;
+  targetDate: string;                 // ISO date, empty allowed for open-ended
+  hoursPerWeek: number;               // AI estimate from the conversation
+  metadata: Record<string, unknown>;  // freeform; feeds Goal.goalMetadata on commit
+  rationale: string;                  // one-line AI explanation shown to the user
 }
 
 export interface ClarifiedGoal {
@@ -508,6 +579,14 @@ export interface Goal {
   progressPercent?: number;
   /** Freeform notes for the goal */
   notes?: string;
+  /** Original user-stated goal text, raw — drives RAG retrieval context for the per-goal Dashboard. */
+  goalDescription: string;
+  /** Flexible per-goal metadata (target role, skills, phase, etc.); no enforced shape. */
+  goalMetadata: Record<string, unknown>;
+  /** User's own notes, editable from the per-goal Dashboard — separate from the legacy `notes` field above. */
+  userNotes: string;
+  /** Answers captured during goalClarifier onboarding (Phase 3). */
+  clarificationAnswers: Record<string, unknown>;
   /** User has dismissed the "you have N incomplete tasks" reschedule banner for this goal */
   rescheduleBannerDismissed?: boolean;
   /** @deprecated — slot system removed. Column kept for backward compat but no longer used. */

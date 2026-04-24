@@ -1,8 +1,8 @@
-# @northstar/server
+# @starward/server
 
-NorthStar's cloud API. Express + Postgres + Anthropic, deploys to
+Starward's cloud API. Express + Postgres + Anthropic, deploys to
 Fly.io, talks to Supabase Postgres, and speaks the envelope protocol
-from `@northstar/core`.
+from `@starward/core`.
 
 ## Layout
 
@@ -21,7 +21,7 @@ server/
 ├── migrations/          # Numbered .sql files, applied in order by migrate.ts
 ├── prompts/             # AI prompt design docs (reference, not loaded)
 ├── Dockerfile           # Multi-stage node:22-alpine — context: server/
-└── fly.toml             # northstar-api app config (region: yyz)
+└── fly.toml             # starward-api app config (region: yyz)
 ```
 
 ## The one architectural rule
@@ -43,15 +43,15 @@ or route changes.
 ## Local dev
 
 ```bash
-npm --workspace @northstar/server run dev
+npm --workspace @starward/server run dev
 ```
 
-`npm --workspace @northstar/server run build` emits to `dist/`.
-`npm --workspace @northstar/server run migrate` applies any new
+`npm --workspace @starward/server run build` emits to `dist/`.
+`npm --workspace @starward/server run migrate` applies any new
 numbered `.sql` files in `migrations/`.
 
 ## Deploy
 
 ```bash
-cd packages/server && fly deploy -a northstar-api
+cd packages/server && fly deploy -a starward-api
 ```

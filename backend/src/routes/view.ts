@@ -1,4 +1,4 @@
-/* NorthStar server — view route
+/* Starward server — view route
  *
  * GET /view/:kind — one endpoint to fetch any per-page view model.
  *
@@ -15,8 +15,8 @@
  */
 
 import { Router } from "express";
-import { envelope, envelopeError } from "@northstar/core";
-import type { QueryKind } from "@northstar/core";
+import { envelope, envelopeError } from "@starward/core";
+import type { QueryKind } from "@starward/core";
 import { viewResolvers } from "../views";
 
 const viewRouter = Router();

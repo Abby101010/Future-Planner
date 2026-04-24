@@ -2,7 +2,7 @@
  * Goal-related command handlers.
  */
 
-import type { GoalPlan, GoalPlanTask } from "@northstar/core";
+import type { GoalPlan, GoalPlanTask } from "@starward/core";
 import { repos } from "./_helpers";
 import { onGoalConfirmed } from "../../coordinators/bigGoalCoordinator";
 

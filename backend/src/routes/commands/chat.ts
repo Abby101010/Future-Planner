@@ -9,7 +9,7 @@ import { repos, runAI, extractReplyFromText, applyPlanPatch } from "./_helpers";
  *  goal-plan target so chat history actually survives a refetch. */
 async function appendGoalPlanChatMessage(
   goalId: string,
-  msg: import("@northstar/core").GoalPlanMessage,
+  msg: import("@starward/core").GoalPlanMessage,
 ): Promise<void> {
   const goal = await repos.goals.get(goalId);
   if (!goal) return;
@@ -33,7 +33,7 @@ export async function cmdStartChatStream(
     try {
       await appendGoalPlanChatMessage(
         goalId,
-        message as unknown as import("@northstar/core").GoalPlanMessage,
+        message as unknown as import("@starward/core").GoalPlanMessage,
       );
     } catch (err) {
       console.warn("[cmd:start-chat-stream] failed to append goal chat:", err);
@@ -78,7 +78,7 @@ export async function cmdSendChatMessage(
       try {
         await appendGoalPlanChatMessage(
           goalId,
-          message as unknown as import("@northstar/core").GoalPlanMessage,
+          message as unknown as import("@starward/core").GoalPlanMessage,
         );
       } catch (err) {
         console.warn("[cmd:send-chat-message] append user msg failed:", err);
@@ -106,7 +106,7 @@ export async function cmdSendChatMessage(
     let planReplaced = false;
     if (result?.planReady && result.plan && typeof result.plan === "object") {
       try {
-        const planObj = result.plan as unknown as import("@northstar/core").GoalPlan;
+        const planObj = result.plan as unknown as import("@starward/core").GoalPlan;
         if (Array.isArray(planObj.years)) {
           const existing = await repos.goals.get(goalId);
           const gStartDate = existing?.createdAt?.split("T")[0];
@@ -126,7 +126,7 @@ export async function cmdSendChatMessage(
         const existing = await repos.goals.get(goalId);
         if (existing) {
           // Reconstruct plan from flat nodes (canonical) or inline.
-          let currentPlan: import("@northstar/core").GoalPlan | null = null;
+          let currentPlan: import("@starward/core").GoalPlan | null = null;
           const planNodes = await repos.goalPlan.listForGoal(goalId);
           if (planNodes.length > 0) {
             const reconstructed = repos.goalPlan.reconstructPlan(planNodes);

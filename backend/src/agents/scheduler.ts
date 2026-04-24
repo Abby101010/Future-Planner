@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Scheduler Sub-Agent
+   Starward — Scheduler Sub-Agent
 
    Builds a 3-tier schedule from calendar events, goal blocks,
    and task slots, then calls Haiku for conflict detection and
@@ -29,7 +29,7 @@ import {
   computeFinalScoreBreakdown,
   type FinalScoreTier,
   type HourEnergyWeight,
-} from "@northstar/core";
+} from "@starward/core";
 import { loadEnergyStatsForDayOfWeek } from "../services/energyProfile";
 import type {
   TaskStateInput,
@@ -44,7 +44,7 @@ import type {
   PriorityAnnotatorResult,
   PriorityAnnotation,
   TriagedTask,
-} from "@northstar/core";
+} from "@starward/core";
 
 const VALID_SEGMENT = new Set<string>(USER_SEGMENTS);
 function resolveSegment(input?: UserSegment | string | null): UserSegment {
@@ -386,134 +386,7 @@ function enforceCognitiveBudget(
   };
 }
 
-// ── B-2: weeklyAvailability / cognitiveLoad slot assignment ─
-
-/** Convert JS Date.getDay() (0=Sun..6=Sat) into the TimeBlock convention
- *  used by `weeklyAvailability` (0=Mon..6=Sun). */
-function jsDayToTimeBlockDay(jsDay: number): number {
-  return jsDay === 0 ? 6 : jsDay - 1;
-}
-
-async function assignSlotsForToday(args: {
-  userId: string;
-  date: string;
-  tasks: TriagedTask[];
-  annotations: Record<string, PriorityAnnotation>;
-  timeEstimator: TimeEstimatorResult;
-  weeklyAvailability: NonNullable<
-    Awaited<ReturnType<typeof repos.users.get>>
-  >["weeklyAvailability"];
-  scheduledTasks: TaskStateInput["scheduledTasks"];
-  /** B-3: when true, load per-(hour, dow, category) completion weights and
-   *  pass them to the matcher as a tie-break. Default false → byte-identical B-2. */
-  energyEnabled?: boolean;
-}): Promise<void> {
-  const {
-    userId,
-    date,
-    tasks,
-    annotations,
-    timeEstimator,
-    weeklyAvailability,
-    scheduledTasks,
-    energyEnabled,
-  } = args;
-
-  // Parse YYYY-MM-DD into local calendar date and map to 0=Mon..6=Sun.
-  const [y, m, d] = date.split("-").map((s) => parseInt(s, 10));
-  if (!y || !m || !d) return;
-  const jsDay = new Date(y, m - 1, d).getDay();
-  const tbDay = jsDayToTimeBlockDay(jsDay);
-
-  const slots: AvailabilitySlot[] = (weeklyAvailability ?? [])
-    .filter((tb) => tb.day === tbDay)
-    .map((tb) => ({
-      day: tb.day,
-      hour: tb.hour,
-      importance: tb.importance,
-      label: tb.label,
-    }));
-  if (slots.length === 0) return;
-
-  const existingAssignments: ExistingAssignment[] = [];
-  for (const st of scheduledTasks) {
-    if (!st.scheduledTime || !st.scheduledEndTime) continue;
-    existingAssignments.push({
-      startIso: `${date}T${st.scheduledTime}:00`,
-      endIso: `${date}T${st.scheduledEndTime}:00`,
-    });
-  }
-
-  const matcherTasks: MatcherTask[] = tasks.map((t) => {
-    const est = timeEstimator.estimates[t.id];
-    const duration = est
-      ? est.adjustedMinutes + est.bufferMinutes
-      : t.durationMinutes > 0
-        ? t.durationMinutes
-        : 30;
-    return {
-      id: t.id,
-      cognitiveLoad: annotations[t.id]?.cognitiveLoad,
-      durationMinutes: duration,
-      category: t.category,
-    };
-  });
-
-  // B-3: when data-driven energy matching is on, pull today's energy stats
-  // once and pass them to the matcher as a tie-break. Failure here must not
-  // break B-2's core slot assignment, so we fall back to an empty list.
-  let hourEnergyWeights: HourEnergyWeight[] | undefined;
-  if (energyEnabled) {
-    try {
-      const stats = await loadEnergyStatsForDayOfWeek(tbDay);
-      hourEnergyWeights = stats.map((s) => ({
-        hour: s.hour,
-        dayOfWeek: s.dayOfWeek,
-        category: s.category,
-        completionRate: s.completionRate,
-      }));
-    } catch (err) {
-      console.error("[scheduler] B-3 energy-stats load failed:", err);
-      hourEnergyWeights = undefined;
-    }
-  }
-
-  const assignments: SlotAssignment[] = matchTasksToSlots({
-    tasks: matcherTasks,
-    slots,
-    dateIso: date,
-    existingAssignments,
-    hourEnergyWeights,
-  });
-  if (assignments.length === 0) return;
-
-  for (const a of assignments) {
-    // Matcher emits naive local ISO (`YYYY-MM-DDTHH:MM:00`); derive HH:MM
-    // directly for the legacy payload fields.
-    const startHHMM = a.startIso.slice(11, 16);
-    const endHHMM = a.endIso.slice(11, 16);
-    try {
-      await repos.dailyTasks.update(a.taskId, {
-        scheduledStartIso: a.startIso,
-        scheduledEndIso: a.endIso,
-        payload: {
-          scheduledTime: startHHMM,
-          scheduledEndTime: endHHMM,
-        },
-      });
-    } catch (err) {
-      console.error(
-        `[scheduler] B-2: failed to persist slot for ${a.taskId}:`,
-        err,
-      );
-    }
-  }
-
-  emitViewInvalidate(userId, { viewKinds: ["view:calendar", "view:tasks"] });
-  console.log(
-    `[scheduler] B-2: assigned ${assignments.length} task(s) to availability slots`,
-  );
-}
+// B-2 slot assignment removed with the time map feature.
 
 // ── Main runner ────────────────────────────────────────────
 
@@ -651,32 +524,10 @@ export async function runScheduler(
       );
     }
 
-    // ── B-2: cognitiveLoad → weeklyAvailability slot matching ──
-    // Opt-in via settings.cognitiveLoadMatchingEnabled. When on, map today's
-    // tasks to slots whose `importance` matches the task's cognitiveLoad and
-    // dual-write scheduled_start/end ISO + legacy HH:MM. Default off → no
-    // scheduler-originated time-block writes (byte-identical to pre-B-2).
-    if (
-      user?.settings?.cognitiveLoadMatchingEnabled === true &&
-      Array.isArray(user.weeklyAvailability) &&
-      user.weeklyAvailability.length > 0 &&
-      workingTasks.length > 0
-    ) {
-      try {
-        await assignSlotsForToday({
-          userId,
-          date: input.date,
-          tasks: workingTasks,
-          annotations,
-          timeEstimator,
-          weeklyAvailability: user.weeklyAvailability,
-          scheduledTasks: input.scheduledTasks,
-          energyEnabled: user?.settings?.dataDrivenEnergyEnabled === true,
-        });
-      } catch (err) {
-        console.error("[scheduler] B-2 slot matching failed:", err);
-      }
-    }
+    // Time map removed: scheduler no longer performs cognitiveLoad→slot
+    // matching. The `assignSlotsForToday` helper below is retained as dead
+    // code (reachable only via a direct call that no longer happens) so
+    // any future reintroduction can call it; it reads no live fields.
   }
 
   // Replace gatekeeper.filteredTasks with the budget-enforced, tier-ordered

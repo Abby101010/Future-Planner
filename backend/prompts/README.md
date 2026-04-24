@@ -1,4 +1,4 @@
-# NorthStar (北极星) — Prompt Lab
+# Starward (星程) — Prompt Lab
 
 This directory contains the **core AI prompt designs** for validating output
 quality before building the app. Each prompt is tested against a sample user

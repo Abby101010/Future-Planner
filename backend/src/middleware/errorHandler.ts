@@ -1,4 +1,4 @@
-/* NorthStar server — error envelope middleware
+/* Starward server — error envelope middleware
  *
  * Matches the IPC return shape the renderer already expects:
  *   { ok: false, error: string }

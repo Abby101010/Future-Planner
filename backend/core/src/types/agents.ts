@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Agent Types (Frontend)
+   Starward — Agent Types (Frontend)
    Shared types for multi-agent progress display.
    ────────────────────────────────────────────────────────── */
 

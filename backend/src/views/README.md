@@ -50,7 +50,7 @@ invalidation table is the single source of truth — do not hardcode
 
 ```ts
 import { viewResolvers } from "../views";
-import { envelope, envelopeError } from "@northstar/core";
+import { envelope, envelopeError } from "@starward/core";
 
 const resolver = viewResolvers["view:dashboard"];
 const data = await resolver();

@@ -1,4 +1,4 @@
-/* NorthStar backend — request-scoped context
+/* Starward backend — request-scoped context
  *
  * AsyncLocalStorage so deeply-nested code (memory loaders, AI handlers)
  * can access the current request's userId without threading it through

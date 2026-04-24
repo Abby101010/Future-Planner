@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Duration Estimator Agent System Prompt
+   Starward — Duration Estimator Agent System Prompt
 
    Unlike timeEstimator (which batches the daily-planning
    candidates with original/adjusted/buffer math), this agent

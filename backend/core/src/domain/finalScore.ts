@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Two-Channel Arbitration (A-4)
+   Starward — Two-Channel Arbitration (A-4)
 
    Pure function. Blends three signals into a single within-tier
    ordering key so a hot quarter-tier task can edge out a stale

@@ -1,4 +1,4 @@
-/* NorthStar — Goal Plan Edit handler (lightweight edit impact analysis) */
+/* Starward — Goal Plan Edit handler (lightweight edit impact analysis) */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";

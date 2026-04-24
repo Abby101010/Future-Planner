@@ -2,7 +2,7 @@
  * Shared helpers and re-exports used by all command domain modules.
  */
 
-import type { CommandKind, QueryKind } from "@northstar/core";
+import type { CommandKind, QueryKind } from "@starward/core";
 import { getCurrentUserId } from "../../middleware/requestContext";
 import { emitViewInvalidate } from "../../ws/events";
 import { commandToInvalidations } from "../../views/_invalidation";
@@ -15,14 +15,14 @@ export { getPool } from "../../db/pool";
 export { getCurrentUserId } from "../../middleware/requestContext";
 export { emitViewInvalidate, emitAgentProgress } from "../../ws/events";
 export { loadMemory, buildMemoryContext, computeCapacityProfile } from "../../memory";
-export { extractReplyFromText } from "@northstar/core/handlers";
+export { extractReplyFromText } from "@starward/core/handlers";
 export {
   applyPlanPatch,
   ADAPTIVE_RESCHEDULE_SYSTEM,
   getModelForTask,
   personalizeSystem,
-} from "@northstar/core";
-export type { TimeBlock, UserProfile, UserSettings } from "@northstar/core";
+} from "@starward/core";
+export type { UserProfile, UserSettings } from "@starward/core";
 export { generateAndPersistDailyTasks } from "../../services/dailyTaskGeneration";
 export { getEffectiveDate, getEffectiveDaysAgo } from "../../dateUtils";
 export { splitPlan, mergePlans } from "../../services/paceDetection";

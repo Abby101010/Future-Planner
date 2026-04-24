@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar server — Anthropic client factory
+   Starward server — Anthropic client factory
 
    Reads the API key EXCLUSIVELY from the ANTHROPIC_API_KEY
    environment variable. There is no per-user settings fallback —

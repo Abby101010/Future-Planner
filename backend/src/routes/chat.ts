@@ -1,4 +1,4 @@
-/* NorthStar backend — chat session routes
+/* Starward backend — chat session routes
  *
  * HTTP mirror of frontend/electron/ipc/chat.ts. Sessions and attachments
  * both live in Postgres now (slice 5: bytes stored inline as bytea — no

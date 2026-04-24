@@ -1,4 +1,4 @@
-/* NorthStar server — Critique agent (Haiku)
+/* Starward server — Critique agent (Haiku)
  *
  * Thin wrapper around Anthropic Haiku that executes one critique pass. Returns
  * the parsed critique payload. Throws on network / parse failure; the caller
@@ -7,7 +7,7 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { getModelForTier } from "@northstar/core";
+import { getModelForTier } from "@starward/core";
 import { CRITIQUE_SYSTEM } from "./prompts";
 import type { CritiqueIssue } from "../ws/events";
 

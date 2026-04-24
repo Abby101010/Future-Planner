@@ -1,4 +1,4 @@
-/* NorthStar server — AI routes
+/* Starward server — AI routes
  *
  * HTTP mirror of the ai:* IPC channels. Each route forwards to handleAIRequest
  * with the corresponding RequestType. Scoping is per-request via req.userId
@@ -22,9 +22,9 @@ import {
   extractReplyFromText,
   buildUnifiedChatRequest,
   parseUnifiedChatResult,
-} from "@northstar/core/handlers";
-import type { AIPayloadMap, GoalPlan, GoalPlanMessage } from "@northstar/core";
-import { applyPlanPatch } from "@northstar/core";
+} from "@starward/core/handlers";
+import type { AIPayloadMap, GoalPlan, GoalPlanMessage } from "@starward/core";
+import { applyPlanPatch } from "@starward/core";
 import * as chatRepo from "../repositories/chatRepo";
 import * as repos from "../repositories";
 import { emitViewInvalidate } from "../ws/events";

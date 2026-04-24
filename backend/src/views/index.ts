@@ -1,4 +1,4 @@
-/* NorthStar server — view resolvers barrel
+/* Starward server — view resolvers barrel
  *
  * One entry per QueryKind. The `viewResolvers` map is the single
  * dispatch table the /view/:kind route uses to look up the right
@@ -9,7 +9,7 @@
  * so route handlers can type-check payloads at the edge.
  */
 
-import type { QueryKind } from "@northstar/core";
+import type { QueryKind } from "@starward/core";
 
 import {
   resolveDashboardView,
@@ -39,6 +39,11 @@ import {
   type GoalBreakdownView,
   type GoalBreakdownViewArgs,
 } from "./goalBreakdownView";
+import {
+  resolveGoalDashboardView,
+  type GoalDashboardView,
+  type GoalDashboardViewArgs,
+} from "./goalDashboardView";
 
 export {
   resolveDashboardView,
@@ -51,6 +56,7 @@ export {
   resolveOnboardingView,
   resolveGoalPlanView,
   resolveGoalBreakdownView,
+  resolveGoalDashboardView,
 };
 
 export type {
@@ -67,6 +73,8 @@ export type {
   GoalPlanViewArgs,
   GoalBreakdownView,
   GoalBreakdownViewArgs,
+  GoalDashboardView,
+  GoalDashboardViewArgs,
 };
 
 /** Dispatch table: QueryKind → resolver. Every resolver accepts an
@@ -92,4 +100,9 @@ export const viewResolvers: Record<
   },
   "view:goal-breakdown": async (args) =>
     resolveGoalBreakdownView(args as GoalBreakdownViewArgs | undefined),
+  "view:goal-dashboard": async (args) => {
+    const goalId = (args as { goalId?: string } | undefined)?.goalId;
+    if (!goalId) throw new Error("view:goal-dashboard requires args.goalId");
+    return resolveGoalDashboardView({ goalId });
+  },
 };

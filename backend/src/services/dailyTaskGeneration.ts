@@ -1,4 +1,4 @@
-/* NorthStar — shared daily-task generation + persistence
+/* Starward — shared daily-task generation + persistence
  *
  * Extracted from the POST /ai/daily-tasks route so it can be called
  * both from the HTTP handler (manual refresh) and from resolveTasksView
@@ -11,8 +11,8 @@ import { getClient } from "../ai/client";
 import { loadMemory, buildMemoryContext } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { getEffectiveDate } from "../dateUtils";
-import { COGNITIVE_BUDGET, selectDailyTasks } from "@northstar/core";
-import type { Goal, DailyLog, HeatmapEntry, Reminder, TaskStateInput, GoalSummary, ScheduledTaskSummary, DailyLogSummary, TierEnforcement } from "@northstar/core";
+import { COGNITIVE_BUDGET, selectDailyTasks } from "@starward/core";
+import type { Goal, DailyLog, HeatmapEntry, Reminder, TaskStateInput, GoalSummary, ScheduledTaskSummary, DailyLogSummary, TierEnforcement } from "@starward/core";
 
 interface GeneratedResult {
   id?: string;
@@ -341,7 +341,7 @@ export async function generateAndPersistDailyTasks(opts: {
 
   // ── Rule Engine: deterministic task selection ──
   // Replaces the 3-AI-call coordinator pipeline (gatekeeper + timeEstimator + scheduler)
-  // with pure scoring in @northstar/core.
+  // with pure scoring in @starward/core.
   const goalLastTouched = computeGoalLastTouched(pastLogs, activeGoals, date);
 
   const goalSummaries: GoalSummary[] = goalPlanSummaries.map((gps) => ({

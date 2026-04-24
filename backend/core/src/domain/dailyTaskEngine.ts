@@ -2,7 +2,7 @@
  * Daily Task Rule Engine — Deterministic Task Selection & Scoring
  *
  * Replaces the 3 AI sub-agent calls (gatekeeper + timeEstimator + scheduler)
- * with pure math. Runs on both client and server via @northstar/core.
+ * with pure math. Runs on both client and server via @starward/core.
  *
  * Input:  TaskStateInput (same shape the coordinator used)
  * Output: RuleEngineResult (superset of GatekeeperResult + TimeEstimatorResult

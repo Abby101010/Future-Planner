@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Agent Coordinator
+   Starward — Agent Coordinator
 
    Orchestrates the sub-agent pipeline. Creates initial
    TaskState, routes to the correct agent plan, runs parallel
@@ -17,7 +17,7 @@ import type {
   SchedulerResult,
   PriorityAnnotatorResult,
   SubAgentId,
-} from "@northstar/core";
+} from "@starward/core";
 import { routeRequest } from "./router";
 import { runGatekeeper } from "./gatekeeper";
 import { runTimeEstimator } from "./timeEstimator";

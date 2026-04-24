@@ -1,4 +1,4 @@
-/* NorthStar server — calendar routes
+/* Starward server — calendar routes
  *
  * After the tasks/calendar unification, calendar events no longer exist
  * as a separate entity. The schedule endpoint now reads from daily_tasks.

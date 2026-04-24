@@ -1,4 +1,4 @@
-/* NorthStar server — Tool-use pilot route (Phase 5, additive)
+/* Starward server — Tool-use pilot route (Phase 5, additive)
  *
  * POST /ai-tools/chat
  *   body: { message: string, context?: "planning" | "daily" | "general" }
@@ -14,12 +14,12 @@ import { Router } from "express";
 import { asyncHandler } from "../middleware/errorHandler";
 import { getClient } from "../ai/client";
 import { loadMemory, buildMemoryContext } from "../memory";
-import { getModelForTier } from "@northstar/core";
+import { getModelForTier } from "@starward/core";
 import { runToolLoop } from "../tools";
 
 export const toolChatRouter = Router();
 
-const TOOL_CHAT_SYSTEM = `You are NorthStar's tool-using assistant.
+const TOOL_CHAT_SYSTEM = `You are Starward's tool-using assistant.
 
 You have read-only tools for the user's goals, tasks, and personalization
 memory. Use them proactively:

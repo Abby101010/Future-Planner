@@ -15,7 +15,7 @@ All TypeScript source for the cloud API. `tsc` compiles this to
 | `ai/` | Anthropic client + per-agent handlers (classify-goal, daily-tasks, recovery, pace-check, home-chat, etc.) |
 | `ws/` | WebSocket server + `view:invalidate` broadcast bus |
 | `db/` | `pool.ts`, migration loader, schema helpers |
-| `domain/` | Pure helpers duplicated from `@northstar/core` where server-specific shaping is needed |
+| `domain/` | Pure helpers duplicated from `@starward/core` where server-specific shaping is needed |
 
 ## The one rule
 
@@ -29,4 +29,4 @@ inline `pool.query()` in a route handler — go through a repository.
 - Anthropic calls outside `ai/`.
 - Raw `pool.query()` outside `repositories/`.
 - Routes that hardcode a user id — always read from `req.userId`.
-- Response shapes that differ from `Envelope<T>` in `@northstar/core`.
+- Response shapes that differ from `Envelope<T>` in `@starward/core`.

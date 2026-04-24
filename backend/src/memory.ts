@@ -1,4 +1,4 @@
-/* NorthStar backend — memory module (slice 3a)
+/* Starward backend — memory module (slice 3a)
  *
  * Phase 1b/slice 3a: replaces the empty stub with real Postgres-backed
  * loading + a faithful port of buildMemoryContext / computeCapacityProfile
@@ -24,8 +24,8 @@
  */
 
 import { query } from "./db/pool";
-import type { TimeBlock } from "@northstar/core";
-import { COGNITIVE_BUDGET } from "@northstar/core";
+// Time map (weeklyAvailability / TimeBlock) removed; capacity profile no longer consumes it.
+import { COGNITIVE_BUDGET } from "@starward/core";
 
 // ── Types ────────────────────────────────────────────────
 export type FactCategory =
@@ -304,8 +304,10 @@ export function computeCapacityProfile(
   }>,
   todayDayOfWeek: number,
   monthlyContext?: { capacityMultiplier: number; maxDailyTasks: number } | null,
-  weeklyAvailability?: TimeBlock[],
+  /** @deprecated time map removed — parameter preserved for call-site compatibility; ignored. */
+  _unusedWeeklyAvailability?: unknown,
 ): CapacityProfile {
+  void _unusedWeeklyAvailability;
   const DEFAULT_BUDGET = 10;
 
   const newUser = (): CapacityProfile => {
@@ -326,20 +328,6 @@ export function computeCapacityProfile(
       profile.capacityBudget = bud;
       profile.maxDailyTasks = monthlyContext.maxDailyTasks;
       profile.monthlyContextApplied = true;
-    }
-    // Apply weekly availability for new users too
-    if (weeklyAvailability && weeklyAvailability.length > 0) {
-      const tbDay = todayDayOfWeek === 0 ? 6 : todayDayOfWeek - 1;
-      const todayBlocks = weeklyAvailability.filter(b => b.day === tbDay);
-      const totalHours = todayBlocks.length;
-      let availMod = 0;
-      if (totalHours === 0) availMod = -3;
-      else if (totalHours <= 2) availMod = -1;
-      else if (totalHours <= 4) availMod = 0;
-      else if (totalHours <= 6) availMod = 1;
-      else availMod = 2;
-      bud = Math.max(6, Math.min(12, bud + availMod));
-      profile.capacityBudget = bud;
     }
     if (profile.maxDailyTasks === undefined) {
       profile.maxDailyTasks = bud >= 8 ? COGNITIVE_BUDGET.MAX_DAILY_TASKS
@@ -426,29 +414,7 @@ export function computeCapacityProfile(
   else if (trend === "improving" && budget < 12) budget = Math.min(12, budget + 1);
   budget = Math.max(6, Math.min(12, budget + dayOfWeekModifier));
 
-  // Weekly availability modifier — TimeBlock[] from onboarding timeboard
-  if (weeklyAvailability && weeklyAvailability.length > 0) {
-    // Convert JS getDay() (0=Sun) to TimeBlock convention (0=Mon)
-    const tbDay = todayDayOfWeek === 0 ? 6 : todayDayOfWeek - 1;
-    const todayBlocks = weeklyAvailability.filter(b => b.day === tbDay);
-    const totalHours = todayBlocks.length; // each block = 1 hour
-    const avgImp = todayBlocks.length > 0
-      ? todayBlocks.reduce((s, b) => s + b.importance, 0) / todayBlocks.length
-      : 0;
-
-    let availMod = 0;
-    if (totalHours === 0) availMod = -3;
-    else if (totalHours <= 2) availMod = -1;
-    else if (totalHours <= 4) availMod = 0;
-    else if (totalHours <= 6) availMod = 1;
-    else availMod = 2;
-
-    // High-importance blocks boost further
-    if (avgImp >= 2.5) availMod += 1;
-    else if (avgImp <= 1.5 && totalHours > 0) availMod -= 1;
-
-    budget = Math.max(6, Math.min(12, budget + availMod));
-  }
+  // Weekly-availability modifier removed with the time map feature.
 
   // Chronic snooze patterns from signals (last 14 days)
   const chronicSnoozePatterns: string[] = [];
@@ -1182,5 +1148,66 @@ export async function saveBehaviorProfile(
         (id, user_id, category, key, value, confidence, evidence, source, created_at, updated_at)
       values ${values.join(", ")}`,
     params,
+  );
+}
+
+// ── Onboarding memory helpers ─────────────────────────────────
+//
+// Thin wrappers the onboarding discovery agent uses to land freshly-
+// extracted facts / preferences / signals into the existing memory_*
+// tables. Intentionally simple — they always INSERT a new row rather
+// than trying to merge with existing entries. The nightly reflection
+// job (reflection.ts) handles dedupe/EMA/confidence-bumping later.
+
+export async function saveOnboardingFact(
+  userId: string,
+  category: FactCategory,
+  key: string,
+  value: string,
+  evidence: string,
+): Promise<void> {
+  const id = `fact-onb-${userId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  await query(
+    `insert into memory_facts
+        (id, user_id, category, key, value, confidence, evidence, source, created_at, updated_at)
+      values
+        ($1, $2, $3, $4, $5, 0.5, $6::jsonb, 'explicit', now(), now())`,
+    [id, userId, category, key, value, JSON.stringify([evidence])],
+  );
+}
+
+export async function saveOnboardingPreference(
+  userId: string,
+  text: string,
+  tags: string[],
+  example: string,
+): Promise<void> {
+  const id = `pref-onb-${userId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  await query(
+    `insert into memory_preferences
+        (id, user_id, text, tags, weight, frequency, examples, created_at, updated_at)
+      values
+        ($1, $2, $3, $4::jsonb, 0.5, 1, $5::jsonb, now(), now())`,
+    [
+      id,
+      userId,
+      text,
+      JSON.stringify(tags),
+      JSON.stringify(example ? [example] : []),
+    ],
+  );
+}
+
+export async function recordOnboardingSignal(
+  userId: string,
+  type: SignalType,
+  context: string,
+  value: string,
+): Promise<void> {
+  const id = `sig-onb-${userId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  await query(
+    `insert into memory_signals (id, user_id, type, context, value, timestamp)
+     values ($1, $2, $3, $4, $5, now())`,
+    [id, userId, type, context, value],
   );
 }

@@ -1,4 +1,4 @@
-/* NorthStar server — vacation mode repository
+/* Starward server — vacation mode repository
  *
  * Wraps `vacation_mode` (migration 0002). Exactly one row per user (PK is
  * user_id alone). `reason` is nullable and not present in the legacy client

@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Time Estimator Agent System Prompt
+   Starward — Time Estimator Agent System Prompt
 
    Instructs the model to estimate realistic durations for
    candidate tasks, applying planning-fallacy correction.

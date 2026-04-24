@@ -16,9 +16,9 @@
 import * as crypto from "node:crypto";
 import * as repos from "../../repositories";
 import { packageCurrentPlan } from "./memoryPackager";
-import { computeCognitiveWeight } from "@northstar/core";
+import { computeCognitiveWeight } from "@starward/core";
 import type { GoalPlanTaskForCalendar } from "../../repositories/goalPlanRepo";
-import type { TaskSource } from "@northstar/core";
+import type { TaskSource } from "@starward/core";
 
 export interface TaskRotationResult {
   rotated: boolean;

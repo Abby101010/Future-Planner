@@ -1,4 +1,4 @@
-/* NorthStar server — chat repository
+/* Starward server — chat repository
  *
  * Wraps BOTH the new `home_chat_messages` + `conversations` tables
  * (migration 0002) AND the legacy `chat_sessions` table (used by the
@@ -11,7 +11,7 @@
  * attachments SQL can move here next.
  */
 
-import type { HomeChatMessage, ChatSession } from "@northstar/core";
+import type { HomeChatMessage, ChatSession } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";

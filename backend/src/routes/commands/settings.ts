@@ -8,9 +8,9 @@ import {
   getCurrentUserId,
   getClient,
 } from "./_helpers";
-import type { UserProfile, UserSettings, TimeBlock } from "./_helpers";
-import { USER_SEGMENTS, type UserSegment } from "@northstar/core";
-import { runOnboardingExtract } from "@northstar/core/handlers";
+import type { UserProfile, UserSettings } from "./_helpers";
+import { USER_SEGMENTS, type UserSegment } from "@starward/core";
+import { runOnboardingExtract } from "@starward/core/handlers";
 
 const USER_SEGMENT_SET = new Set<string>(USER_SEGMENTS);
 
@@ -44,13 +44,10 @@ export async function cmdUpdateSettings(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const patch = (body.settings ?? {}) as Record<string, unknown>;
-  // weeklyAvailability lives in its own DB column, not inside settings.
-  // Extract it before forwarding the rest to updateSettings.
-  const weeklyAvail = patch.weeklyAvailability as TimeBlock[] | undefined;
-  if (weeklyAvail && Array.isArray(weeklyAvail)) {
-    await repos.users.updateWeeklyAvailability(weeklyAvail);
-  }
+  // Time map removed: if an old client still sends weeklyAvailability,
+  // drop it silently so we don't crash on the now-unknown key.
   const { weeklyAvailability: _wa, ...settingsPatch } = patch;
+  void _wa;
   // Defensive validation for userSegment — strip unknown values so a
   // malformed harness edit cannot poison the pipeline. Any other field
   // passes through unchanged (existing behaviour).
@@ -87,8 +84,6 @@ export async function cmdCompleteOnboarding(
   const current = await repos.users.get();
   const name = patch.name ?? current?.name ?? "";
   const goalRaw = patch.goalRaw ?? current?.goalRaw ?? "";
-  const weeklyAvailability: TimeBlock[] =
-    patch.weeklyAvailability ?? current?.weeklyAvailability ?? [];
 
   // If the caller passed a full profile shape, upsert it whole; otherwise
   // use the narrow completeOnboarding helper.
@@ -101,12 +96,11 @@ export async function cmdCompleteOnboarding(
       ...patch,
       name,
       goalRaw,
-      weeklyAvailability,
       onboardingComplete: true,
     };
     await repos.users.upsert(next);
   } else {
-    await repos.users.completeOnboarding(name, goalRaw, weeklyAvailability);
+    await repos.users.completeOnboarding(name, goalRaw);
   }
 
   // Phase B segment extraction: if the caller passed the onboarding

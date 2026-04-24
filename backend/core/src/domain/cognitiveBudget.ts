@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Cognitive Budget Domain Rules
+   Starward — Cognitive Budget Domain Rules
 
    Pure, framework-free business rules. No React, no IPC,
    no localStorage. Imported by:

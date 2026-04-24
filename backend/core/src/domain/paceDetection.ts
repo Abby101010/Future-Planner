@@ -2,7 +2,7 @@
  * Pace Detection & Overload Analysis — Pure Domain Logic
  *
  * All functions are deterministic (pure math, no AI, no network).
- * Runs on both client and server via @northstar/core.
+ * Runs on both client and server via @starward/core.
  *
  * - detectPaceMismatches: single-goal pace vs actual completion rate
  * - detectCrossGoalOverload: multi-goal capacity vs daily budget

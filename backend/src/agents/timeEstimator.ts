@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Time Estimator Sub-Agent
+   Starward — Time Estimator Sub-Agent
 
    Calls Haiku to estimate realistic task durations with
    planning-fallacy correction, then checks whether the total
@@ -10,13 +10,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getClient } from "../ai/client";
 import { emitAgentProgress } from "../ws";
 import { getCurrentUserId } from "../middleware/requestContext";
-import { getModelForTask, COGNITIVE_BUDGET } from "@northstar/core";
+import { getModelForTask, COGNITIVE_BUDGET } from "@starward/core";
 import type {
   TaskStateInput,
   TimeEstimatorResult,
   TimeEstimate,
   CandidateTask,
-} from "@northstar/core";
+} from "@starward/core";
 import { TIME_ESTIMATOR_SYSTEM } from "./prompts/timeEstimator";
 
 // ── Helpers ────────────────────────────────────────────────

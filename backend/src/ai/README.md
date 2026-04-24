@@ -20,7 +20,7 @@ ai/
 Each handler is a `(client, payload, ctx) => Promise<result>` function
 that pulls fields from `payload`, builds a system prompt (often via
 `personalizeSystem`), sends to Anthropic, parses the JSON reply, and
-returns the strict shape declared in `@northstar/core/src/ai/handlers/`.
+returns the strict shape declared in `@starward/core/src/ai/handlers/`.
 
 ## The one rule
 

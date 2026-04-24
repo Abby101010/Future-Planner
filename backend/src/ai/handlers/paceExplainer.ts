@@ -1,4 +1,4 @@
-/* NorthStar — Pace Explainer handler (TextGrad feedback)
+/* Starward — Pace Explainer handler (TextGrad feedback)
  *
  * After the local pace detection identifies a moderate or severe
  * mismatch, this handler generates a human-readable explanation
@@ -6,8 +6,8 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { getModelForTask, personalizeSystem } from "@northstar/core";
-import type { PaceMismatch } from "@northstar/core";
+import { getModelForTask, personalizeSystem } from "@starward/core";
+import type { PaceMismatch } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 
 const PACE_EXPLAINER_SYSTEM = `You are a supportive goal coach. Given pace mismatch data, generate:

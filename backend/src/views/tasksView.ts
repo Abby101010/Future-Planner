@@ -1,4 +1,4 @@
-/* NorthStar server — tasks view resolver
+/* Starward server — tasks view resolver
  *
  * Narrow per-page aggregate for TasksPage. Today's daily log (with
  * joined tasks), all daily logs (for the "All tasks" dropdown),
@@ -19,7 +19,7 @@ import type {
   Goal,
   HeatmapEntry,
   Reminder,
-} from "@northstar/core";
+} from "@starward/core";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import { hydrateDailyLog, nudgeToContextual } from "./_mappers";
 import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type OverloadAdvisory } from "../services/paceDetection";
@@ -609,7 +609,8 @@ export async function resolveTasksView(): Promise<TasksView> {
       date: l.date,
       tasks: l.tasks.map((t) => ({ completed: t.completed, skipped: !!t.skipped })),
     }));
-    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay(), undefined, userProfile?.weeklyAvailability);
+    void userProfile;
+    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay());
     effectiveMaxWeight = capacity.capacityBudget;
     effectiveMaxTasks = capacity.maxDailyTasks ?? 5;
     paceMismatches = detectPaceMismatches(goals, capacity.avgTasksCompletedPerDay, today);

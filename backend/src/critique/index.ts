@@ -1,4 +1,4 @@
-/* NorthStar server — Critique orchestration
+/* Starward server — Critique orchestration
  *
  * `runCritique` is the fire-and-forget entry point. Callers invoke it without
  * awaiting; it runs the Haiku critique agent in the background, emits the

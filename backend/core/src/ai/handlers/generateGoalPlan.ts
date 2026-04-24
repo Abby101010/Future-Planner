@@ -1,4 +1,4 @@
-/* NorthStar — Generate Goal Plan handler (initial plan) */
+/* Starward — Generate Goal Plan handler (initial plan) */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";

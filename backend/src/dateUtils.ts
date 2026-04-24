@@ -1,4 +1,4 @@
-/* NorthStar server — date utilities
+/* Starward server — date utilities
  *
  * Central place for computing "today" with timezone adjustment.
  *

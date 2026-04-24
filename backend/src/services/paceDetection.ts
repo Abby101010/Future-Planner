@@ -1,7 +1,7 @@
 /**
  * Pace Detection — Server Re-export
  *
- * All logic now lives in @northstar/core/domain/paceDetection so it can
+ * All logic now lives in @starward/core/domain/paceDetection so it can
  * run on both client and server. This file re-exports everything for
  * backward compatibility with existing server imports.
  */
@@ -12,10 +12,10 @@ export {
   splitPlan,
   mergePlans,
   countPlanStats,
-} from "@northstar/core";
+} from "@starward/core";
 
 export type {
   PaceMismatch,
   OverloadAdvisory,
   PlanSplit,
-} from "@northstar/core";
+} from "@starward/core";

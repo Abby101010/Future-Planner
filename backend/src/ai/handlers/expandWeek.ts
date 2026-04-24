@@ -1,4 +1,4 @@
-/* NorthStar — Expand Week handler (GoalAct lazy expansion)
+/* Starward — Expand Week handler (GoalAct lazy expansion)
  *
  * When a locked week in a goal plan is unlocked, this handler
  * generates detailed daily tasks using the week's objective,
@@ -7,8 +7,8 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { getModelForTask, personalizeSystem } from "@northstar/core";
-import type { GoalPlanDay, GoalPlanTask } from "@northstar/core";
+import { getModelForTask, personalizeSystem } from "@starward/core";
+import type { GoalPlanDay, GoalPlanTask } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";

@@ -1,4 +1,4 @@
-/* NorthStar server — heatmap entries repository
+/* Starward server — heatmap entries repository
  *
  * Wraps `heatmap_entries` (migration 0002). One row per (user, date) with
  * a numeric `value` (0..4 completionLevel today, fractional in the future).
@@ -7,7 +7,7 @@
  * narrow.
  */
 
-import type { HeatmapEntry } from "@northstar/core";
+import type { HeatmapEntry } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";

@@ -1,4 +1,4 @@
-/* NorthStar server — BullMQ-backed async queue (additive to job-db.ts)
+/* Starward server — BullMQ-backed async queue (additive to job-db.ts)
  *
  * Phase 3: New Redis/BullMQ queue that lives ALONGSIDE the existing
  * Postgres-backed job-db.ts / job-worker.ts. Nothing is migrated off
@@ -20,7 +20,7 @@ export type BullJobHandler<T = unknown, R = unknown> = (
   job: Job<T, R>,
 ) => Promise<R>;
 
-const QUEUE_NAME = "northstar-bg";
+const QUEUE_NAME = "starward-bg";
 const BULL_JOB_HANDLERS = new Map<string, BullJobHandler>();
 
 let connection: IORedis | null = null;

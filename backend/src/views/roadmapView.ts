@@ -1,4 +1,4 @@
-/* NorthStar server — roadmap view resolver
+/* Starward server — roadmap view resolver
  *
  * RoadmapPage is a thin wrapper over a single `Roadmap` object that now
  * lives in the `roadmap` table (migration 0004). The new entity tables
@@ -7,7 +7,7 @@
  * the RoadmapPage still renders.
  */
 
-import type { Roadmap } from "@northstar/core";
+import type { Roadmap } from "@starward/core";
 import * as repos from "../repositories";
 
 export interface RoadmapView {

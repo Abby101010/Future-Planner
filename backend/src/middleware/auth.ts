@@ -1,4 +1,4 @@
-/* NorthStar server — auth middleware
+/* Starward server — auth middleware
  *
  * Validates Supabase JWTs on every request and resolves a userId from the
  * token's `sub` claim. Falls back to DEV_USER_ID for local development.

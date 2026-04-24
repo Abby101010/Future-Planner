@@ -1,4 +1,4 @@
-/* NorthStar server — versioned migration runner
+/* Starward server — versioned migration runner
  *
  * Usage:
  *   npm run migrate

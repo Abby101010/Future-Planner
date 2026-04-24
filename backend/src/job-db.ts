@@ -1,4 +1,4 @@
-/* NorthStar server — Postgres-backed job queue
+/* Starward server — Postgres-backed job queue
  *
  * Lightweight async job system for long-running commands (goal plan
  * generation, adaptive rescheduling). Uses the existing `job_queue`

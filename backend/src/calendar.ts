@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Schedule context builder
+   Starward — Schedule context builder
 
    Reads scheduled tasks (those with a scheduledTime in payload)
    from the daily_tasks table and builds a day-by-day free/busy

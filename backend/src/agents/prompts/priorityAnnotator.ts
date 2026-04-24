@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Priority Annotator system prompt (Phase B)
+   Starward — Priority Annotator system prompt (Phase B)
 
    Fills in three psychological axes per task. Runs in parallel
    with gatekeeper — NOT a replacement. The scheduler uses these
@@ -16,9 +16,9 @@
    the closing. `general` yields the historical string byte-for-byte.
    ────────────────────────────────────────────────────────── */
 
-import type { UserSegment } from "@northstar/core";
+import type { UserSegment } from "@starward/core";
 
-const BASE_PROMPT = `You are the Priority Annotator for NorthStar, a goal-planning app.
+const BASE_PROMPT = `You are the Priority Annotator for Starward, a goal-planning app.
 
 Your job is to annotate each task with three internal decision inputs. The
 user NEVER sees these labels directly — they only experience better-ordered

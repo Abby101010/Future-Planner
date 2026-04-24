@@ -1,11 +1,11 @@
-/* NorthStar server — behavior profile entries repository
+/* Starward server — behavior profile entries repository
  *
  * Wraps `behavior_profile_entries` (migration 0002). Projection of
  * memory_signals + memory_preferences shaped for the behavior/insights UI.
  * `category` groups signals (e.g. "navigation"), `signal` is the specific
  * key, `weight` is learned importance, `observed_at` is last-updated.
  *
- * @northstar/core does not model these yet — so we export a local
+ * @starward/core does not model these yet — so we export a local
  * BehaviorProfileEntry interface that view resolvers / command handlers
  * can consume directly.
  */

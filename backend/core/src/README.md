@@ -1,6 +1,6 @@
 # core/src/
 
-The public surface of `@northstar/core`. Everything exported from
+The public surface of `@starward/core`. Everything exported from
 `index.ts` is importable by desktop and server code.
 
 ## Layout

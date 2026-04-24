@@ -1,4 +1,4 @@
-/* NorthStar server — command → view invalidation table
+/* Starward server — command → view invalidation table
  *
  * When a command mutates state, we emit a WS `view:invalidate` event so
  * connected clients know to refetch any page whose data just changed.
@@ -14,7 +14,7 @@
  * do.
  */
 
-import type { CommandKind, QueryKind } from "@northstar/core";
+import type { CommandKind, QueryKind } from "@starward/core";
 
 /** Every QueryKind in the system — used for `reset-data` which blows
  *  everything away and needs to invalidate every cached view. */
@@ -62,10 +62,10 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:confirm-pending-task": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:reject-pending-task": ["view:dashboard", "view:tasks"],
   "command:create-pending-task": ["view:dashboard", "view:tasks"],
-  "command:upsert-reminder": ["view:dashboard", "view:tasks", "view:settings"],
-  "command:acknowledge-reminder": ["view:dashboard", "view:tasks", "view:settings"],
-  "command:delete-reminder": ["view:dashboard", "view:tasks", "view:settings"],
-  "command:delete-reminders-batch": ["view:dashboard", "view:tasks", "view:settings"],
+  "command:upsert-reminder": ["view:dashboard", "view:tasks", "view:settings", "view:calendar"],
+  "command:acknowledge-reminder": ["view:dashboard", "view:tasks", "view:settings", "view:calendar"],
+  "command:delete-reminder": ["view:dashboard", "view:tasks", "view:settings", "view:calendar"],
+  "command:delete-reminders-batch": ["view:dashboard", "view:tasks", "view:settings", "view:calendar"],
   "command:defer-overflow": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:undo-defer": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:save-monthly-context": ["view:planning", "view:dashboard"],
@@ -203,4 +203,52 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   // for the client to render confirmation UI. No DB state changes, so
   // no view needs refetching.
   "command:analyze-image": [],
+
+  // ── Per-goal Dashboard commands (Phase 6) ──────────────────
+  "command:update-goal-notes": [
+    "view:goal-plan",
+    "view:goal-dashboard",
+  ],
+  "command:edit-goal-title": [
+    "view:dashboard",
+    "view:planning",
+    "view:goal-plan",
+    "view:goal-dashboard",
+  ],
+  "command:edit-milestone": [
+    "view:goal-plan",
+    "view:goal-breakdown",
+    "view:goal-dashboard",
+  ],
+  "command:regenerate-insights": [
+    "view:goal-dashboard",
+  ],
+  "command:add-goal-reflection": [
+    "view:goal-plan",
+    "view:goal-dashboard",
+  ],
+
+  // ── Onboarding commands (backend complete; UI pending) ──────
+  "command:send-onboarding-message": [
+    "view:onboarding",
+  ],
+  "command:propose-onboarding-goal": [
+    "view:onboarding",
+  ],
+  "command:confirm-onboarding-goal": [
+    "view:onboarding",
+    "view:planning",
+    "view:goal-plan",
+  ],
+  "command:accept-onboarding-plan": [
+    "view:onboarding",
+    "view:planning",
+    "view:goal-plan",
+  ],
+  "command:commit-first-task": [
+    "view:onboarding",
+    "view:tasks",
+    "view:dashboard",
+    "view:planning",
+  ],
 };

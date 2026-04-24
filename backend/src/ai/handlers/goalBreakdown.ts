@@ -1,11 +1,11 @@
-/* NorthStar — Goal Breakdown handler */
+/* Starward — Goal Breakdown handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext, summarizeScheduleForAI } from "../../calendar";
-import { getModelForTask } from "@northstar/core";
-import { GOAL_BREAKDOWN_SYSTEM } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { GoalBreakdownPayload } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { GOAL_BREAKDOWN_SYSTEM } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { GoalBreakdownPayload } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";

@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Gatekeeper Sub-Agent
+   Starward — Gatekeeper Sub-Agent
 
    Two modes:
    a) Full mode (daily-tasks): Haiku AI call for filtering +
@@ -18,7 +18,7 @@ import {
   getModelForTask,
   COGNITIVE_BUDGET,
   enforceBudgetSnake,
-} from "@northstar/core";
+} from "@starward/core";
 import type {
   TaskStateInput,
   GatekeeperResult,
@@ -26,7 +26,7 @@ import type {
   BudgetCheck,
   GoalRotation,
   CandidateTask,
-} from "@northstar/core";
+} from "@starward/core";
 import { GATEKEEPER_SYSTEM } from "./prompts/gatekeeper";
 
 // ── Helpers ────────────────────────────────────────────────

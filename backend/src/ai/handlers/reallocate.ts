@@ -1,11 +1,11 @@
-/* NorthStar — Reallocate handler */
+/* Starward — Reallocate handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext, summarizeScheduleForAI } from "../../calendar";
-import { getModelForTask } from "@northstar/core";
-import { REALLOCATE_SYSTEM } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { ReallocatePayload } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { REALLOCATE_SYSTEM } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { ReallocatePayload } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";

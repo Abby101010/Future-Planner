@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Priority Annotator Sub-Agent (Phase B)
+   Starward — Priority Annotator Sub-Agent (Phase B)
 
    Fills in cognitiveLoad / cognitiveCost / tier per task. Runs
    in parallel with gatekeeper; the scheduler uses these annotations
@@ -18,7 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getClient } from "../ai/client";
 import { getCurrentUserId } from "../middleware/requestContext";
-import { getModelForTask, USER_SEGMENTS, type UserSegment } from "@northstar/core";
+import { getModelForTask, USER_SEGMENTS, type UserSegment } from "@starward/core";
 import { loadMemory, buildMemoryContext } from "../memory";
 import { buildPriorityAnnotatorSystem } from "./prompts/priorityAnnotator";
 

@@ -1,4 +1,4 @@
-/* NorthStar — Home Chat handler
+/* Starward — Home Chat handler
 
    Owns LLM-output parsing, ID generation, defaulting, and eager job
    dispatch for intents detected in the reply. The renderer receives a

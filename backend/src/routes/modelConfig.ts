@@ -1,4 +1,4 @@
-/* NorthStar server — model-config routes
+/* Starward server — model-config routes
  *
  * HTTP mirror of electron/ipc/modelConfig.ts. The model-config module is
  * process-global state (in-memory tier overrides), not user-scoped. Phase 1
@@ -13,7 +13,7 @@ import {
   setModelOverrides,
   type ClaudeModel,
   type ModelTier,
-} from "@northstar/core";
+} from "@starward/core";
 
 export const modelConfigRouter = Router();
 

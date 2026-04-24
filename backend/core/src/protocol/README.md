@@ -1,7 +1,7 @@
 # core/src/protocol/
 
-The envelope protocol — the wire contract between `@northstar/desktop`
-and `@northstar/server`.
+The envelope protocol — the wire contract between `@starward/desktop`
+and `@starward/server`.
 
 ## What lives here
 

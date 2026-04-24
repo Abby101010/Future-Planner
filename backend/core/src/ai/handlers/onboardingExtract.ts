@@ -1,4 +1,4 @@
-/* NorthStar — Onboarding segment extraction pass (Phase B).
+/* Starward — Onboarding segment extraction pass (Phase B).
  *
  * One-shot Haiku call. Reads the full onboarding conversation plus the
  * user's raw goal and classifies them into a UserSegment. Runs once at

@@ -9,8 +9,8 @@
  */
 
 import * as repos from "../../repositories";
-import { totalWeight, totalMinutes, COGNITIVE_BUDGET } from "@northstar/core";
-import type { TaskSource } from "@northstar/core";
+import { totalWeight, totalMinutes, COGNITIVE_BUDGET } from "@starward/core";
+import type { TaskSource } from "@starward/core";
 
 const { MAX_DAILY_WEIGHT, MAX_DAILY_TASKS, MAX_DEEP_MINUTES } = COGNITIVE_BUDGET;
 

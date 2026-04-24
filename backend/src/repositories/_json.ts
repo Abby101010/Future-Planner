@@ -1,4 +1,4 @@
-/* NorthStar server — shared repository helpers for jsonb columns.
+/* Starward server — shared repository helpers for jsonb columns.
  *
  * pg returns jsonb columns as either a parsed object (when the JSONB OID
  * parser is registered) or a raw string (legacy paths, copy from pg_catalog,

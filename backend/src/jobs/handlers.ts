@@ -1,4 +1,4 @@
-/* NorthStar server — BullMQ job handlers (Phase 3 scaffolding)
+/* Starward server — BullMQ job handlers (Phase 3 scaffolding)
  *
  * Register job types here with registerJobHandler(). Phase 3 intentionally
  * ships with only a "noop" handler so the queue is exercisable end-to-end

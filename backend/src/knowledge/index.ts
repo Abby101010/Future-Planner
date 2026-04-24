@@ -1,4 +1,4 @@
-/* NorthStar server — Knowledge-base (RAG) barrel
+/* Starward server — Knowledge-base (RAG) barrel
  *
  * Retrieval-Augmented Generation layer. Methodology markdown lives in
  * packages/server/knowledge-base/*.md, is chunked on headings, embedded with

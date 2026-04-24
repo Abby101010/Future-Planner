@@ -1,4 +1,4 @@
-/* NorthStar server — Environment context enrichment
+/* Starward server — Environment context enrichment
  *
  * Receives the client's EnvironmentSnapshot (local time, timezone, GPS)
  * and enriches it with weather data from Open-Meteo (free, no API key).

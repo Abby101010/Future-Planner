@@ -1,7 +1,7 @@
-/* NorthStar server — view-layer DB-record → core-type mappers.
+/* Starward server — view-layer DB-record → core-type mappers.
  *
  * Repositories return DB-shape records (payload jsonb + column fields).
- * Views use these helpers to hand the client fully-typed @northstar/core
+ * Views use these helpers to hand the client fully-typed @starward/core
  * objects so pages render without any client-side flattening.
  */
 
@@ -9,7 +9,7 @@ import type {
   ContextualNudge,
   DailyLog,
   DailyTask,
-} from "@northstar/core";
+} from "@starward/core";
 import type { DailyLogRecord } from "../repositories/dailyLogsRepo";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import type { NudgeRecord } from "../repositories/nudgesRepo";

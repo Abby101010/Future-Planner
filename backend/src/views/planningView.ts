@@ -1,4 +1,4 @@
-/* NorthStar server — planning view resolver
+/* Starward server — planning view resolver
  *
  * Narrow per-page aggregate for PlanningPage. The page renders a list
  * of goals (grouped by goalType), a MonthlyContext editor, and an
@@ -8,7 +8,7 @@
  */
 
 import * as repos from "../repositories";
-import type { Goal, MonthlyContext } from "@northstar/core";
+import type { Goal, MonthlyContext } from "@starward/core";
 
 export interface PlanProgress {
   completed: number;

@@ -23,6 +23,6 @@ Anything more belongs in `../views/` or `../repositories/`.
 
 - Raw `pool.query()` calls — go through a repository.
 - Anthropic calls — go through `../ai/`.
-- Response shapes that aren't `Envelope<T>` from `@northstar/core`.
+- Response shapes that aren't `Envelope<T>` from `@starward/core`.
 - Any handler written as `async (req, res) =>` without `asyncHandler` —
   unhandled rejections crash the process.

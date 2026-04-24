@@ -1,11 +1,11 @@
-/* NorthStar — Analyze Quick Task handler */
+/* Starward — Analyze Quick Task handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getScheduleContext } from "../../calendar";
-import { getModelForTask } from "@northstar/core";
-import { ANALYZE_QUICK_TASK_SYSTEM } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { AnalyzeQuickTaskPayload } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { ANALYZE_QUICK_TASK_SYSTEM } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { AnalyzeQuickTaskPayload } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";

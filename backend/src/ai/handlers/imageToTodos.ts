@@ -1,4 +1,4 @@
-/* NorthStar — Image → Todos handler
+/* Starward — Image → Todos handler
  *
  * Accepts a base64-encoded image plus metadata, sends it to Claude via
  * the vision content block, and returns the structured todo list. The
@@ -11,8 +11,8 @@ import {
   getModelForTask,
   IMAGE_TO_TODOS_SYSTEM,
   personalizeSystem,
-} from "@northstar/core";
-import type { ImageToTodosPayload } from "@northstar/core";
+} from "@starward/core";
+import type { ImageToTodosPayload } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";

@@ -1,4 +1,4 @@
-/* NorthStar server — news feed view resolver
+/* Starward server — news feed view resolver
  *
  * NewsFeedPage renders two things: the list of goals (to build the
  * briefing query) and the user's settings.enableNewsFeed flag (to
@@ -8,7 +8,7 @@
  */
 
 import * as repos from "../repositories";
-import type { Goal } from "@northstar/core";
+import type { Goal } from "@starward/core";
 
 export interface NewsFeedView {
   goals: Goal[];

@@ -2,7 +2,7 @@
  * Task-related command handlers (daily tasks, pending tasks, defer/undo).
  */
 
-import type { TaskSource } from "@northstar/core";
+import type { TaskSource } from "@starward/core";
 import { repos, runAI, invalidate, getEffectiveDate, getCurrentUserId, emitViewInvalidate } from "./_helpers";
 import { emitEntityPatch } from "../../ws/events";
 import { runWithUserId } from "../../middleware/requestContext";

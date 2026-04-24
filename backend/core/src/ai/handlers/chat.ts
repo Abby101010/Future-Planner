@@ -1,4 +1,4 @@
-/* NorthStar — Unified chat handler
+/* Starward — Unified chat handler
  *
  * Combines homeChat and goalPlanChat into a single context-aware handler.
  * The response format depends on context.currentPage:

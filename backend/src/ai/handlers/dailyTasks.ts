@@ -1,4 +1,4 @@
-/* NorthStar — Daily Tasks handler
+/* Starward — Daily Tasks handler
 
    The largest handler: assembles a rich user message with
    capacity profile, monthly context, scheduling, environment,
@@ -13,15 +13,15 @@ import * as repos from "../../repositories";
 import { getMonthlyContext } from "../../database";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
-import { getModelForTask } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
 import {
   enforceBudgetSnake,
   bonusTaskFits,
   COGNITIVE_BUDGET,
-} from "@northstar/core";
-import { DAILY_TASKS_SYSTEM } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { DailyTasksPayload } from "@northstar/core";
+} from "@starward/core";
+import { DAILY_TASKS_SYSTEM } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { DailyTasksPayload } from "@starward/core";
 
 export async function handleDailyTasks(
   client: Anthropic,
@@ -89,12 +89,12 @@ export async function handleDailyTasks(
   }
 
   const user = await repos.users.get();
+  void user;
   const capacityProfile = computeCapacityProfile(
     memory,
     logsForCapacity,
     todayDayOfWeek,
     monthlyCtx,
-    user?.weeklyAvailability,
   );
 
   const capacityBlock = `
@@ -389,7 +389,7 @@ Generate EXACTLY ${recommendedCount.split(" ")[0]} core tasks for today. Include
   ) as Array<Record<string, unknown>>;
   if (rawTasks.length !== coreTasks.length) {
     console.warn(
-      `[NorthStar] AI returned ${rawTasks.length} tasks — trimmed to ${coreTasks.length} via cognitive budget`,
+      `[Starward] AI returned ${rawTasks.length} tasks — trimmed to ${coreTasks.length} via cognitive budget`,
     );
   }
 

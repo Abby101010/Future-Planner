@@ -1,11 +1,11 @@
-/* NorthStar server — monthly context repository
+/* Starward server — monthly context repository
  *
  * Thin wrapper around the legacy `monthly_contexts` table. SQL is lifted
  * verbatim from packages/server/src/routes/monthlyContext.ts so that once
  * routes are cut over in Task 13/14, behavior is byte-identical.
  */
 
-import type { MonthlyContext } from "@northstar/core";
+import type { MonthlyContext } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 

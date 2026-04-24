@@ -1,4 +1,4 @@
-/* NorthStar server — goal plan view resolver
+/* Starward server — goal plan view resolver
  *
  * Per-page aggregate for GoalPlanPage. Takes a goalId, returns the
  * hierarchical plan reconstructed from goal_plan_nodes, the goal
@@ -12,7 +12,7 @@ import type {
   Goal,
   GoalPlan,
   GoalPlanMessage,
-} from "@northstar/core";
+} from "@starward/core";
 import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type OverloadAdvisory } from "../services/paceDetection";
 import { loadMemory, computeCapacityProfile } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
@@ -148,7 +148,8 @@ export async function resolveGoalPlanView(
         tasks: dayTasks.map((t) => ({ completed: t.completed, skipped: false })),
       };
     });
-    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay(), undefined, userProfile?.weeklyAvailability);
+    void userProfile;
+    const capacity = computeCapacityProfile(memory, logsForCapacity, new Date(today + "T00:00:00").getDay());
     const goalForPace = plan ? { ...goal, plan } : goal;
     const mismatches = detectPaceMismatches([goalForPace], capacity.avgTasksCompletedPerDay, today);
     paceMismatch = mismatches.length > 0 ? mismatches[0] : null;

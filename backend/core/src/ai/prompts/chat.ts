@@ -1,4 +1,4 @@
-/* NorthStar — Unified chat system prompt (modular, context-aware).
+/* Starward — Unified chat system prompt (modular, context-aware).
  *
  * Replaces separate HOME_CHAT_SYSTEM and GOAL_PLAN_CHAT_SYSTEM with a
  * single prompt assembled from sections based on the current page context.
@@ -14,7 +14,7 @@ import { GOAL_PLAN_CHAT_SYSTEM } from "./goalPlan.js";
 
 // ── Base personality ────────────────────────────────────────
 
-const BASE = `You are NorthStar, a friendly and helpful productivity assistant.
+const BASE = `You are Starward, a friendly and helpful productivity assistant.
 You have access to the user's complete context: goals, today's tasks with
 cognitive load, calendar schedule, and (when applicable) the full plan for a
 specific goal.

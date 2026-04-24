@@ -1,4 +1,4 @@
-/* NorthStar server — time-block / project-tag / duration-estimate commands
+/* Starward server — time-block / project-tag / duration-estimate commands
  *
  * Phase A additive surface. Three new commands:
  *   - command:estimate-task-durations → batch AI duration estimates
@@ -6,7 +6,7 @@
  *   - command:set-task-project-tag    → straight column write
  */
 
-import type { QueryKind } from "@northstar/core";
+import type { QueryKind } from "@starward/core";
 import { repos } from "./_helpers";
 import { estimateDurations } from "../../agents/durationEstimator";
 import { timezoneStore } from "../../dateUtils";

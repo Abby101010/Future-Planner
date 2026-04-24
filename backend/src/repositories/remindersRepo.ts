@@ -1,10 +1,10 @@
-/* NorthStar server — reminders repository
+/* Starward server — reminders repository
  *
  * Thin wrapper around the legacy `reminders` table. SQL patterns lifted
  * from packages/server/src/routes/reminders.ts.
  */
 
-import type { Reminder } from "@northstar/core";
+import type { Reminder } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 

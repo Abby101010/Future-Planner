@@ -1,4 +1,4 @@
-/* NorthStar server — Postgres connection pool
+/* Starward server — Postgres connection pool
  *
  * Replaces electron/db/connection.ts. Reads DATABASE_URL from env
  * (set via Fly secrets in production, .env in local dev).

@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Adaptive-Reschedule prompts (Initiative B Phase 1)
+   Starward — Adaptive-Reschedule prompts (Initiative B Phase 1)
 
    Two prompts live behind the classifier:
    - ADAPTIVE_RESCHEDULE_SYSTEM  — re-exported verbatim from core,
@@ -11,9 +11,9 @@
    Micro-level has no prompt (deterministic placement).
    ────────────────────────────────────────────────────────── */
 
-export { ADAPTIVE_RESCHEDULE_SYSTEM } from "@northstar/core";
+export { ADAPTIVE_RESCHEDULE_SYSTEM } from "@starward/core";
 
-export const LOCAL_RESCHEDULE_SYSTEM = `You are NorthStar, a pace-aware schedule adjustment AI operating in LOCAL SCOPE.
+export const LOCAL_RESCHEDULE_SYSTEM = `You are Starward, a pace-aware schedule adjustment AI operating in LOCAL SCOPE.
 
 The user is falling behind on ONE milestone of a larger goal plan. You are rewriting only that milestone's upcoming weeks — every other milestone and its tasks stay untouched.
 

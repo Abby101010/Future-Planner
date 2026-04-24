@@ -1,4 +1,4 @@
-/* NorthStar server — reminder routes
+/* Starward server — reminder routes
  *
  * HTTP mirror of electron/ipc/reminder.ts. Scoped by req.userId.
  */

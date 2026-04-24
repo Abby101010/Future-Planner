@@ -21,4 +21,4 @@ export type {
   PriorityAnnotation,
   SubAgentId,
   AgentPlan,
-} from "@northstar/core";
+} from "@starward/core";

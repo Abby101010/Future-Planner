@@ -27,7 +27,7 @@ import {
   classifyReschedule,
   type RescheduleLevel,
   type RescheduleClassifierOutput,
-} from "@northstar/core";
+} from "@starward/core";
 import { computeLowCompletionStreak } from "../../services/lowCompletionStreak";
 import { LOCAL_RESCHEDULE_SYSTEM } from "../../agents/prompts/adaptiveReschedule";
 
@@ -211,7 +211,7 @@ export async function cmdRegenerateGoalPlan(
   ) {
     throw new Error("AI returned invalid plan shape");
   }
-  const plan = planCandidate as unknown as import("@northstar/core").GoalPlan;
+  const plan = planCandidate as unknown as import("@starward/core").GoalPlan;
   // Fetch goal for date range to enable timeline gap-fill
   const existing = await repos.goals.get(goalId);
   const goalStartDate = existing?.createdAt?.split("T")[0];
@@ -352,7 +352,7 @@ export async function cmdRefreshDailyPlan(
       const memoryContext = await buildMemoryContext(memory, "daily");
       const user = await repos.users.get();
       const { runCritique } = await import("../../critique");
-      const { computeDynamicBudget } = await import("@northstar/core");
+      const { computeDynamicBudget } = await import("@starward/core");
 
       // Compute a 3-day rolling check for lifetime/quarter tasks so the
       // critique agent has the signal it needs for the rubric without
@@ -424,8 +424,8 @@ export async function cmdRegenerateDailyTasks(
 // safety. Local and micro are additive rewriters.
 
 type GoalRow = NonNullable<Awaited<ReturnType<typeof repos.goals.get>>>;
-type GoalPlanT = import("@northstar/core").GoalPlan;
-type GoalPlanTaskT = import("@northstar/core").GoalPlanTask;
+type GoalPlanT = import("@starward/core").GoalPlan;
+type GoalPlanTaskT = import("@starward/core").GoalPlanTask;
 type SplitT = ReturnType<typeof splitPlan>;
 
 const VALID_SCOPE: readonly RescheduleLevel[] = ["micro", "local", "plan"];
@@ -470,12 +470,11 @@ export async function cmdAdaptiveReschedule(
   }
   const logsForCapacity = [...logsByDate.entries()].map(([date, tasks]) => ({ date, tasks }));
   const [memory, user] = await Promise.all([loadMemory(userId), repos.users.get()]);
+  void user;
   const capacity = computeCapacityProfile(
     memory,
     logsForCapacity,
     new Date(today + "T00:00:00").getDay(),
-    undefined,
-    user?.weeklyAvailability,
   );
   const actualPace = capacity.avgTasksCompletedPerDay || 2;
 
@@ -699,7 +698,7 @@ async function runLocalLevelReschedule(
     yearIdx: number;
     monthIdx: number;
     weekIdx: number;
-    week: import("@northstar/core").GoalPlanWeek;
+    week: import("@starward/core").GoalPlanWeek;
   };
   const weekList: WeekLocator[] = [];
   futurePlan.years.forEach((yr, yi) => {
@@ -776,7 +775,7 @@ Return ONLY the rewritten weeks for this window as {"weeks":[...]} using the sam
 
   const resultObj = (parsed ?? {}) as Record<string, unknown>;
   const returnedWeeks = Array.isArray(resultObj.weeks)
-    ? (resultObj.weeks as import("@northstar/core").GoalPlanWeek[])
+    ? (resultObj.weeks as import("@starward/core").GoalPlanWeek[])
     : null;
 
   if (!returnedWeeks || returnedWeeks.length === 0) {

@@ -1,4 +1,4 @@
-/* NorthStar server — daily tasks repository
+/* Starward server — daily tasks repository
  *
  * Wraps `daily_tasks` (migration 0002). One row per DailyTask within a day.
  * Stable fields are columns (id, log_date, goal_id, plan_node_id, title,
@@ -12,13 +12,13 @@
  * will join them manually when building a DailyLog.
  */
 
-import type { DailyTask, TaskSource } from "@northstar/core";
+import type { DailyTask, TaskSource } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
 
 /** DB-shape task record. We intentionally don't return the full
- *  @northstar/core DailyTask because DailyTask doesn't include a date field
+ *  @starward/core DailyTask because DailyTask doesn't include a date field
  *  or goal_id — those live on the row here. */
 export interface DailyTaskRecord {
   id: string;

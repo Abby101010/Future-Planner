@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Scheduler Agent System Prompt
+   Starward — Scheduler Agent System Prompt
 
    Instructs the model to build a 3-tier schedule, detect
    calendar conflicts, and propose reshuffle actions.

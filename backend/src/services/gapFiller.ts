@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Gap Filler (Initiative B Phase 4)
+   Starward — Gap Filler (Initiative B Phase 4)
 
    Detects ≥15-minute gaps between today's booked ranges (calendar
    events + already-time-blocked tasks), picks a short task from the
@@ -12,8 +12,8 @@
    from each non-paused big goal's `plan.years[].months[].weeks[].days[].tasks`.
    ────────────────────────────────────────────────────────── */
 
-import type { Goal } from "@northstar/core";
-import { detectGaps, MIN_GAP_MINUTES, type CalendarGap } from "@northstar/core";
+import type { Goal } from "@starward/core";
+import { detectGaps, MIN_GAP_MINUTES, type CalendarGap } from "@starward/core";
 import * as repos from "../repositories";
 
 /** Hard cap on quick-win task duration (matches the "≤15 min" rule in the plan). */
@@ -159,7 +159,8 @@ export async function proposeGapFillers(
     return { proposals: [], gaps: [], skipped: true, reason: "flag_off" };
   }
 
-  const workingHours = workingHoursForDate(user?.weeklyAvailability, dateIso);
+  void user;
+  const workingHours = workingHoursForDate(undefined, dateIso);
 
   // Build booked ranges from today's scheduled tasks. A task with a time
   // block has either ISO columns OR legacy payload HH:MM — handle both.

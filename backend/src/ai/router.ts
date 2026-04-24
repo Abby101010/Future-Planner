@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar server — AI request router
+   Starward server — AI request router
 
    Routes AI requests to handlers. Complex requests (daily-tasks,
    generate-goal-plan, reallocate, adaptive-reschedule) go through
@@ -12,7 +12,7 @@
    ────────────────────────────────────────────────────────── */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { stripLoneSurrogates, sanitizeForJSON } from "@northstar/core";
+import { stripLoneSurrogates, sanitizeForJSON } from "@starward/core";
 import { getClient } from "./client";
 
 // Platform-dependent handlers stay local — they import from
@@ -28,9 +28,9 @@ import { handleImageToTodos } from "./handlers/imageToTodos";
 import { getEffectiveDate } from "../dateUtils";
 import { loadProjectContext } from "../coordinators/bigGoal/projectAgentContext";
 
-// Agnostic handlers — live in @northstar/core/handlers (server-only subpath).
+// Agnostic handlers — live in @starward/core/handlers (server-only subpath).
 // They pull in @anthropic-ai/sdk + node:crypto, so they must NOT come from
-// the main @northstar/core barrel which the desktop renderer also consumes.
+// the main @starward/core barrel which the desktop renderer also consumes.
 import {
   handleOnboarding,
   handleClassifyGoal,
@@ -40,8 +40,8 @@ import {
   handleAnalyzeMonthlyContext,
   handleHomeChat,
   handleUnifiedChat,
-} from "@northstar/core/handlers";
-import type { AIPayloadMap, TaskState, ScheduleBlock } from "@northstar/core";
+} from "@starward/core/handlers";
+import type { AIPayloadMap, TaskState, ScheduleBlock } from "@starward/core";
 
 function buildScheduleBlockText(tierEnforcement: {
   calendarBlocks: ScheduleBlock[];

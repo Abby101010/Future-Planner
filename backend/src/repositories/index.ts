@@ -1,4 +1,4 @@
-/* NorthStar server — repositories barrel
+/* Starward server — repositories barrel
  *
  * Re-exports every aggregate repository as a namespace so callers can
  * write:

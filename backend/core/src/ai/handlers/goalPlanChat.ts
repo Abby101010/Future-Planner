@@ -1,4 +1,4 @@
-/* NorthStar — Goal Plan Chat handler */
+/* Starward — Goal Plan Chat handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";

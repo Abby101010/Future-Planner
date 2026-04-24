@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Energy Profile nightly aggregator (Initiative B Phase 3)
+   Starward — Energy Profile nightly aggregator (Initiative B Phase 3)
 
    Pulls the last 30 days of daily_tasks for a single user, builds
    per-(hour, dayOfWeek, category) completion-rate stats, and upserts

@@ -1,7 +1,7 @@
-/* NorthStar server — goals repository
+/* Starward server — goals repository
  *
  * Typed data access for the `goals` table (migration 0002). Promotes the
- * stable top-level fields of the @northstar/core Goal type to columns and
+ * stable top-level fields of the @starward/core Goal type to columns and
  * round-trips the rest (planChat, plan, flatPlan, repeatSchedule, etc.) via
  * the `payload` jsonb column.
  *
@@ -9,7 +9,7 @@
  * No business logic lives here — pure CRUD.
  */
 
-import type { Goal, GoalImportance, GoalPlan, GoalScope, GoalType } from "@northstar/core";
+import type { Goal, GoalImportance, GoalPlan, GoalScope, GoalType } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
@@ -32,6 +32,10 @@ interface GoalRow {
   progress_percent: number | null;
   goal_slot: string | null;
   payload: Record<string, unknown> | string | null;
+  goal_description: string;
+  goal_metadata: Record<string, unknown> | string | null;
+  user_notes: string;
+  clarification_answers: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +65,10 @@ function rowToGoal(r: GoalRow): Goal {
     goalSlot: (r.goal_slot as Goal["goalSlot"]) ?? null,
     progressPercent: r.progress_percent ?? undefined,
     notes: meta.notes as string | undefined,
+    goalDescription: r.goal_description ?? "",
+    goalMetadata: parseJson(r.goal_metadata),
+    userNotes: r.user_notes ?? "",
+    clarificationAnswers: parseJson(r.clarification_answers),
     rescheduleBannerDismissed: meta.rescheduleBannerDismissed as
       | boolean
       | undefined,
@@ -107,9 +115,12 @@ export async function upsert(goal: Goal): Promise<void> {
     `insert into goals (
        id, user_id, title, description, target_date, status, priority,
        goal_type, scope, is_habit, icon, plan_confirmed, progress_percent,
-       goal_slot, payload, updated_at
+       goal_slot, payload,
+       goal_description, goal_metadata, user_notes, clarification_answers,
+       updated_at
      ) values (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, now()
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb,
+       $16, $17::jsonb, $18, $19::jsonb, now()
      )
      on conflict (user_id, id) do update set
        title = excluded.title,
@@ -125,6 +136,10 @@ export async function upsert(goal: Goal): Promise<void> {
        progress_percent = excluded.progress_percent,
        goal_slot = excluded.goal_slot,
        payload = excluded.payload,
+       goal_description = excluded.goal_description,
+       goal_metadata = excluded.goal_metadata,
+       user_notes = excluded.user_notes,
+       clarification_answers = excluded.clarification_answers,
        updated_at = now()`,
     [
       goal.id,
@@ -142,6 +157,10 @@ export async function upsert(goal: Goal): Promise<void> {
       goal.progressPercent ?? null,
       goal.goalSlot ?? null,
       JSON.stringify(goalToPayload(goal)),
+      goal.goalDescription ?? "",
+      JSON.stringify(goal.goalMetadata ?? {}),
+      goal.userNotes ?? "",
+      JSON.stringify(goal.clarificationAnswers ?? {}),
     ],
   );
 }

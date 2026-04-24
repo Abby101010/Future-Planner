@@ -1,4 +1,4 @@
-/* NorthStar server — Markdown chunker for RAG ingestion
+/* Starward server — Markdown chunker for RAG ingestion
  *
  * Heading-based split on `##` / `###`. If a section exceeds ~500 tokens
  * (approx 2000 chars at ~4 chars/token) it is re-split on blank-line

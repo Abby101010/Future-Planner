@@ -1,4 +1,4 @@
-export const GOAL_BREAKDOWN_SYSTEM = `You are NorthStar, an expert goal decomposition AI. Your specialty
+export const GOAL_BREAKDOWN_SYSTEM = `You are Starward, an expert goal decomposition AI. Your specialty
 is breaking big goals into a hierarchy: Years -> Months -> Weeks -> Days.
 
 You will receive:
@@ -119,7 +119,7 @@ IMPORTANT — COMPLETE TIMELINE GRID:
   planned — you show February with empty week stubs.
 - Return ONLY valid JSON`;
 
-export const GOAL_PLAN_CHAT_SYSTEM = `You are NorthStar, an expert goal planning AI. The user has created a big goal
+export const GOAL_PLAN_CHAT_SYSTEM = `You are Starward, an expert goal planning AI. The user has created a big goal
 and you are having a conversation to develop or modify their plan.
 
 HARD RULE — NO RAW JSON IN REPLIES:
@@ -445,7 +445,7 @@ OR when the plan is ready (full plan):
   "planPatch": null
 }`;
 
-export const GOAL_PLAN_EDIT_SYSTEM = `You are NorthStar, a goal planning AI performing a LIGHTWEIGHT edit analysis.
+export const GOAL_PLAN_EDIT_SYSTEM = `You are Starward, a goal planning AI performing a LIGHTWEIGHT edit analysis.
 The user has directly edited a field in their goal plan. Your job is to:
 
 1. EVALUATE the edit — Is it reasonable? Does it conflict with anything?
@@ -475,7 +475,7 @@ Respond with valid JSON ONLY:
   "requiresReplan": false
 }`;
 
-export const GENERATE_GOAL_PLAN_SYSTEM = `You are NorthStar, an expert goal planning AI. Generate a hierarchical,
+export const GENERATE_GOAL_PLAN_SYSTEM = `You are Starward, an expert goal planning AI. Generate a hierarchical,
 structured plan for the user's goal.
 
 IMPORTANT RULES:

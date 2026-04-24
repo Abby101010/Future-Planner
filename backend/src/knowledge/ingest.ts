@@ -1,4 +1,4 @@
-/* NorthStar server — Knowledge-base ingestion
+/* Starward server — Knowledge-base ingestion
  *
  * Reads a markdown file, chunks it on headings, embeds each chunk with Voyage
  * voyage-3-large, and upserts into knowledge_chunks keyed by

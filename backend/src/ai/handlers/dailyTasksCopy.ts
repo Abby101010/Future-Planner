@@ -1,7 +1,7 @@
-/* NorthStar — Lightweight Daily Tasks Copy Handler
+/* Starward — Lightweight Daily Tasks Copy Handler
  *
  * Step 2 of the two-step daily task pipeline:
- *   Step 1: selectDailyTasks() (deterministic rule engine in @northstar/core)
+ *   Step 1: selectDailyTasks() (deterministic rule engine in @starward/core)
  *   Step 2: This handler — a Haiku call that generates only the
  *           natural-language copy for the already-selected tasks.
  *
@@ -10,11 +10,11 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { getModelForTask } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { TriagedTask } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { TriagedTask } from "@starward/core";
 
-const COPY_SYSTEM = `You are NorthStar, a concise daily planning assistant.
+const COPY_SYSTEM = `You are Starward, a concise daily planning assistant.
 You receive a PRE-SELECTED, PRE-SEQUENCED list of today's tasks. Your ONLY job
 is to write short motivational copy for each task and a daily briefing.
 

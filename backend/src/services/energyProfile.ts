@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Energy Profile (Initiative B Phase 3)
+   Starward — Energy Profile (Initiative B Phase 3)
 
    Aggregates the user's recent completion signals into a
    per-(hour, dayOfWeek, category) completion-rate weight map.

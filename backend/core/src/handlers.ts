@@ -1,8 +1,8 @@
-/* NorthStar core — server-only AI handler barrel.
+/* Starward core — server-only AI handler barrel.
  *
  * These handlers pull in @anthropic-ai/sdk and node:crypto, so they must
  * NOT be re-exported from ./index.ts (which is consumed by the browser
- * renderer via a Vite alias). Import them from "@northstar/core/handlers"
+ * renderer via a Vite alias). Import them from "@starward/core/handlers"
  * inside server code only.
  */
 

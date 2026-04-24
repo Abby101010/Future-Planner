@@ -29,7 +29,7 @@ Due to Flyvbjerg et al. — the gold-standard de-biasing technique:
 2. Pull the **actual outcome distribution** of that class — mean, variance, worst-case.
 3. Adjust the current forecast toward the class distribution, not away from it.
 
-In the NorthStar context: when the user has memory of past durations on similar tasks, trust those actuals over the user's present intuition. Say so explicitly: *"last three times you did a comparable task it took 3–4 hours — your 90-minute estimate is probably optimistic."*
+In the Starward context: when the user has memory of past durations on similar tasks, trust those actuals over the user's present intuition. Say so explicitly: *"last three times you did a comparable task it took 3–4 hours — your 90-minute estimate is probably optimistic."*
 
 ## The Three-Point Estimate (PERT)
 

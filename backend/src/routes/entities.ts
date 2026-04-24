@@ -1,4 +1,4 @@
-/* NorthStar server — entity creation routes
+/* Starward server — entity creation routes
  *
  * HTTP mirror of electron/ipc/entities.ts. Backend-authoritative construction
  * for every entity the renderer used to build with `${kind}-${Date.now()}` IDs
@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import {
   downgradeIfOverBudget,
   type TaskPriority,
-} from "@northstar/core";
+} from "@starward/core";
 import { asyncHandler } from "../middleware/errorHandler";
 
 export const entitiesRouter = Router();
@@ -207,9 +207,6 @@ entitiesRouter.post(
       moodBaseline:
         typeof p.moodBaseline === "string" ? p.moodBaseline : undefined,
       onboardingComplete: Boolean(p.onboardingComplete),
-      weeklyAvailability: Array.isArray(p.weeklyAvailability)
-        ? p.weeklyAvailability
-        : [],
       createdAt: nowIso(),
       settings: {
         enableNewsFeed: Boolean(settings.enableNewsFeed),

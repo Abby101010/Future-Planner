@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Duration Estimator Sub-Agent (Phase A)
+   Starward — Duration Estimator Sub-Agent (Phase A)
 
    First production caller of retrieveRelevant (via the
    retrievalQuery parameter wired into buildMemoryContext in
@@ -10,7 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getClient } from "../ai/client";
 import { getCurrentUserId } from "../middleware/requestContext";
-import { getModelForTask } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
 import { loadMemory, buildMemoryContext } from "../memory";
 import { DURATION_ESTIMATOR_SYSTEM } from "./prompts/durationEstimator";
 

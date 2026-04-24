@@ -1,4 +1,4 @@
-import type { AgentPlan, SubAgentId } from "@northstar/core";
+import type { AgentPlan, SubAgentId } from "@starward/core";
 
 export function routeRequest(requestType: string): AgentPlan {
   switch (requestType) {

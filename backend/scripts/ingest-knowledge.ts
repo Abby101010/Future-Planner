@@ -1,4 +1,4 @@
-/* NorthStar server — Knowledge-base ingestion CLI
+/* Starward server — Knowledge-base ingestion CLI
  *
  * Usage:
  *   npm run ingest-knowledge

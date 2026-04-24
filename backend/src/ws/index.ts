@@ -1,4 +1,4 @@
-/* NorthStar server — ws/ barrel
+/* Starward server — ws/ barrel
  *
  * Public surface of the WebSocket transport. Route handlers should
  * import event emitters from here; startup code pulls in

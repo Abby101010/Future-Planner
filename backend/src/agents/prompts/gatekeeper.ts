@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Gatekeeper Agent System Prompt
+   Starward — Gatekeeper Agent System Prompt
 
    Instructs the model to filter candidate tasks for signal vs
    noise, score priority using rotation-aware factors, and

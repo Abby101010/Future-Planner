@@ -1,4 +1,4 @@
-/* NorthStar server — Tool-use orchestration loop (Phase 5, additive)
+/* Starward server — Tool-use orchestration loop (Phase 5, additive)
  *
  * Drives a multi-turn conversation with Anthropic in which the model may
  * invoke one or more server-side tools before returning a final text

@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Model Configuration
+   Starward — Model Configuration
 
    Centralized model tier system. Each task type maps to a
    model tier (heavy / medium / light), and each tier maps
@@ -64,6 +64,14 @@ const TASK_TIERS: Record<string, ModelTier> = {
   // ── GoalAct / HiTAMP additions ──
   "expand-week": "medium",          // Sonnet generates tasks for unlocked week
   "pace-explainer": "light",        // Haiku explains pace mismatches
+
+  // ── Per-goal Dashboard agents (Phase 3 + 5) ──
+  "goal-clarifier": "medium",       // Sonnet: conversational clarification questions
+  "dashboard-insight": "light",     // Haiku: compose insight cards from retrieved methodology
+
+  // ── Onboarding agents ──
+  "onboarding-discovery": "medium", // Sonnet: opening conversation + extraction
+  "onboarding-summarizer": "medium", // Sonnet: propose goal from conversation
 };
 
 /** User overrides stored in settings (tier → model) */

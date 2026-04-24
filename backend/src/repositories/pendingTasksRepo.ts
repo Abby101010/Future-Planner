@@ -1,4 +1,4 @@
-/* NorthStar server — pending tasks repository
+/* Starward server — pending tasks repository
  *
  * Wraps `pending_tasks` (migration 0002). Holds AI-generated task proposals
  * from the home chat / planner that are awaiting user confirm. The analysis
@@ -6,7 +6,7 @@
  * alongside the raw userInput text.
  */
 
-import type { PendingTask } from "@northstar/core";
+import type { PendingTask } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
@@ -24,7 +24,7 @@ interface PendingTaskRow {
   updated_at: string;
 }
 
-/** DB-shape pending task. The @northstar/core PendingTask type has a
+/** DB-shape pending task. The @starward/core PendingTask type has a
  *  mandatory `analysis` field that's nullable while "analyzing" — we
  *  preserve both shapes by storing analysis inside payload. */
 export interface PendingTaskRecord {

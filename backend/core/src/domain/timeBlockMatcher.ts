@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Time-Block Matcher (Initiative B Phase 2)
+   Starward — Time-Block Matcher (Initiative B Phase 2)
 
    Pure function that assigns today's tasks to slots drawn
    from the user's weeklyAvailability. Runs AFTER the scheduler

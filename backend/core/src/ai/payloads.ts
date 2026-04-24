@@ -1,4 +1,4 @@
-/* NorthStar — typed AI handler payloads.
+/* Starward — typed AI handler payloads.
  *
  * Handlers used to accept `Record<string, unknown>` and cast each field
  * with `as`. These interfaces give us autocomplete, catch misspelled

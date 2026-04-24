@@ -1,5 +1,5 @@
 /**
- * NorthStar (北极星) — Prompt Lab Runner
+ * Starward (星程) — Prompt Lab Runner
  *
  * Sends the core prompts for Features 1, 2, and 4 to Claude and saves
  * the responses so we can validate output quality.
@@ -45,7 +45,7 @@ const user = JSON.parse(
 // FEATURE 1 — Goal Clarification (Conversational) + Roadmap + Pace Check
 // ========================================================================
 
-const FEATURE1_SYSTEM_PHASE_A = `You are NorthStar (北极星), a thoughtful goal coach. The user has come to you
+const FEATURE1_SYSTEM_PHASE_A = `You are Starward (星程), a thoughtful goal coach. The user has come to you
 with a rough goal. Your job is to have a natural conversation to understand
 what they really want, so you can build them a realistic plan.
 
@@ -173,7 +173,7 @@ Honestly, the real motivation is that I feel like I'm solving the wrong problems
 
   // Save the full conversation
   const fullConversation = conversationHistory
-    .map((m) => `### ${m.role === "user" ? "User" : "NorthStar"}\n\n${m.content}`)
+    .map((m) => `### ${m.role === "user" ? "User" : "Starward"}\n\n${m.content}`)
     .join("\n\n---\n\n");
   save("feature1-phaseA-conversation.md", fullConversation);
   console.log("  AI (Turn 4 — summary):\n");
@@ -187,7 +187,7 @@ Honestly, the real motivation is that I feel like I'm solving the wrong problems
   const phaseB = await client.messages.create({
     model: "claude-sonnet-4-5-20250514",
     max_tokens: 8000,
-    system: `You are NorthStar (北极星), a goal-planning AI. The user has a clarified goal.
+    system: `You are Starward (星程), a goal-planning AI. The user has a clarified goal.
 Generate a complete, realistic roadmap AND explain your reasoning.
 
 RULES:
@@ -299,7 +299,7 @@ weeks, weekly focus + goals only. Return ONLY valid JSON, no markdown fences.`,
   const phaseC = await client.messages.create({
     model: "claude-sonnet-4-5-20250514",
     max_tokens: 2000,
-    system: `You are NorthStar (北极星). The user has been following their roadmap for
+    system: `You are Starward (星程). The user has been following their roadmap for
 one week. Review their first week's data and proactively check in about
 whether the pace feels right.
 
@@ -417,7 +417,7 @@ Longest streak: 2`;
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250514",
     max_tokens: 3000,
-    system: `You are NorthStar (北极星), a daily planning assistant. The user has an active
+    system: `You are Starward (星程), a daily planning assistant. The user has an active
 roadmap. Generate their tasks for TODAY.
 
 RULES:
@@ -567,7 +567,7 @@ async function runFeature4() {
   const modeAQuestion = await client.messages.create({
     model: "claude-sonnet-4-5-20250514",
     max_tokens: 1000,
-    system: `You are NorthStar (北极星), a recovery assistant. The user missed a task today.
+    system: `You are Starward (星程), a recovery assistant. The user missed a task today.
 Ask ONE simple question about the blocker with tappable options. NEVER use guilt
 language. Tone: thoughtful friend who assumes you had a good reason.
 
@@ -601,7 +601,7 @@ This was a networking task scheduled for 30 minutes.`,
   const modeAAdjust = await client.messages.create({
     model: "claude-sonnet-4-5-20250514",
     max_tokens: 2000,
-    system: `You are NorthStar (北极星), a recovery assistant. The user missed a task and
+    system: `You are Starward (星程), a recovery assistant. The user missed a task and
 told you why. Adjust tomorrow's plan based on the blocker.
 
 RULES:
@@ -649,7 +649,7 @@ My current milestone target date is: May 8, 2026.`,
   const modeB = await client.messages.create({
     model: "claude-sonnet-4-5-20250514",
     max_tokens: 3000,
-    system: `You are NorthStar (北极星), a plan restructuring assistant. You've detected a
+    system: `You are Starward (星程), a plan restructuring assistant. You've detected a
 pattern of missed tasks. Diagnose the STRUCTURAL problem and propose a revised plan.
 
 RULES:
@@ -732,7 +732,7 @@ function indent(text: string, spaces = 4): string {
 
 async function main() {
   console.log("╔════════════════════════════════════════════════════════╗");
-  console.log("║  NorthStar (北极星) — Prompt Lab v2                     ║");
+  console.log("║  Starward (星程) — Prompt Lab v2                     ║");
   console.log("║  Features 1 (conversational + reasoning), 2 (retention),║");
   console.log("║  and 4 (recovery) — with sample user                   ║");
   console.log("╚════════════════════════════════════════════════════════╝");

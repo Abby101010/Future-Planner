@@ -1,4 +1,4 @@
-/* NorthStar server — goal plan nodes repository
+/* Starward server — goal plan nodes repository
  *
  * Wraps `goal_plan_nodes` (migration 0002), which stores the hierarchical
  * GoalPlan { milestones, years[ months[ weeks[ days[ tasks[] ] ] ] ] } as a
@@ -6,7 +6,7 @@
  * the containing node.
  *
  * This module ships a pure helper `reconstructPlan` that folds a flat list
- * of rows back into the nested @northstar/core GoalPlan shape — view
+ * of rows back into the nested @starward/core GoalPlan shape — view
  * resolvers (Task 12) will call it.
  *
  * All queries are user_id-scoped via getCurrentUserId() and parameterized.
@@ -21,7 +21,7 @@ import type {
   GoalPlanWeek,
   GoalPlanDay,
   GoalPlanTask,
-} from "@northstar/core";
+} from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";
@@ -873,7 +873,7 @@ export async function replacePlan(
 
 // ── Pure helper: flat rows → hierarchical GoalPlan ──────────────
 
-/** Reconstruct the nested @northstar/core GoalPlan shape from a flat list
+/** Reconstruct the nested @starward/core GoalPlan shape from a flat list
  *  of nodes (as returned by listForGoal). Pure function — no DB access.
  *  Tolerant of missing intermediate nodes: builds whatever it can. */
 export function reconstructPlan(nodes: GoalPlanNode[]): GoalPlan {

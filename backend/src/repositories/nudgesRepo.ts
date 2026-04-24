@@ -1,10 +1,10 @@
-/* NorthStar server — nudges repository
+/* Starward server — nudges repository
  *
  * Wraps `nudges` (migration 0002). Each row is an AI-generated contextual
  * prompt queued for the UI. `kind` maps 1:1 to ContextualNudge.type.
  * Actions and priority/context live in payload.
  *
- * @northstar/core has a ContextualNudge type, but it uses `message` / `type`
+ * @starward/core has a ContextualNudge type, but it uses `message` / `type`
  * while the DB columns are `body` / `kind` — this repo exposes a
  * DB-faithful NudgeRecord interface instead of forcing the core type on
  * callers. View resolvers can map NudgeRecord → ContextualNudge as needed.

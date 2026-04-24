@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Anthropic payload sanitization
+   Starward — Anthropic payload sanitization
 
    The Anthropic API rejects request bodies containing unpaired
    UTF-16 surrogates with:

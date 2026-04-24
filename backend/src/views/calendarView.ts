@@ -1,4 +1,4 @@
-/* NorthStar server — calendar view resolver
+/* Starward server — calendar view resolver
  *
  * Returns all tasks for a date range (the unified model — calendar events
  * are now stored as tasks). Also returns goals and vacation mode for the
@@ -6,7 +6,12 @@
  */
 
 import * as repos from "../repositories";
-import type { DailyTask, Goal, GoalPlanTaskForCalendar } from "@northstar/core";
+import type {
+  DailyTask,
+  Goal,
+  GoalPlanTaskForCalendar,
+  Reminder,
+} from "@starward/core";
 import { flattenDailyTask } from "./_mappers";
 
 export interface CalendarVacationMode {
@@ -30,6 +35,13 @@ export interface ProjectTimeAllocation {
   taskCount: number;
 }
 
+/** Per-date tally powering the month-grid count badges. The UI reads
+ *  `countsByDate[YYYY-MM-DD]?.tasks` + `.reminders` to render each cell. */
+export interface CalendarDateCounts {
+  tasks: number;
+  reminders: number;
+}
+
 export interface CalendarView {
   rangeStart: string;
   rangeEnd: string;
@@ -38,6 +50,11 @@ export interface CalendarView {
   goalPlanTasks: GoalPlanTaskForCalendar[];
   goals: Goal[];
   vacationMode: CalendarVacationMode;
+  /** Reminders whose `date` falls within [rangeStart, rangeEnd]. Powers
+   *  the click-a-date side view (filtered client-side by selected date). */
+  reminders: Reminder[];
+  /** Per-date counts of tasks + reminders for quick badge rendering. */
+  countsByDate: Record<string, CalendarDateCounts>;
   projectAllocation?: ProjectTimeAllocation[];
 }
 
@@ -136,12 +153,20 @@ export async function resolveCalendarView(
   const endDate = args?.endDate || defaults.endDate;
   const viewMode: CalendarViewMode = args?.viewMode ?? "month";
 
-  const [taskRecords, goals, vacationState, goalPlanTasksRaw] = await Promise.all([
-    repos.dailyTasks.listForDateRange(startDate, endDate),
-    repos.goals.list(),
-    repos.vacationMode.get(),
-    repos.goalPlan.listTasksForDateRange(startDate, endDate),
-  ]);
+  const [taskRecords, goals, vacationState, goalPlanTasksRaw, allReminders] =
+    await Promise.all([
+      repos.dailyTasks.listForDateRange(startDate, endDate),
+      repos.goals.list(),
+      repos.vacationMode.get(),
+      repos.goalPlan.listTasksForDateRange(startDate, endDate),
+      repos.reminders.list(),
+    ]);
+
+  // Reminders repo has no listForDateRange helper yet; fetch-all-and-filter
+  // is fine at current scale.
+  const reminders: Reminder[] = allReminders.filter(
+    (r) => r.date >= startDate && r.date <= endDate,
+  );
 
   const tasks = taskRecords.map((r) => flattenDailyTask(r, r.date));
   const expanded = expandRecurring(tasks, startDate, endDate);
@@ -168,6 +193,19 @@ export async function resolveCalendarView(
   const projectAllocation =
     viewMode === "project" ? computeProjectAllocation(expanded) : undefined;
 
+  // Per-date counts for the month grid. Keys are ISO YYYY-MM-DD, matching
+  // both daily_tasks.log_date and reminders.date column shapes.
+  const countsByDate: Record<string, CalendarDateCounts> = {};
+  const bump = (date: string, key: keyof CalendarDateCounts): void => {
+    if (!date) return;
+    const existing = countsByDate[date] ?? { tasks: 0, reminders: 0 };
+    existing[key] += 1;
+    countsByDate[date] = existing;
+  };
+  for (const t of expanded) bump(t.date ?? "", "tasks");
+  for (const gt of goalPlanTasks) bump(gt.date ?? "", "tasks");
+  for (const r of reminders) bump(r.date, "reminders");
+
   return {
     rangeStart: startDate,
     rangeEnd: endDate,
@@ -176,6 +214,8 @@ export async function resolveCalendarView(
     goalPlanTasks,
     goals,
     vacationMode,
+    reminders,
+    countsByDate,
     projectAllocation,
   };
 }

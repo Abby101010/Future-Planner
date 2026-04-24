@@ -8,7 +8,7 @@
  */
 
 import { getClient } from "../../ai/client";
-import { getModelForTask } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
 
 export interface ResearchInput {
   goalTitle: string;

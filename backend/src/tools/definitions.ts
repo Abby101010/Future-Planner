@@ -1,4 +1,4 @@
-/* NorthStar server — Tool-use definitions (Phase 5, additive)
+/* Starward server — Tool-use definitions (Phase 5, additive)
  *
  * Read-only tools the Anthropic model can call during a tool_use loop.
  * Each tool has:
@@ -129,7 +129,7 @@ const getMemoryFacts: RegisteredTool = {
   definition: {
     name: "get_memory_facts",
     description:
-      "Return high-confidence facts NorthStar has learned about the user (schedule, preferences, patterns, capacity, constraints). Useful for personalising responses.",
+      "Return high-confidence facts Starward has learned about the user (schedule, preferences, patterns, capacity, constraints). Useful for personalising responses.",
     input_schema: {
       type: "object",
       properties: {

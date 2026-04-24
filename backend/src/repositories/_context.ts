@@ -1,4 +1,4 @@
-/* NorthStar server — repository user context helper
+/* Starward server — repository user context helper
  *
  * Thin wrapper around getCurrentUserId() that throws a 401-flavored error
  * if called outside a request context. Every repository function uses this

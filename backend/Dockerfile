@@ -1,4 +1,4 @@
-# NorthStar backend — Fly.io deployment image
+# Starward backend — Fly.io deployment image
 # Build context: repo root.
 # Deploy with: fly deploy (from repo root, uses fly.toml → backend/Dockerfile)
 FROM node:22-alpine AS builder
@@ -16,8 +16,8 @@ COPY backend/src backend/src
 COPY backend/migrations backend/migrations
 COPY backend/tsconfig.json backend/
 
-RUN npm --workspace @northstar/core run build \
- && npm --workspace @northstar/server run build
+RUN npm --workspace @starward/core run build \
+ && npm --workspace @starward/server run build
 
 # ── Runtime stage ────────────────────────────────────────
 FROM node:22-alpine AS runtime
@@ -28,7 +28,7 @@ COPY --from=builder /repo/package.json ./
 COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/backend/core/package.json ./backend/core/package.json
 COPY --from=builder /repo/backend/core/dist ./backend/core/dist
-# Shim files so server code can resolve `@northstar/core/handlers` under
+# Shim files so server code can resolve `@starward/core/handlers` under
 # classic Node module resolution. Forward to dist/handlers.js.
 COPY --from=builder /repo/backend/core/handlers.js ./backend/core/handlers.js
 COPY --from=builder /repo/backend/core/handlers.d.ts ./backend/core/handlers.d.ts

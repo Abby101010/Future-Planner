@@ -75,3 +75,19 @@ export {
   cmdSetTaskTimeBlock,
   cmdSetTaskProjectTag,
 } from "./timeBlocks";
+
+export {
+  cmdUpdateGoalNotes,
+  cmdEditGoalTitle,
+  cmdEditMilestone,
+  cmdRegenerateInsights,
+  cmdAddGoalReflection,
+} from "./dashboard";
+
+export {
+  cmdSendOnboardingMessage,
+  cmdProposeOnboardingGoal,
+  cmdConfirmOnboardingGoal,
+  cmdAcceptOnboardingPlan,
+  cmdCommitFirstTask,
+} from "./onboarding";

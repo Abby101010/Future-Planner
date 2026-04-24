@@ -6,7 +6,7 @@
  *   - user_created/calendar/repeating_goal → offer reschedule options
  */
 
-import type { TaskSource } from "@northstar/core";
+import type { TaskSource } from "@starward/core";
 import * as repos from "../../repositories";
 import type { DailyTaskRecord } from "../../repositories/dailyTasksRepo";
 

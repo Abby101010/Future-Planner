@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Gap Detector (Initiative B Phase 4)
+   Starward — Gap Detector (Initiative B Phase 4)
 
    Pure utility: given today's booked ranges (calendar events +
    already-scheduled tasks) and the user's working-hours window,

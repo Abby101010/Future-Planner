@@ -1,4 +1,4 @@
-/* NorthStar server — dashboard view resolver
+/* Starward server — dashboard view resolver
  *
  * Narrow per-page aggregate for DashboardPage. Composes goals, today's
  * daily log + tasks, pending tasks, chat messages, active nudges,
@@ -12,12 +12,11 @@ import { getEffectiveDate, getEffectiveMonthKey } from "../dateUtils";
 import type {
   ContextualNudge,
   DailyTask,
-  Goal,
   HomeChatMessage,
   MonthlyContext,
   PendingTask,
   Reminder,
-} from "@northstar/core";
+} from "@starward/core";
 import { flattenDailyTask, nudgeToContextual } from "./_mappers";
 
 export interface DashboardTodaySummary {
@@ -42,7 +41,6 @@ export interface DashboardView {
   todayDate: string;
   greetingName: string;
   todaySummary: DashboardTodaySummary;
-  activeGoals: Goal[];
   todayTasks: DailyTask[];
   pendingTasks: PendingTask[];
   /** Subset of pendingTasks still in an actionable state. */
@@ -64,7 +62,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
 
   // ── Fire the independent repo reads in parallel ─────────────
   const [
-    goals,
     todayTaskRecords,
     pendingRecords,
     homeMessages,
@@ -74,7 +71,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     monthlyContexts,
     user,
   ] = await Promise.all([
-    repos.goals.list(),
     repos.dailyTasks.listForDate(today),
     repos.pendingTasks.list(),
     repos.chat.listHomeMessages(200),
@@ -100,8 +96,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
       createdAt: p.createdAt,
     };
   });
-
-  const activeGoals = goals.filter((g) => g.status !== "archived");
 
   const activePendingTasks = pendingTasks.filter(
     (pt) => pt.status === "analyzing" || pt.status === "ready",
@@ -137,7 +131,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     todayDate: today,
     greetingName,
     todaySummary: { completedTasks, totalTasks, streak },
-    activeGoals,
     todayTasks,
     pendingTasks,
     activePendingTasks,

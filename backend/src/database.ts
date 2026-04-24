@@ -1,4 +1,4 @@
-/* NorthStar server — database helpers re-exported for AI handlers
+/* Starward server — database helpers re-exported for AI handlers
  *
  * The electron version of this module wraps better-sqlite3 reads for a
  * handful of tables the AI handlers query directly (without going through

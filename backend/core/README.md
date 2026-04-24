@@ -1,7 +1,7 @@
-# @northstar/core
+# @starward/core
 
-Shared wire types and pure helpers — imported by both `@northstar/server`
-and `@northstar/desktop`. This package is the contract between the two
+Shared wire types and pure helpers — imported by both `@starward/server`
+and `@starward/desktop`. This package is the contract between the two
 halves of the system.
 
 ## What lives here

@@ -1,4 +1,4 @@
-/* NorthStar — goal plan patch applier
+/* Starward — goal plan patch applier
  *
  * `applyPlanPatch(plan, patch)` takes an existing GoalPlan and a sparse
  * patch object emitted by the goal-plan-chat LLM and returns a new plan

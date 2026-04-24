@@ -7,8 +7,8 @@
  */
 
 import { getClient } from "../ai/client";
-import { getModelForTask } from "@northstar/core";
-import { EFFORT_ROUTER_SYSTEM } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { EFFORT_ROUTER_SYSTEM } from "@starward/core";
 
 export interface EffortRouterInput {
   userMessage: string;

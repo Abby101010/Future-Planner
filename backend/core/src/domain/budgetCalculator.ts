@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Dynamic Cognitive Budget Calculator (A-3)
+   Starward — Dynamic Cognitive Budget Calculator (A-3)
 
    Pure function. Blends the user's static `dailyCognitiveBudget`
    with their CapacityProfile trend + recent completion rate, and

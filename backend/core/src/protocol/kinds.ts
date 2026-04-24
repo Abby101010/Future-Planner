@@ -8,7 +8,8 @@ export type QueryKind =
   | "view:news-feed"
   | "view:onboarding"
   | "view:goal-plan"
-  | "view:goal-breakdown";
+  | "view:goal-breakdown"
+  | "view:goal-dashboard";
 
 export type CommandKind =
   | "command:create-goal"
@@ -62,7 +63,17 @@ export type CommandKind =
   | "command:pause-goal"
   | "command:resume-goal"
   | "command:propose-gap-fillers"
-  | "command:analyze-image";
+  | "command:analyze-image"
+  | "command:update-goal-notes"
+  | "command:edit-goal-title"
+  | "command:edit-milestone"
+  | "command:regenerate-insights"
+  | "command:add-goal-reflection"
+  | "command:send-onboarding-message"
+  | "command:propose-onboarding-goal"
+  | "command:confirm-onboarding-goal"
+  | "command:accept-onboarding-plan"
+  | "command:commit-first-task";
 
 export type EventKind =
   | "ai:stream-start"

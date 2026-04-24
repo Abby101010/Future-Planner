@@ -1,4 +1,4 @@
-/* NorthStar server — Scheduled background tasks (Phase 4, additive)
+/* Starward server — Scheduled background tasks (Phase 4, additive)
  *
  * Runs cron-scheduled jobs alongside the existing server. Opt-in via the
  * ENABLE_SCHEDULER env var — when absent or "0", this module is a no-op

@@ -1,4 +1,4 @@
-# `@northstar/server` — WebSocket transport
+# `@starward/server` — WebSocket transport
 
 This module stands up a WebSocket server on top of the existing Express
 HTTP server so the backend can push AI token deltas, agent progress
@@ -50,7 +50,7 @@ does not attempt to persist in-flight streams across reconnects.
 
 Route handlers should never call `ws.send()` or
 `connectionRegistry.broadcastToUser()` directly. Instead import a
-typed helper from `@northstar/server/ws` (or the barrel
+typed helper from `@starward/server/ws` (or the barrel
 `./ws/index.ts` inside the package) and call it with the current
 `userId`:
 
@@ -66,7 +66,7 @@ emitViewInvalidate(req.userId, { viewKinds: ["view:tasks", "view:dashboard"] });
 ```
 
 Each emitter wraps its payload in the standardized `envelope()` from
-`@northstar/core/protocol/envelope`, so the wire format stays the same
+`@starward/core/protocol/envelope`, so the wire format stays the same
 whether a message came from HTTP or WS. Available emitters, one per
 `EventKind`:
 

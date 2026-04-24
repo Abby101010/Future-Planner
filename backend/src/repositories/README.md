@@ -65,7 +65,7 @@ queries — there are no internal queries here.
 ## Row ↔ domain-type mapping
 
 Each repo owns a private `rowToX(r)` function that converts a
-snake_case DB row into the canonical `@northstar/core` type (or a
+snake_case DB row into the canonical `@starward/core` type (or a
 repo-local interface when core doesn't model it yet).
 
 Stable fields → typed columns. Variable / hierarchical / level-specific
@@ -80,7 +80,7 @@ match. Do not reintroduce `metadata` on new tables.
 **Convention: `parseJson` is shared.** Import it from `./_json` — do not
 re-inline the 10-line helper per repo.
 
-**Return-type policy.** A repo returns the `@northstar/core` type directly
+**Return-type policy.** A repo returns the `@starward/core` type directly
 **only when the core type is 1:1 with the DB row shape** (no extra fields
 the DB doesn't have, no renamed fields, no computed joins). Otherwise the
 repo exports a local `*Record` interface from the same file and view

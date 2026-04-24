@@ -1,4 +1,4 @@
-/* NorthStar server — roadmap repository
+/* Starward server — roadmap repository
  *
  * Wraps the `roadmap` table (migration 0004). Exactly one row per user.
  * Replaces `app_store.roadmap`. The Roadmap object is hierarchical and
@@ -6,7 +6,7 @@
  * round-trips through the `payload` jsonb column.
  */
 
-import type { Roadmap } from "@northstar/core";
+import type { Roadmap } from "@starward/core";
 import { query } from "../db/pool";
 import { requireUserId } from "./_context";
 import { parseJson } from "./_json";

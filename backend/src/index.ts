@@ -1,4 +1,4 @@
-/* NorthStar server — HTTP entry point
+/* Starward server — HTTP entry point
  *
  * Mirrors the Electron IPC surface as REST routes. The renderer's
  * src/repositories/index.ts routes CLOUD_CHANNELS through fetch() to this
@@ -37,7 +37,7 @@ import { startScheduler, stopScheduler } from "./scheduler";
 const DEBUG = process.env.DEBUG === "1" || process.env.LOG_LEVEL === "debug";
 
 // Re-exported so later phases can `import { connectionRegistry } from
-// "@northstar/server"` without reaching into the ws/ barrel directly.
+// "@starward/server"` without reaching into the ws/ barrel directly.
 export { connectionRegistry };
 
 const PORT = Number(process.env.PORT) || 3741;
@@ -141,7 +141,7 @@ async function start() {
     process.exit(1);
   }
   server.listen(PORT, () => {
-    console.log(`[server] NorthStar API listening on :${PORT}`);
+    console.log(`[server] Starward API listening on :${PORT}`);
     console.log(`[server] WebSocket endpoint: ws://…:${PORT}/ws`);
     console.log(`[server] DEV_USER_ID=${process.env.DEV_USER_ID ?? "(unset)"}`);
     console.log(`[server] DEBUG=${DEBUG ? "on" : "off"}`);

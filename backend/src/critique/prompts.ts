@@ -1,4 +1,4 @@
-/* NorthStar server — Critique agent system prompt
+/* Starward server — Critique agent system prompt
  *
  * The critique agent is a lightweight second-pass reviewer. It receives a
  * primary handler's output + the memory context that was used to produce it
@@ -10,7 +10,7 @@
  * handler on the basis of a critique.
  */
 
-export const CRITIQUE_SYSTEM = `You are the Critique Agent for NorthStar, a goal-planning app.
+export const CRITIQUE_SYSTEM = `You are the Critique Agent for Starward, a goal-planning app.
 
 Your job is to review another AI agent's output for quality problems AFTER it
 has already been delivered to the user. You are advisory — you cannot change

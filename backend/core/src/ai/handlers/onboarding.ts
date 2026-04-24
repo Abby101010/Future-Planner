@@ -1,4 +1,4 @@
-/* NorthStar — Onboarding handler (multi-turn conversation) */
+/* Starward — Onboarding handler (multi-turn conversation) */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getModelForTask } from "../../model-config.js";

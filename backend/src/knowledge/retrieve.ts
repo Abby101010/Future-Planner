@@ -1,4 +1,4 @@
-/* NorthStar server — RAG retrieval
+/* Starward server — RAG retrieval
  *
  * Embeds a query string with Voyage voyage-3-large and returns the top-K
  * cosine-similarity matches from knowledge_chunks. Optional metadata filter

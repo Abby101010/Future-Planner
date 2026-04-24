@@ -20,9 +20,9 @@ import { packageCurrentPlan, evaluateCapacity } from "./memoryPackager";
 import { hydrateDailyLog } from "../../views/_mappers";
 import { loadMemory, computeCapacityProfile } from "../../memory";
 import { getCurrentUserId } from "../../middleware/requestContext";
-import type { DailyLog, Goal, HeatmapEntry, Reminder, TaskSource } from "@northstar/core";
-import { COGNITIVE_BUDGET, computeCognitiveWeight, checkOverload } from "@northstar/core";
-import type { DeferralRecommendation } from "@northstar/core";
+import type { DailyLog, Goal, HeatmapEntry, Reminder, TaskSource } from "@starward/core";
+import { COGNITIVE_BUDGET, computeCognitiveWeight, checkOverload } from "@starward/core";
+import type { DeferralRecommendation } from "@starward/core";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -109,9 +109,9 @@ export async function routeRefresh(date?: string): Promise<ScenarioResult> {
     date: l.date,
     tasks: l.tasks.map((t) => ({ completed: t.completed, skipped: !!t.skipped })),
   }));
+  void user;
   const capacity = computeCapacityProfile(
     memory, logsForCapacity, new Date(today + "T00:00:00").getDay(),
-    undefined, user?.weeklyAvailability,
   );
 
   const ctx: ScenarioContext = {

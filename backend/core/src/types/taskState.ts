@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Coordinator TaskState Types
+   Starward — Coordinator TaskState Types
 
    Central state object used by the Router-Orchestrator
    architecture. Sub-agents (Gatekeeper, TimeEstimator,

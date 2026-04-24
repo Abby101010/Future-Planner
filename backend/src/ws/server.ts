@@ -1,4 +1,4 @@
-/* NorthStar server — WebSocket upgrade handler
+/* Starward server — WebSocket upgrade handler
  *
  * Attaches a `ws` WebSocketServer to the existing HTTP server in
  * `noServer` mode so Express still owns routing. On every `upgrade`
@@ -23,7 +23,7 @@ import type * as http from "node:http";
 import { WebSocketServer } from "ws";
 import { validateBearerToken, extractBearerToken } from "../middleware/auth";
 import { connectionRegistry } from "./connections";
-import { envelope } from "@northstar/core";
+import { envelope } from "@starward/core";
 
 const WS_PATH = "/ws";
 

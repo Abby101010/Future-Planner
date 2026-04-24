@@ -1,4 +1,4 @@
-export const CLASSIFY_GOAL_SYSTEM = `You are NorthStar's goal classification engine. Given a goal description,
+export const CLASSIFY_GOAL_SYSTEM = `You are Starward's goal classification engine. Given a goal description,
 target date (or "habit" if it is an ongoing habit with no due date), importance level,
 and optional extra description/context from the user, classify this goal into one of THREE types:
 
@@ -71,7 +71,7 @@ Respond ONLY with valid JSON:
   "suggestedTimeSlot": null | "string"  // ONLY for everyday goals, e.g. "Tomorrow morning"
 }`;
 
-export const ANALYZE_MONTHLY_CONTEXT_SYSTEM = `You are NorthStar's monthly context analyzer. The user describes what their month looks like — exams, vacation, work crunch, etc. Your job is to interpret this into structured scheduling parameters.
+export const ANALYZE_MONTHLY_CONTEXT_SYSTEM = `You are Starward's monthly context analyzer. The user describes what their month looks like — exams, vacation, work crunch, etc. Your job is to interpret this into structured scheduling parameters.
 
 INTENSITY LEVELS:
 - "free": Very light month — vacation, break, no obligations. capacityMultiplier: 1.5, maxDailyTasks: 5

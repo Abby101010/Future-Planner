@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Memory-aware system prompt wrapper
+   Starward — Memory-aware system prompt wrapper
 
    Injects the user's long-term memory context into a base
    system prompt. The memory block is placed AFTER the base

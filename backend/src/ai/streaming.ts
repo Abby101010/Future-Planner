@@ -1,4 +1,4 @@
-/* NorthStar server — AI streaming wrapper
+/* Starward server — AI streaming wrapper
  *
  * Phase 4b: single chokepoint that converts Anthropic `messages.create`
  * into `messages.stream` and forwards token deltas to the user's

@@ -1,4 +1,4 @@
-/* NorthStar backend — memory:* routes (thin port, slice 2)
+/* Starward backend — memory:* routes (thin port, slice 2)
  *
  * Mirrors the simple write/read channels from frontend/electron/ipc/memory.ts.
  * Reflection/nudges/behavior-profile stay local — slice 3.

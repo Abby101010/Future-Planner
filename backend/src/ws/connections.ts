@@ -1,4 +1,4 @@
-/* NorthStar server — WebSocket connection registry
+/* Starward server — WebSocket connection registry
  *
  * Holds a Map<userId, Set<WebSocket>> so route handlers can push events
  * (AI token deltas, agent progress, view invalidations) to every live
@@ -12,7 +12,7 @@
  */
 
 import type { WebSocket } from "ws";
-import type { Envelope } from "@northstar/core";
+import type { Envelope } from "@starward/core";
 
 const PING_INTERVAL_MS = 30_000;
 const DEAD_AFTER_MS = 60_000;

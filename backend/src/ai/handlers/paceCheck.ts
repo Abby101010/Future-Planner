@@ -1,12 +1,12 @@
-/* NorthStar — Pace Check handler */
+/* Starward — Pace Check handler */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { runReflection } from "../../reflection";
 import { getCurrentUserId } from "../../middleware/requestContext";
-import { getModelForTask } from "@northstar/core";
-import { PACE_CHECK_SYSTEM } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
-import type { PaceCheckPayload } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { PACE_CHECK_SYSTEM } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
+import type { PaceCheckPayload } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 

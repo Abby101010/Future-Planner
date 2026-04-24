@@ -1,4 +1,4 @@
-/* NorthStar backend — reflection engine (slice 3b)
+/* Starward backend — reflection engine (slice 3b)
  *
  * Postgres-backed port of frontend/electron/reflection.ts:
  *   - runReflection: Haiku call → upsert facts/preferences for one user
@@ -20,7 +20,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
 import { query } from "./db/pool";
-import { getModelForTask } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
 import {
   loadMemory,
   type FactCategory,
@@ -34,7 +34,7 @@ export type { MemoryStore };
 // ── Reflection System Prompt ────────────────────────────
 // Verbatim copy of frontend/electron/reflection.ts REFLECTION_SYSTEM.
 
-const REFLECTION_SYSTEM = `You are the NorthStar Reflection Engine — an introspective module
+const REFLECTION_SYSTEM = `You are the Starward Reflection Engine — an introspective module
 that observes user behavior and distills it into structured insights.
 
 You are NOT talking to the user. You are analyzing behavioral data to extract

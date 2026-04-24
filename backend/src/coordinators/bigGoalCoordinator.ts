@@ -16,7 +16,7 @@
 import { emitAgentProgress } from "../ws";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { routeEffort, type EffortRouterInput } from "./effortRouter";
-import { classifyEffort } from "@northstar/core";
+import { classifyEffort } from "@starward/core";
 import { runResearchAgent, type ResearchResult } from "./bigGoal/researchAgent";
 import { runPersonalizationAgent, type PersonalizationResult } from "./bigGoal/personalizationAgent";
 import { loadProjectContext, saveProjectContext, type ProjectAgentContext } from "./bigGoal/projectAgentContext";

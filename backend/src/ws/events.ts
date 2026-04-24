@@ -1,6 +1,6 @@
-/* NorthStar server — typed WS event emitters
+/* Starward server — typed WS event emitters
  *
- * One function per EventKind from @northstar/core. Each takes a
+ * One function per EventKind from @starward/core. Each takes a
  * userId and a payload, wraps the payload in the standardized
  * envelope, and fans it out to every socket that user has connected.
  *
@@ -13,8 +13,8 @@
  * (Task 16) and reminders (later) will be the first callers.
  */
 
-import { envelope } from "@northstar/core";
-import type { QueryKind, UserSegment } from "@northstar/core";
+import { envelope } from "@starward/core";
+import type { QueryKind, UserSegment } from "@starward/core";
 import { connectionRegistry } from "./connections";
 
 /** Payload for `ai:stream-start`. */

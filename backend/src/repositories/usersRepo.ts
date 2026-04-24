@@ -1,13 +1,15 @@
-/* NorthStar server — users repository
+/* Starward server — users repository
  *
  * Wraps the `users` table (migration 0004). Exactly one row per user
  * (PK is user_id alone). Replaces the legacy `app_store.user` JSON blob.
  *
  * Stable identity + onboarding fields are columns; profile extras
  * (age, currentRole, education, location, etc.) round-trip through the
- * `payload` jsonb column. Settings, weeklyAvailability, and
- * deviceIntegrations each get their own typed jsonb column because
- * they are read/written as cohesive units by their own commands.
+ * `payload` jsonb column. Settings gets its own typed jsonb column.
+ *
+ * The `weekly_availability` DB column is preserved but no longer read
+ * or written (time map feature removed). Safe to drop in a future
+ * migration once legacy deployments have updated.
  *
  * Partial updates use COALESCE on the parameter so callers can pass
  * null for fields they don't want to touch — this is what makes
@@ -15,10 +17,9 @@
  */
 
 import type {
-  TimeBlock,
   UserProfile,
   UserSettings,
-} from "@northstar/core";
+} from "@starward/core";
 
 /** Lightweight placeholder — device integrations feature removed. */
 type DeviceIntegrations = Record<string, unknown>;
@@ -32,37 +33,20 @@ interface UserRow {
   goal_raw: string;
   onboarding_complete: boolean;
   settings: Record<string, unknown> | string | null;
-  weekly_availability: unknown[] | string | null;
   device_integrations: Record<string, unknown> | string | null;
   payload: Record<string, unknown> | string | null;
   created_at: string;
   updated_at: string;
 }
 
-function parseJsonArray(v: unknown): unknown[] {
-  if (!v) return [];
-  if (Array.isArray(v)) return v;
-  if (typeof v === "string") {
-    try {
-      const parsed = JSON.parse(v);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 function rowToProfile(r: UserRow): UserProfile {
   const extras = parseJson(r.payload);
   const settings = parseJson(r.settings) as unknown as UserSettings;
-  const weeklyAvailability = parseJsonArray(r.weekly_availability) as TimeBlock[];
   return {
     id: r.user_id,
     name: r.name,
     goalRaw: r.goal_raw,
     onboardingComplete: r.onboarding_complete,
-    weeklyAvailability,
     createdAt: r.created_at,
     settings,
     age: extras.age as number | undefined,
@@ -121,16 +105,15 @@ export async function upsert(profile: UserProfile): Promise<void> {
   await query(
     `insert into users (
        user_id, name, goal_raw, onboarding_complete, settings,
-       weekly_availability, device_integrations, payload, updated_at
+       device_integrations, payload, updated_at
      ) values (
-       $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, now()
+       $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, now()
      )
      on conflict (user_id) do update set
        name = excluded.name,
        goal_raw = excluded.goal_raw,
        onboarding_complete = excluded.onboarding_complete,
        settings = excluded.settings,
-       weekly_availability = excluded.weekly_availability,
        device_integrations = excluded.device_integrations,
        payload = excluded.payload,
        updated_at = now()`,
@@ -140,7 +123,6 @@ export async function upsert(profile: UserProfile): Promise<void> {
       profile.goalRaw ?? "",
       profile.onboardingComplete ?? false,
       JSON.stringify(profile.settings ?? {}),
-      JSON.stringify(profile.weeklyAvailability ?? []),
       JSON.stringify({}),
       JSON.stringify(profileToPayload(profile)),
     ],
@@ -161,20 +143,6 @@ export async function updateSettings(
        settings = users.settings || $2::jsonb,
        updated_at = now()`,
     [userId, JSON.stringify(patch)],
-  );
-}
-
-export async function updateWeeklyAvailability(
-  blocks: TimeBlock[],
-): Promise<void> {
-  const userId = requireUserId();
-  await query(
-    `insert into users (user_id, weekly_availability, updated_at)
-     values ($1, $2::jsonb, now())
-     on conflict (user_id) do update set
-       weekly_availability = excluded.weekly_availability,
-       updated_at = now()`,
-    [userId, JSON.stringify(blocks)],
   );
 }
 
@@ -207,20 +175,17 @@ export async function updatePayload(
 export async function completeOnboarding(
   name: string,
   goalRaw: string,
-  weeklyAvailability: TimeBlock[],
 ): Promise<void> {
   const userId = requireUserId();
   await query(
     `insert into users (
-       user_id, name, goal_raw, onboarding_complete, weekly_availability,
-       updated_at
-     ) values ($1, $2, $3, true, $4::jsonb, now())
+       user_id, name, goal_raw, onboarding_complete, updated_at
+     ) values ($1, $2, $3, true, now())
      on conflict (user_id) do update set
        name = excluded.name,
        goal_raw = excluded.goal_raw,
        onboarding_complete = true,
-       weekly_availability = excluded.weekly_availability,
        updated_at = now()`,
-    [userId, name, goalRaw, JSON.stringify(weeklyAvailability)],
+    [userId, name, goalRaw],
   );
 }

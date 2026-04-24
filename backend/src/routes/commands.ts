@@ -1,4 +1,4 @@
-/* NorthStar server — commands route
+/* Starward server — commands route
  *
  * POST /commands/:kind — single entry point for every mutation in the
  * system. `kind` in the URL is the raw slug without the `command:`
@@ -14,8 +14,8 @@
  */
 
 import { Router } from "express";
-import { envelope, envelopeError } from "@northstar/core";
-import type { CommandKind, QueryKind } from "@northstar/core";
+import { envelope, envelopeError } from "@starward/core";
+import type { CommandKind, QueryKind } from "@starward/core";
 import { insertJob } from "../job-db";
 import { getCurrentUserId } from "../middleware/requestContext";
 
@@ -74,6 +74,16 @@ import {
   cmdResumeGoal,
   cmdProposeGapFillers,
   cmdAnalyzeImage,
+  cmdUpdateGoalNotes,
+  cmdEditGoalTitle,
+  cmdEditMilestone,
+  cmdRegenerateInsights,
+  cmdAddGoalReflection,
+  cmdSendOnboardingMessage,
+  cmdProposeOnboardingGoal,
+  cmdConfirmOnboardingGoal,
+  cmdAcceptOnboardingPlan,
+  cmdCommitFirstTask,
 } from "./commands/index";
 
 const commandsRouter = Router();
@@ -272,6 +282,36 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:analyze-image":
         result = await cmdAnalyzeImage(body);
+        break;
+      case "command:update-goal-notes":
+        result = await cmdUpdateGoalNotes(body);
+        break;
+      case "command:edit-goal-title":
+        result = await cmdEditGoalTitle(body);
+        break;
+      case "command:edit-milestone":
+        result = await cmdEditMilestone(body);
+        break;
+      case "command:regenerate-insights":
+        result = await cmdRegenerateInsights(body);
+        break;
+      case "command:add-goal-reflection":
+        result = await cmdAddGoalReflection(body);
+        break;
+      case "command:send-onboarding-message":
+        result = await cmdSendOnboardingMessage(body);
+        break;
+      case "command:propose-onboarding-goal":
+        result = await cmdProposeOnboardingGoal(body);
+        break;
+      case "command:confirm-onboarding-goal":
+        result = await cmdConfirmOnboardingGoal(body);
+        break;
+      case "command:accept-onboarding-plan":
+        result = await cmdAcceptOnboardingPlan(body);
+        break;
+      case "command:commit-first-task":
+        result = await cmdCommitFirstTask(body);
         break;
       default: {
         // Unknown slug: the URL didn't match any known command. 404 with

@@ -1,4 +1,4 @@
-/* NorthStar — News Briefing handler (sub-agent: "news")
+/* Starward — News Briefing handler (sub-agent: "news")
  *
  * Generates a personalised insights feed based on the user's active
  * goals. Since the AI cannot browse the web, we frame the output as
@@ -7,12 +7,12 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { getModelForTask } from "@northstar/core";
-import { personalizeSystem } from "@northstar/core";
+import { getModelForTask } from "@starward/core";
+import { personalizeSystem } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";
-import type { NewsBriefing } from "@northstar/core";
+import type { NewsBriefing } from "@starward/core";
 
 interface NewsBriefingPayload {
   goals: Array<{
@@ -27,7 +27,7 @@ interface NewsBriefingPayload {
   topic?: string;
 }
 
-const NEWS_SYSTEM = `You are the "News & Insights" sub-agent of NorthStar, a personal goal-planning app.
+const NEWS_SYSTEM = `You are the "News & Insights" sub-agent of Starward, a personal goal-planning app.
 
 Your job: generate a short, highly relevant insights feed tailored to the user's active goals.
 
@@ -43,7 +43,7 @@ Rules:
 
 Return ONLY valid JSON — no markdown fences, no commentary outside the JSON.`;
 
-const RESEARCH_SYSTEM = `You are the "Research" sub-agent of NorthStar, a personal goal-planning app.
+const RESEARCH_SYSTEM = `You are the "Research" sub-agent of Starward, a personal goal-planning app.
 
 The user has asked you to research a specific topic. Your job: produce a focused, in-depth
 briefing on that topic with practical, actionable insights the user can apply to their goals.

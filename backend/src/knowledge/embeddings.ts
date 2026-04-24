@@ -1,4 +1,4 @@
-/* NorthStar server — Voyage AI embedding wrapper
+/* Starward server — Voyage AI embedding wrapper
  *
  * Thin client around voyage-3-large (1024d). API key is read lazily from
  * VOYAGE_API_KEY so that server boot does not require the secret unless a

@@ -41,7 +41,7 @@ Two rules:
 1. If all key results are 100% easy, they are set too low. Target 60–70% as the "stretch" achievement zone.
 2. Key results measure *outcomes*, not *activities*. "Wrote 50 blog posts" is a KR; "spent 100 hours blogging" is not.
 
-OKRs work well for quarterly and annual goals. They pair naturally with the year/month/week plan structure NorthStar produces — O at the year level, KRs at the quarter/month level, atomic tasks at the week level.
+OKRs work well for quarterly and annual goals. They pair naturally with the year/month/week plan structure Starward produces — O at the year level, KRs at the quarter/month level, atomic tasks at the week level.
 
 ## Goal Hierarchies (The Ladder)
 

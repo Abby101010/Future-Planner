@@ -1,4 +1,4 @@
-/* NorthStar server — Background Job Worker
+/* Starward server — Background Job Worker
  *
  * Polls the job_queue table for pending jobs and processes them.
  * Each job type maps to a handler function. On completion, pushes
@@ -107,7 +107,7 @@ async function pollOnce(): Promise<boolean> {
   }
 }
 
-function getViewsForJobType(type: string): Array<import("@northstar/core").QueryKind> {
+function getViewsForJobType(type: string): Array<import("@starward/core").QueryKind> {
   switch (type) {
     case "regenerate-goal-plan":
       return ["view:goal-plan", "view:planning", "view:dashboard"];
