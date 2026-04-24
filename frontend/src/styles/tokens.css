@@ -1,0 +1,208 @@
+/* Starward — design tokens
+ * Ported from the Starward design prototype (planner 2/project/styles/tokens.css).
+ * Tightened for productivity-tool feel; preserves navy + gold but demotes
+ * them — primary surfaces are neutral, accents are restrained.
+ */
+
+:root {
+  /* CORE PALETTE */
+  --navy-deep:   #0F1A2B;
+  --navy:        #172A46;
+  --navy-mid:    #2A426B;
+  --navy-soft:   #3A5278;
+  --navy-tint:   #EEF1F6;
+
+  --gold:        #8A7042;
+  --gold-bright: #B8923F;
+  --gold-soft:   #E8D9BC;
+  --gold-faint:  #F6F0E1;
+
+  /* NEUTRAL RAMP */
+  --ink-0: #0E1013;
+  --ink-1: #1A1D22;
+  --ink-2: #2C3038;
+  --ink-3: #4A4F58;
+  --ink-4: #6B6F78;
+  --ink-5: #9CA0A8;
+  --ink-6: #C7CAD0;
+  --ink-7: #E4E6EA;
+  --ink-8: #EEEFF2;
+  --ink-9: #F6F6F7;
+
+  --paper:       #FBFAF8;
+  --white:       #FFFFFF;
+
+  /* USER-COLOR slot (user-typed content) */
+  --user-color: var(--ink-0);
+  --user-color-mute: var(--ink-3);
+
+  /* STATUS */
+  --success: #3F7A50;
+  --warn:    var(--gold);
+  --danger:  #A8433A;
+  --info:    #3A6EA8;
+
+  /* SEMANTIC */
+  --bg:            var(--white);
+  --bg-soft:       var(--ink-9);
+  --bg-elev:       var(--white);
+  --bg-sunken:     #F3F3F4;
+  --bg-rail:       #FAFAFB;
+  --fg:            var(--ink-0);
+  --fg-mute:       var(--ink-3);
+  --fg-faint:      var(--ink-5);
+  --border:        var(--ink-7);
+  --border-soft:   var(--ink-8);
+  --border-strong: var(--ink-6);
+
+  --accent:       var(--gold);
+  --accent-soft:  var(--gold-faint);
+  --accent-strong:var(--gold-bright);
+
+  /* TYPE */
+  --font-sans: "Inter Tight", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-serif: "Fraunces", "Cormorant Garamond", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --headline-family: var(--font-sans);
+  --headline-tracking: -0.022em;
+  --headline-weight: 600;
+  --num-family: var(--font-sans);
+  --num-tracking: -0.02em;
+
+  /* SCALE */
+  --t-xs: 11px;
+  --t-sm: 12px;
+  --t-base: 13px;
+  --t-md: 14px;
+  --t-lg: 15px;
+  --t-xl: 18px;
+  --t-2xl: 22px;
+  --t-3xl: 28px;
+  --t-4xl: 40px;
+  --t-display: 56px;
+
+  /* SPACING */
+  --density-scale: 1;
+  --s-1: calc(4px  * var(--density-scale));
+  --s-2: calc(8px  * var(--density-scale));
+  --s-3: calc(12px * var(--density-scale));
+  --s-4: calc(16px * var(--density-scale));
+  --s-5: calc(20px * var(--density-scale));
+  --s-6: calc(24px * var(--density-scale));
+  --s-8: calc(32px * var(--density-scale));
+  --s-10: calc(40px * var(--density-scale));
+  --s-12: calc(48px * var(--density-scale));
+  --s-16: calc(64px * var(--density-scale));
+
+  --r-sm: 3px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-pill: 999px;
+
+  --shadow-1: 0 1px 0 rgba(16, 31, 49, 0.04), 0 1px 2px rgba(16, 31, 49, 0.04);
+  --shadow-2: 0 1px 0 rgba(16, 31, 49, 0.04), 0 4px 16px rgba(16, 31, 49, 0.06);
+  --shadow-3: 0 8px 32px rgba(16, 31, 49, 0.12), 0 2px 6px rgba(16, 31, 49, 0.06);
+
+  --gold-restraint: 1;
+  --gold-line:       color-mix(in srgb, var(--accent) calc(45% * var(--gold-restraint)), transparent);
+  --gold-line-faint: color-mix(in srgb, var(--accent) calc(18% * var(--gold-restraint)), transparent);
+  --gold-divider:    color-mix(in srgb, var(--accent) calc(28% * var(--gold-restraint)), transparent);
+}
+
+[data-theme="dark"] {
+  --bg:           #0E0F11;
+  --bg-soft:      #14161A;
+  --bg-elev:      #14161A;
+  --bg-sunken:    #0A0B0D;
+  --bg-rail:      #101113;
+  --fg:           #F2F2F0;
+  --fg-mute:      #A7AAB0;
+  --fg-faint:     #5C5F66;
+  --border:       #24272D;
+  --border-soft:  #1D2024;
+  --border-strong:#2E3138;
+  --accent:       #D9B063;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+#root { height: 100%; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--t-base);
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button { font: inherit; color: inherit; }
+input, textarea, select { font: inherit; color: inherit; }
+
+.h-display, .h-headline {
+  font-family: var(--headline-family);
+  letter-spacing: var(--headline-tracking);
+  font-weight: var(--headline-weight);
+  line-height: 1.1;
+}
+
+.num-gold {
+  font-family: var(--num-family);
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: var(--num-tracking);
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); }
+
+.hr-gold { height: 1px; background: var(--gold-line-faint); border: 0; margin: 0; }
+.hr { height: 1px; background: var(--border); border: 0; margin: 0; }
+
+:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* Row hover reveal */
+.ns-row .ns-row-trail { opacity: 0; transition: opacity .12s ease; }
+.ns-row:hover .ns-row-trail, .ns-row:focus-within .ns-row-trail { opacity: 1; }
+
+/* Spinners + motion */
+@keyframes ns-spin { to { transform: rotate(360deg); } }
+@keyframes ns-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes ns-slide-up { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes ns-flash { 0% { background: var(--gold-faint); } 100% { background: transparent; } }
+@keyframes ns-fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@keyframes ns-dot-blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+
+.spin { animation: ns-spin 0.9s linear infinite; }
+.dot-blink { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); display: inline-block; animation: ns-dot-blink 1.2s ease-in-out infinite; }
+.refreshed-flash { animation: ns-flash 1.2s ease-out; }
+
+/* App shell */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  height: 100vh;
+  background: var(--bg);
+  overflow: hidden;
+}
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.app-main > * { flex-shrink: 0; }
+
+/* Responsive: collapse calendar two-column into single column on narrow */
+@media (max-width: 900px) {
+  .ns-cal-two-col { grid-template-columns: minmax(0, 1fr) !important; }
+}

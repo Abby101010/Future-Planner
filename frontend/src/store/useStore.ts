@@ -47,6 +47,23 @@ interface StoreApi {
   /** Pre-seeded message to auto-send when the chat panel opens. */
   pendingChatMessage: string | null;
   setPendingChatMessage: (msg: string | null) => void;
+
+  /** Active AI chat channel — home | chat | goal-plan. Read by FloatingChat. */
+  chatChannel: "home" | "chat" | "goal-plan";
+  setChatChannel: (c: "home" | "chat" | "goal-plan") => void;
+
+  /** When chat is opened for a specific goal, the goalId routes the stream
+   *  to /ai/goal-plan-chat/stream. */
+  chatGoalId: string;
+  setChatGoalId: (id: string) => void;
+
+  /** Sidebar collapse (64px icons-only vs. 224px). */
+  isSidebarCollapsed: boolean;
+  toggleSidebar: () => void;
+
+  /** Two-tier floating Settings dialog (opens from sidebar profile click). */
+  isSettingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
 }
 
 const useStore = create<StoreApi>((set) => ({
@@ -68,6 +85,18 @@ const useStore = create<StoreApi>((set) => ({
 
   pendingChatMessage: null,
   setPendingChatMessage: (msg) => set({ pendingChatMessage: msg }),
+
+  chatChannel: "home",
+  setChatChannel: (c) => set({ chatChannel: c }),
+
+  chatGoalId: "",
+  setChatGoalId: (id) => set({ chatGoalId: id }),
+
+  isSidebarCollapsed: false,
+  toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
+
+  isSettingsOpen: false,
+  setSettingsOpen: (open) => set({ isSettingsOpen: open }),
 }));
 
 export default useStore;

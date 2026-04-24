@@ -1,199 +1,172 @@
-/* GoalPlanPage — bare HTML. view:goal-plan (param) + plan-level commands. */
+/* GoalPlanPage — designed per-goal page with 3 tabs (Plan / Breakdown / Dashboard).
+ *
+ * Per contract (lines 145-175): this page absorbs the per-goal Breakdown
+ * (line 155) and Dashboard (line 163) sub-sections. Reads view:goal-plan;
+ * tabs lazy-load view:goal-breakdown and view:goal-dashboard as needed.
+ */
 
 import { useState } from "react";
+import useStore from "../../store/useStore";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
+import TopBar from "../../components/primitives/TopBar";
+import Button from "../../components/primitives/Button";
+import Tabs from "../../components/primitives/Tabs";
+import PlanTab from "./PlanTab";
+import BreakdownTab from "./BreakdownTab";
+import DashboardTab from "./DashboardTab";
+
+interface GoalPlanMilestone {
+  id: string;
+  title: string;
+  due?: string;
+  targetDate?: string;
+  status?: string;
+  pct?: number;
+  percent?: number;
+}
+
+interface GoalPlanView {
+  goal?: {
+    id: string;
+    title: string;
+    icon?: string;
+    horizon?: string;
+    targetDate?: string;
+    startedAt?: string;
+  };
+  milestones?: GoalPlanMilestone[];
+  progress?: { percent?: number; paceDelta?: string };
+  paceMismatch?: unknown;
+}
 
 export default function GoalPlanPage({ goalId }: { goalId: string }) {
-  const { data, loading, error, refetch } = useQuery<unknown>("view:goal-plan", { goalId });
-  const { run } = useCommand();
-  const [kind, setKind] = useState("command:adaptive-reschedule");
-  const [argsJson, setArgsJson] = useState(`{"goalId":"${goalId}"}`);
-  const [status, setStatus] = useState("");
+  const setView = useStore((s) => s.setView);
+  const { data, loading, error, refetch } = useQuery<GoalPlanView>("view:goal-plan", { goalId });
+  const { run, running } = useCommand();
+  const [tab, setTab] = useState<"plan" | "breakdown" | "dashboard">("plan");
+  const [cmdError, setCmdError] = useState<string | null>(null);
 
-  async function exec() {
-    setStatus("…");
+  const goal = data?.goal;
+  const title = goal?.title ?? goalId;
+  const milestones = (data?.milestones ?? []) as GoalPlanMilestone[];
+
+  async function onPause() {
+    setCmdError(null);
     try {
-      await run(kind as never, JSON.parse(argsJson));
-      setStatus("ok");
+      await run("command:pause-goal", { id: goalId });
       refetch();
     } catch (e) {
-      setStatus(`error: ${(e as Error).message}`);
+      setCmdError((e as Error).message);
     }
   }
-
-  // ── add-task-to-plan form ─────────────────────────────────
-  const [addDate, setAddDate] = useState("");
-  const [addTitle, setAddTitle] = useState("");
-  const [addMinutes, setAddMinutes] = useState("30");
-  const [addWeight, setAddWeight] = useState("3");
-  const [addForce, setAddForce] = useState(false);
-  const [addStatus, setAddStatus] = useState("");
-  const [addResult, setAddResult] = useState<unknown>(null);
-
-  async function addTaskToPlan() {
-    setAddStatus("…");
-    setAddResult(null);
+  async function onDelete() {
+    if (!window.confirm("Delete this goal?")) return;
+    setCmdError(null);
     try {
-      const r = await run("command:add-task-to-plan", {
-        goalId,
-        date: addDate,
-        title: addTitle,
-        durationMinutes: Number(addMinutes) || 30,
-        cognitiveWeight: Number(addWeight) || 3,
-        force: addForce,
-      });
-      setAddResult(r);
-      setAddStatus("ok");
-      refetch();
+      await run("command:delete-goal", { id: goalId });
+      setView("planning");
     } catch (e) {
-      setAddStatus(`error: ${(e as Error).message}`);
-    }
-  }
-
-  // ── expand-plan-week form ─────────────────────────────────
-  const [expandWeekId, setExpandWeekId] = useState("");
-  const [expandStatus, setExpandStatus] = useState("");
-  const [expandResult, setExpandResult] = useState<unknown>(null);
-
-  async function expandPlanWeek() {
-    if (!expandWeekId.trim()) {
-      setExpandStatus("weekId required");
-      return;
-    }
-    setExpandStatus("…");
-    setExpandResult(null);
-    try {
-      const r = await run("command:expand-plan-week", { goalId, weekId: expandWeekId });
-      setExpandResult(r);
-      setExpandStatus("ok");
-      refetch();
-    } catch (e) {
-      setExpandStatus(`error: ${(e as Error).message}`);
+      setCmdError((e as Error).message);
     }
   }
 
   return (
-    <section className="goal-plan-page" data-testid="goal-plan-page">
-      <h1>view:goal-plan (goalId={goalId})</h1>
-      {loading && <p data-testid="goal-plan-loading">loading…</p>}
-      {error && <pre data-testid="goal-plan-error">error: {String(error)}</pre>}
-      <pre data-testid="goal-plan-data">{JSON.stringify(data, null, 2)}</pre>
-      <button className="goal-plan-refetch" data-testid="goal-plan-refetch" onClick={refetch}>
-        refetch
-      </button>
+    <>
+      <TopBar
+        breadcrumbs={[{ label: "Planning", onClick: () => setView("planning") }, { label: title }]}
+        eyebrow={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {goal?.icon && <span style={{ fontSize: 14 }}>{goal.icon}</span>}
+            {goal?.horizon ?? ""}
+            {goal?.startedAt && <> · started {goal.startedAt}</>}
+          </span>
+        }
+        title={title}
+        right={
+          <>
+            <Button
+              size="sm"
+              tone="ghost"
+              icon="arrow-left"
+              onClick={() => setView("planning")}
+              data-testid="goal-plan-back"
+            >
+              Planning
+            </Button>
+            <Button
+              size="sm"
+              tone="ghost"
+              icon="pause"
+              onClick={onPause}
+              data-api="POST /commands/pause-goal"
+              data-testid="goal-plan-pause"
+              disabled={running}
+            >
+              Pause
+            </Button>
+            <Button
+              size="sm"
+              tone="danger"
+              icon="trash"
+              onClick={onDelete}
+              data-api="POST /commands/delete-goal"
+              data-testid="goal-plan-delete"
+              disabled={running}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      />
 
-      <h2>add-task-to-plan</h2>
-      <div className="goal-plan-add-form" data-testid="goal-plan-add-form">
-        <label>
-          date (YYYY-MM-DD):
-          <input
-            data-testid="goal-plan-add-date"
-            value={addDate}
-            onChange={(e) => setAddDate(e.target.value)}
-            placeholder="2026-04-22"
-          />
-        </label>
-        <label>
-          title:
-          <input
-            data-testid="goal-plan-add-title"
-            value={addTitle}
-            onChange={(e) => setAddTitle(e.target.value)}
-          />
-        </label>
-        <label>
-          durationMinutes:
-          <input
-            data-testid="goal-plan-add-minutes"
-            type="number"
-            value={addMinutes}
-            onChange={(e) => setAddMinutes(e.target.value)}
-          />
-        </label>
-        <label>
-          cognitiveWeight (1-5):
-          <input
-            data-testid="goal-plan-add-weight"
-            type="number"
-            value={addWeight}
-            onChange={(e) => setAddWeight(e.target.value)}
-          />
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            data-testid="goal-plan-add-force"
-            checked={addForce}
-            onChange={(e) => setAddForce(e.target.checked)}
-          />
-          force (override over-budget rejection)
-        </label>
-        <button data-testid="goal-plan-add-run" onClick={addTaskToPlan}>
-          run add-task-to-plan
-        </button>
-        <span data-testid="goal-plan-add-status">&nbsp;{addStatus}</span>
-        {addResult != null && (
-          <pre data-testid="goal-plan-add-result">{JSON.stringify(addResult, null, 2)}</pre>
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: "plan", label: "Plan", icon: "planning" },
+          { id: "breakdown", label: "Breakdown", icon: "tree", badge: milestones.length },
+          { id: "dashboard", label: "Dashboard", icon: "target" },
+        ]}
+      />
+
+      <div style={{ maxWidth: 1280, margin: "0 auto", width: "100%", padding: "24px 32px 96px" }}>
+        {loading && !data && (
+          <div data-testid="goal-plan-loading" style={{ padding: 40, textAlign: "center", color: "var(--fg-faint)" }}>
+            Loading goal…
+          </div>
         )}
-      </div>
-
-      <h2>expand-plan-week</h2>
-      <div className="goal-plan-expand-form" data-testid="goal-plan-expand-form">
-        <label>
-          weekId:
-          <input
-            data-testid="goal-plan-expand-week-id"
-            value={expandWeekId}
-            onChange={(e) => setExpandWeekId(e.target.value)}
-            placeholder="week-…"
-          />
-        </label>
-        <button data-testid="goal-plan-expand-run" onClick={expandPlanWeek}>
-          run expand-plan-week
-        </button>
-        <span data-testid="goal-plan-expand-status">&nbsp;{expandStatus}</span>
-        {expandResult != null && (
-          <pre data-testid="goal-plan-expand-result">{JSON.stringify(expandResult, null, 2)}</pre>
+        {error && (
+          <div
+            data-testid="goal-plan-error"
+            style={{ padding: 20, color: "var(--danger)", fontFamily: "var(--font-mono)", fontSize: 11 }}
+          >
+            {String(error)}
+          </div>
         )}
-      </div>
+        {cmdError && (
+          <div
+            data-testid="goal-plan-cmd-error"
+            style={{ padding: 10, color: "var(--danger)", fontFamily: "var(--font-mono)", fontSize: 11 }}
+          >
+            {cmdError}
+          </div>
+        )}
 
-      <h2>raw commands (JSON editor)</h2>
-      <select
-        className="goal-plan-command-select"
-        data-testid="goal-plan-command-kind"
-        value={kind}
-        onChange={(e) => setKind(e.target.value)}
-      >
-        <option>command:adaptive-reschedule</option>
-        <option>command:adjust-all-overloaded-plans</option>
-        <option>command:toggle-task</option>
-        <option>command:expand-plan-week</option>
-        <option>command:update-goal</option>
-        <option>command:confirm-goal-plan</option>
-        <option>command:regenerate-goal-plan</option>
-        <option>command:reallocate-goal-plan</option>
-        <option>command:regenerate-daily-tasks</option>
-        <option>command:add-task-to-plan</option>
-      </select>
-      <div>
-        <textarea
-          className="goal-plan-command-args"
-          data-testid="goal-plan-command-args"
-          rows={8}
-          cols={60}
-          value={argsJson}
-          onChange={(e) => setArgsJson(e.target.value)}
-        />
+        {tab === "plan" && (
+          <PlanTab
+            goalId={goalId}
+            goalTitle={title}
+            goalPct={data?.progress?.percent}
+            goalPaceDelta={data?.progress?.paceDelta}
+            goalTargetDate={goal?.targetDate}
+            milestones={milestones}
+            onRefetch={refetch}
+          />
+        )}
+        {tab === "breakdown" && <BreakdownTab goalId={goalId} goalTitle={title} />}
+        {tab === "dashboard" && <DashboardTab goalId={goalId} />}
       </div>
-      <button
-        className="goal-plan-command-run"
-        data-testid="goal-plan-command-run"
-        onClick={exec}
-      >
-        run
-      </button>
-      <p data-testid="goal-plan-command-status">status: {status || "idle"}</p>
-    </section>
+    </>
   );
 }

@@ -1,4 +1,9 @@
-/* Starward client test harness — bare HTML shell. */
+/* Starward client — designed application shell.
+ *
+ * Mounts the sidebar, main page content, floating chrome (FloatingChat,
+ * ChatFab, JobStatusDock, WsIndicator), and the SettingsDialog popup.
+ * Page content is routed by `currentView` in the Zustand store.
+ */
 
 import { useEffect } from "react";
 import useStore from "./store/useStore";
@@ -8,8 +13,16 @@ import { AuthProvider } from "./contexts/AuthContext";
 import AuthGuard from "./components/AuthGuard";
 import { useQuery } from "./hooks/useQuery";
 import Sidebar from "./components/Sidebar";
-import Chat from "./components/Chat";
 import ErrorBoundary from "./components/ErrorBoundary";
+
+// Floating chrome
+import FloatingChat from "./components/chrome/FloatingChat";
+import ChatFab from "./components/chrome/ChatFab";
+import JobStatusDock from "./components/chrome/JobStatusDock";
+import WsIndicator from "./components/chrome/WsIndicator";
+import SettingsDialog from "./components/settings/SettingsDialog";
+
+// Pages
 import OnboardingPage from "./pages/onboarding/OnboardingPage";
 import CalendarPage from "./pages/calendar/CalendarPage";
 import GoalPlanPage from "./pages/goals/GoalPlanPage";
@@ -18,10 +31,6 @@ import SettingsPage from "./pages/settings/SettingsPage";
 import PlanningPage from "./pages/goals/PlanningPage";
 import TasksPage from "./pages/tasks/TasksPage";
 import NewsFeedPage from "./pages/news/NewsFeedPage";
-import DashboardPage from "./pages/dashboard/DashboardPage";
-import GoalBreakdownPage from "./pages/goals/GoalBreakdownPage";
-import MemoryPage from "./pages/memory/MemoryPage";
-import ChatSessionsPage from "./pages/chat/ChatSessionsPage";
 
 interface OnboardingBootView {
   user: {
@@ -72,9 +81,7 @@ function AppShell() {
   return (
     <I18nProvider language={language}>
       <div className="app-shell" data-testid="app-shell">
-        <div className="app-sidebar" data-testid="app-sidebar">
-          <Sidebar />
-        </div>
+        <Sidebar />
         <main className="app-main" data-testid="app-main">
           <ErrorBoundary>
             {currentView === "welcome" && <p data-testid="app-booting">booting…</p>}
@@ -82,19 +89,19 @@ function AppShell() {
             {currentView === "planning" && <PlanningPage />}
             {currentView === "tasks" && <TasksPage />}
             {currentView === "calendar" && <CalendarPage />}
-            {currentView === "dashboard" && <DashboardPage />}
-            {currentView === "goal-breakdown" && <GoalBreakdownPage />}
-            {currentView === "memory" && <MemoryPage />}
-            {currentView === "chat-sessions" && <ChatSessionsPage />}
             {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
             {currentView === "roadmap" && <RoadmapPage />}
             {currentView === "news-feed" && <NewsFeedPage />}
             {currentView === "settings" && <SettingsPage />}
           </ErrorBoundary>
         </main>
-        <div className="app-chat" data-testid="app-chat">
-          <Chat />
-        </div>
+
+        {/* Global floating chrome */}
+        <SettingsDialog />
+        <FloatingChat />
+        <ChatFab />
+        <JobStatusDock />
+        <WsIndicator />
       </div>
     </I18nProvider>
   );

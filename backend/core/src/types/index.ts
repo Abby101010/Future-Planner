@@ -491,23 +491,28 @@ export interface MonthlyContext {
 }
 
 // App State
+//
+// Top-level routable views, per API_CONTRACT.md:
+//   login / welcome — gated flows (outside sidebar)
+//   onboarding — 7-step flow
+//   tasks / calendar / planning / roadmap / news-feed / settings — sidebar
+//   goal-plan-${id} — per-goal sub-page from Planning (absorbs Breakdown + Dashboard tabs)
+// Recovery + milestone-celebration are legacy transient flows still referenced
+// by downstream services; they are not routed in the Starward shell but the
+// type keeps compatibility with older payloads.
 export type AppView =
   | "login"
   | "welcome"
   | "onboarding"
-  | "dashboard"
   | "planning"
   | "tasks"
   | "calendar"
-  | "goal-breakdown"
   | "roadmap"
   | "settings"
   | "news-feed"
-  | "memory"
-  | "chat-sessions"
   | "recovery"
   | "milestone-celebration"
-  | `goal-plan-${string}`;  // dynamic goal plan pages
+  | `goal-plan-${string}`; // dynamic goal plan pages (tabs: Plan / Breakdown / Dashboard)
 
 export interface AppState {
   currentView: AppView;
