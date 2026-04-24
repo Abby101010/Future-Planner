@@ -30,6 +30,9 @@ interface BreakdownWeek {
   id: string;
   label?: string;
   days?: BreakdownDay[];
+  /** True for weeks the planner hasn't filled in yet. UI hides the
+   *  expand chevron and renders a muted "locked" pill. */
+  locked?: boolean;
 }
 interface BreakdownMonth {
   id: string;
@@ -257,31 +260,37 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
                           (m.weeks ?? []).map((w) => {
                             const wKey = `w:${w.id}`;
                             const wOpen = expanded.has(wKey);
+                            const isLocked = Boolean(w.locked);
                             return (
                               <div key={w.id}>
                                 <div
-                                  onClick={() => toggle(wKey)}
+                                  onClick={isLocked ? undefined : () => toggle(wKey)}
                                   style={{
                                     display: "flex",
                                     alignItems: "center",
                                     gap: 8,
                                     padding: "6px 0",
                                     paddingLeft: 60,
-                                    cursor: "pointer",
+                                    cursor: isLocked ? "default" : "pointer",
                                     borderTop: "1px dashed var(--border-soft)",
+                                    opacity: isLocked ? 0.6 : 1,
                                   }}
                                 >
-                                  <Icon
-                                    name={wOpen ? "chevron-down" : "chevron-right"}
-                                    size={12}
-                                  />
-                                  <Icon name="tree" size={13} />
+                                  {isLocked ? (
+                                    <span style={{ display: "inline-block", width: 12 }} />
+                                  ) : (
+                                    <Icon
+                                      name={wOpen ? "chevron-down" : "chevron-right"}
+                                      size={12}
+                                    />
+                                  )}
+                                  <Icon name={isLocked ? "pause" : "tree"} size={13} />
                                   <span style={{ fontFamily: "var(--font-sans)", fontWeight: 500 }}>
                                     {w.label ?? w.id}
                                   </span>
-                                  <Pill mono>week</Pill>
+                                  <Pill mono>{isLocked ? "locked" : "week"}</Pill>
                                 </div>
-                                {wOpen &&
+                                {!isLocked && wOpen &&
                                   (w.days ?? [])
                                     .filter((d) => (d.tasks ?? []).length > 0)
                                     .map((d) => (
