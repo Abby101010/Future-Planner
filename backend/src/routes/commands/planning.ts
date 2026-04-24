@@ -30,6 +30,7 @@ import {
 } from "@starward/core";
 import { computeLowCompletionStreak } from "../../services/lowCompletionStreak";
 import { LOCAL_RESCHEDULE_SYSTEM } from "../../agents/prompts/adaptiveReschedule";
+import { allocatePace } from "../../services/crossGoalAllocator";
 
 /**
  * Lazy Week Expansion (GoalAct pattern) — when a locked week is unlocked,
@@ -672,6 +673,21 @@ export async function cmdAdaptiveReschedule(
     validateScopeOverride(body.scopeOverride) ??
     validateScopeOverride(payload.scopeOverride);
 
+  // Optional `paceOverride`: when multiple goals are being re-planned in
+  // one user action (cmdAdjustAllOverloadedPlans), the orchestrator
+  // divides the user's measured pace across goals by importance weight
+  // and passes each goal's slice here. Single-goal callers (including
+  // the "Adaptive reshuffle" button on Goal Plan) omit it and the
+  // handler falls back to the measured user pace — byte-identical to
+  // pre-allocator behavior. See services/crossGoalAllocator.ts.
+  const paceOverrideRaw =
+    (body.paceOverride as number | undefined) ??
+    (payload.paceOverride as number | undefined);
+  const paceOverride =
+    typeof paceOverrideRaw === "number" && paceOverrideRaw > 0
+      ? paceOverrideRaw
+      : undefined;
+
   const userId = getCurrentUserId();
   const today = getEffectiveDate();
   const rangeStart = getEffectiveDaysAgo(14);
@@ -690,13 +706,20 @@ export async function cmdAdaptiveReschedule(
     logsForCapacity,
     new Date(today + "T00:00:00").getDay(),
   );
-  const actualPace = capacity.avgTasksCompletedPerDay || 2;
+  const measuredPace = capacity.avgTasksCompletedPerDay || 2;
+  const actualPace = paceOverride ?? measuredPace;
+  console.log(
+    `[adaptive-reschedule] goal=${goalId.slice(0, 8)} pace=${actualPace}` +
+      ` (${paceOverride !== undefined ? "override" : "measured"})`,
+  );
 
-  // Phase G: persist the measured pace on the goal so the FE has a fresh
-  // snapshot after every reschedule without running pace detection on
-  // every view fetch. `setPaceSnapshot` stamps pace_last_computed_at.
+  // Phase G: persist the *measured* pace on the goal — not the fair-
+  // share override. The snapshot represents how fast the user is
+  // actually working, independent of how we slice that pace across
+  // goals. Using measuredPace keeps the value stable across batch
+  // reschedules.
   try {
-    await repos.goals.setPaceSnapshot(goalId, actualPace);
+    await repos.goals.setPaceSnapshot(goalId, measuredPace);
   } catch (err) {
     console.warn("[adaptive-reschedule] pace snapshot write failed:", err);
   }
@@ -1228,6 +1251,52 @@ export async function cmdAdjustAllOverloadedPlans(
   const results: Array<{ goalId: string; ok: boolean; error?: string }> = [];
   let adjustedCount = 0;
 
+  // Compute the user's measured daily pace ONCE and divide it by
+  // importance across all eligible big goals. Without this step every
+  // per-goal reschedule would independently claim the full user pace,
+  // so N goals each plan as if they own the whole day and the user
+  // ends up right back in the same overload state. See
+  // services/crossGoalAllocator.ts for the invariant.
+  let allocation: ReturnType<typeof allocatePace> = {
+    paceByGoalId: {},
+    allocatedGoalIds: [],
+    totalUserPace: 0,
+  };
+  try {
+    const today = getEffectiveDate();
+    const rangeStart = getEffectiveDaysAgo(14);
+    const [allGoals, memory, taskRecords] = await Promise.all([
+      repos.goals.list(),
+      loadMemory(userId),
+      repos.dailyTasks.listForDateRange(rangeStart, today),
+    ]);
+    const logsByDate = new Map<string, Array<{ completed: boolean; skipped?: boolean }>>();
+    for (const t of taskRecords) {
+      const arr = logsByDate.get(t.date) ?? [];
+      arr.push({ completed: t.completed, skipped: Boolean(t.payload?.skipped) });
+      logsByDate.set(t.date, arr);
+    }
+    const logsForCapacity = [...logsByDate.entries()].map(
+      ([date, tasks]) => ({ date, tasks }),
+    );
+    const capacity = computeCapacityProfile(
+      memory,
+      logsForCapacity,
+      new Date(today + "T00:00:00").getDay(),
+    );
+    const userPace = capacity.avgTasksCompletedPerDay || 2;
+    allocation = allocatePace(allGoals, userPace);
+    console.log(
+      `[adjust-all] userPace=${userPace} eligible=${allocation.allocatedGoalIds.length} ` +
+        `slices=${JSON.stringify(allocation.paceByGoalId)}`,
+    );
+  } catch (err) {
+    console.warn(
+      "[adjust-all] allocator setup failed; falling back to per-goal measured pace:",
+      err,
+    );
+  }
+
   emitAgentProgress(userId, {
     agentId: "adaptive-reschedule",
     phase: "running",
@@ -1245,8 +1314,16 @@ export async function cmdAdjustAllOverloadedPlans(
       message: `Adjusting plan ${i + 1}/${goalIds.length}: ${goalTitle}`,
     });
 
+    // paceOverride is undefined for goals that weren't in the eligible
+    // filter (paused / not-confirmed / etc.); cmdAdaptiveReschedule
+    // falls back to measured pace for those — same as before.
+    const paceOverride = allocation.paceByGoalId[goalId];
+
     try {
-      const res = await cmdAdaptiveReschedule({ goalId }) as { ok: boolean; planUpdated?: boolean };
+      const res = await cmdAdaptiveReschedule({
+        goalId,
+        paceOverride,
+      }) as { ok: boolean; planUpdated?: boolean };
       results.push({ goalId, ok: !!res?.planUpdated });
       if (res?.planUpdated) adjustedCount++;
     } catch (err) {
