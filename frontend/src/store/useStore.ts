@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Zustand application store (Phase 7 minimal)
+   Starward — Zustand application store (Phase 7 minimal)
 
    After Phase 7 the store holds ONLY ephemeral UI state that
    doesn't belong on the server. Domain data (goals, logs,
@@ -12,7 +12,7 @@
    ────────────────────────────────────────────────────────── */
 
 import { create } from "zustand";
-import type { AppView } from "@northstar/core";
+import type { AppView } from "@starward/core";
 
 export type Language = "en" | "zh";
 
@@ -47,10 +47,6 @@ interface StoreApi {
   /** Pre-seeded message to auto-send when the chat panel opens. */
   pendingChatMessage: string | null;
   setPendingChatMessage: (msg: string | null) => void;
-
-  /** Whether the sidebar is collapsed (icons only). */
-  isSidebarCollapsed: boolean;
-  toggleSidebar: () => void;
 }
 
 const useStore = create<StoreApi>((set) => ({

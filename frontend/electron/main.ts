@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Electron main process
+   Starward — Electron main process
 
    Phase 2a: the Electron shell is now display-only. All data,
    calendar, environment, and AI logic lives on the server.
@@ -38,7 +38,7 @@ process.env.VITE_PUBLIC = app.isPackaged
   : path.join(process.env.DIST, "../public");
 
 // ── Deep-link protocol for OAuth callback ──
-const PROTOCOL = "northstar";
+const PROTOCOL = "starward";
 if (process.defaultApp) {
   // Dev mode: register with the full path so the OS can re-launch
   if (process.argv.length >= 2) {
@@ -77,7 +77,7 @@ function createWindow() {
     height: 780,
     minWidth: 800,
     minHeight: 600,
-    title: "NorthStar 北极星",
+    title: "Starward 星程",
     icon: path.join(process.env.VITE_PUBLIC!, "icon.png"),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },

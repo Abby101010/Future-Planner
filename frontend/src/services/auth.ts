@@ -1,4 +1,4 @@
-/* NorthStar — auth token source
+/* Starward — auth token source
  *
  * The renderer never hardcodes a token at the call site. Every HTTP request
  * to the cloud API reads it from here. Backed by the Supabase Auth session:

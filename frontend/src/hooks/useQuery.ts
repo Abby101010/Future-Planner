@@ -1,4 +1,4 @@
-/* NorthStar — useQuery hook (Phase 5b)
+/* Starward — useQuery hook (Phase 5b)
  *
  * Display-only data fetch. One call per page, one GET per call. The hook:
  *   1. On mount, serves cached data (if fresh-ish) immediately while
@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { QueryKind } from "@northstar/core";
+import type { QueryKind } from "@starward/core";
 import { queryView } from "../services/transport";
 import { cacheKey, get as cacheGet, set as cacheSet, invalidate as cacheInvalidate, patchEntity as cachePatchEntity } from "../services/queryCache";
 import { wsClient } from "../services/wsClient";

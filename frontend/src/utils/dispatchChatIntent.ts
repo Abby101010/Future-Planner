@@ -3,7 +3,7 @@ import type {
   DailyTask,
   Goal,
   Reminder,
-} from "@northstar/core";
+} from "@starward/core";
 
 type RunFn = <T>(kind: CommandKind, args: Record<string, unknown>) => Promise<T>;
 

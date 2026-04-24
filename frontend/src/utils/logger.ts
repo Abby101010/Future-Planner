@@ -1,4 +1,4 @@
-/* NorthStar — structured logger (renderer side)
+/* Starward — structured logger (renderer side)
  *
  * Namespaced, level-filtered console logger. In dev builds everything
  * from debug↑ is printed; in production only warn/error.

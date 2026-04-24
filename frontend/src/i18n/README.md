@@ -1,6 +1,6 @@
 # frontend/src/i18n/
 
-Localization. NorthStar ships in **English** and **Chinese** (simplified).
+Localization. Starward ships in **English** and **Chinese** (simplified).
 
 ## Files
 

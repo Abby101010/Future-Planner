@@ -7,7 +7,6 @@ type DashboardView = Record<string, unknown> & {
   todayDate?: string;
   greetingName?: string;
   todaySummary?: unknown;
-  activeGoals?: Array<Record<string, unknown>>;
   todayTasks?: Array<Record<string, unknown>>;
   pendingTasks?: Array<Record<string, unknown>>;
   homeChatMessages?: Array<Record<string, unknown>>;
@@ -94,32 +93,6 @@ export default function DashboardPage() {
                   onClick={() => dispatch("command:skip-task", { taskId: id })}
                 >
                   skip
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      <section data-testid="dashboard-active-goals">
-        <h2>activeGoals</h2>
-        <ul>
-          {(data?.activeGoals ?? []).map((g, i) => {
-            const id = String(g.id ?? i);
-            return (
-              <li key={id} data-testid={`dashboard-goal-${id}`}>
-                <code>{id}</code> — {String(g.title ?? "")}
-                <button
-                  data-testid={`dashboard-goal-pause-${id}`}
-                  onClick={() => dispatch("command:pause-goal", { goalId: id })}
-                >
-                  pause
-                </button>
-                <button
-                  data-testid={`dashboard-goal-resume-${id}`}
-                  onClick={() => dispatch("command:resume-goal", { goalId: id })}
-                >
-                  resume
                 </button>
               </li>
             );

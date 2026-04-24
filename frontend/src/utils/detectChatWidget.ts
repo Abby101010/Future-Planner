@@ -1,4 +1,4 @@
-import type { ChatWidget } from "@northstar/core";
+import type { ChatWidget } from "@starward/core";
 
 const CATEGORY_OPTIONS = [
   { label: "Work", value: "work" },

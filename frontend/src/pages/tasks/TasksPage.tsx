@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
 import { useReminderNotifications } from "../../hooks/useReminderNotifications";
-import type { CommandKind, Reminder } from "@northstar/core";
+import type { CommandKind, Reminder } from "@starward/core";
 
 type ExtractedTodo = {
   title: string;

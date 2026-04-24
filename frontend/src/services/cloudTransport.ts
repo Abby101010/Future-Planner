@@ -1,4 +1,4 @@
-/* NorthStar — cloud transport
+/* Starward — cloud transport
  *
  * Single seam that decides whether an IPC channel is served by the local
  * Electron backend or by the cloud HTTP API. The choice is global:

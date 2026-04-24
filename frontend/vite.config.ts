@@ -35,7 +35,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@northstar/core": path.resolve(__dirname, "../backend/core/src/index.ts"),
+      "@starward/core": path.resolve(__dirname, "../backend/core/src/index.ts"),
     },
   },
   build: {

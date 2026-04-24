@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Auto-Updater (notify-only mode)
+   Starward — Auto-Updater (notify-only mode)
 
    Because the macOS .dmg is not code-signed (no Apple
    Developer cert), Squirrel.Mac refuses to silently apply
@@ -54,7 +54,7 @@ export function initAutoUpdater(_mainWindow: BrowserWindow | null): void {
       .showMessageBox({
         type: "info",
         title: "Update Available",
-        message: `NorthStar v${info.version} is available.`,
+        message: `Starward v${info.version} is available.`,
         detail:
           "Click Download to open the releases page, then drag the new .dmg over your installed app.",
         buttons: ["Download", "Later"],

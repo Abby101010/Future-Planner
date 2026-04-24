@@ -1,4 +1,4 @@
-/* NorthStar — i18n (English only; zh locale removed in client test harness) */
+/* Starward — i18n (English only; zh locale removed in client test harness) */
 
 import { createContext, useContext, type ReactNode } from "react";
 import en, { type Translations } from "./locales/en";

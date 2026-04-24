@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Repository layer
+   Starward — Repository layer
 
    Typed wrappers around the cloud HTTP transport. Every call
    routes through cloudInvoke → Fly.io backend → Supabase.
@@ -22,7 +22,7 @@ import type {
   DailyTask,
   GoalPlanMessage,
   HomeChatMessage,
-} from "@northstar/core";
+} from "@starward/core";
 import { cloudInvoke } from "../services/cloudTransport";
 
 async function invoke<T>(channel: string, payload?: unknown): Promise<T> {

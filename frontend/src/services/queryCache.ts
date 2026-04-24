@@ -1,4 +1,4 @@
-/* NorthStar — tiny in-memory query cache (Phase 5b)
+/* Starward — tiny in-memory query cache (Phase 5b)
  *
  * Module-level Map keyed by `${kind}|${JSON.stringify(args)}`. Used by the
  * home-rolled `useQuery` hook so that a component remounting within its
@@ -9,7 +9,7 @@
  * Do not add domain logic here. Stores `unknown` and lets the hook cast.
  */
 
-import type { QueryKind } from "@northstar/core";
+import type { QueryKind } from "@starward/core";
 
 export interface CacheEntry {
   data: unknown;

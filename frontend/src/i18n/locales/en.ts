@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — English translations
+   Starward — English translations
    ────────────────────────────────────────────────────────── */
 
 const en = {
@@ -40,8 +40,8 @@ const en = {
 
   // ── Welcome page ──
   welcome: {
-    title: "NorthStar",
-    subtitle: "北极星",
+    title: "Starward",
+    subtitle: "星程",
     description: "Tell me where you want to go.\nI'll help you build the map to get there.",
     feature1: "Tell me your goal — I'll ask the right questions",
     feature2: "Get a personalized roadmap with daily actions",
@@ -59,7 +59,7 @@ const en = {
     generatingStep: "Building your personalized goal plan...",
     chatStep: "Let's keep talking until we've got it nailed down.",
     apiKeyTitle: "Claude API Key",
-    apiKeyDesc: "NorthStar uses Claude to coach you through goal planning. Your key is stored locally on this device.",
+    apiKeyDesc: "Starward uses Claude to coach you through goal planning. Your key is stored locally on this device.",
     apiKeyPlaceholder: "sk-ant-api03-...",
     apiKeyHint: "Get your key at",
     goalPlaceholder: 'e.g. "I want to become a product manager"',
@@ -70,11 +70,11 @@ const en = {
     confirmHint: "Or keep chatting to refine your goal",
     // New onboarding steps
     intentTitle: "What brings you here?",
-    intentDesc: "Tell me what you'd like to accomplish with NorthStar. This helps me understand how to help you best.",
+    intentDesc: "Tell me what you'd like to accomplish with Starward. This helps me understand how to help you best.",
     intentPlaceholder: 'e.g. "I want to learn Japanese" or "Get better at time management"',
     skipForNow: "Skip for now",
     availabilityTitle: "When are you free?",
-    availabilityDesc: "Mark the times you're typically available each week. This helps NorthStar plan tasks at the right times.",
+    availabilityDesc: "Mark the times you're typically available each week. This helps Starward plan tasks at the right times.",
     looksGood: "Looks good",
     doneTitle: "You're all set!",
     doneDesc: "Head to your dashboard to start adding goals and planning your week.",
@@ -190,10 +190,10 @@ const en = {
     newsFeed: "News Feed",
     newsFeedDesc: "Curated articles and resources related to your goal.",
     calendarTitle: "Calendar & Device Sync",
-    calendarDesc: "NorthStar has its own calendar where you add events. You can optionally sync with your device's calendar apps. Go to the Calendar page to manage events and sync settings.",
+    calendarDesc: "Starward has its own calendar where you add events. You can optionally sync with your device's calendar apps. Go to the Calendar page to manage events and sync settings.",
     openCalendar: "Open Calendar Settings",
     memoryTitle: "AI Memory",
-    memoryDesc: "NorthStar learns from your behavior — when you complete tasks, what you snooze, and how your schedule actually plays out. This makes the AI's plans more personalized over time.",
+    memoryDesc: "Starward learns from your behavior — when you complete tasks, what you snooze, and how your schedule actually plays out. This makes the AI's plans more personalized over time.",
     noMemory: "No memory data yet. The AI will start learning as you use the app.",
     factsLearned: "Facts learned:",
     preferencesDetected: "Preferences detected:",
@@ -327,7 +327,7 @@ const en = {
   },
   // ── Auth ──
   auth: {
-    title: "NorthStar",
+    title: "Starward",
     signInSubtitle: "Sign in to continue",
     signUpSubtitle: "Create your account",
     email: "Email",

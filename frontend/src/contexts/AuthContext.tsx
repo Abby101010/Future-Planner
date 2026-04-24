@@ -1,4 +1,4 @@
-/* NorthStar — Auth context
+/* Starward — Auth context
  *
  * Wraps the entire app. Provides the current Supabase auth session to all
  * components via useAuth(). Handles session hydration on mount, listens for
@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // Electron deep-link listener: exchange OAuth code for session when
-    // the system browser redirects back via northstar://auth/callback.
+    // the system browser redirects back via starward://auth/callback.
     const unsubDeepLink = window.electronAuth?.onDeepLink(async (url) => {
       try {
         const parsed = new URL(url);

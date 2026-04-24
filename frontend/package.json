@@ -1,8 +1,8 @@
 {
-  "name": "@northstar/desktop",
+  "name": "@starward/desktop",
   "version": "0.1.2",
   "private": true,
-  "description": "NorthStar 北极星 — AI-powered goal planning and daily productivity companion",
+  "description": "Starward 星程 — AI-powered goal planning and daily productivity companion",
   "author": "Abby101010",
   "license": "MIT",
   "main": "dist-electron/main.js",
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
-    "@northstar/core": "*",
+    "@starward/core": "*",
     "@supabase/supabase-js": "^2.103.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.1",
@@ -51,8 +51,8 @@
     "wait-on": "^9.0.4"
   },
   "build": {
-    "appId": "com.abby101010.northstar",
-    "productName": "NorthStar",
+    "appId": "com.abby101010.starward",
+    "productName": "Starward",
     "directories": {
       "output": "release"
     },
@@ -61,8 +61,8 @@
       "dist-electron/**/*"
     ],
     "protocols": {
-      "name": "NorthStar Auth",
-      "schemes": ["northstar"]
+      "name": "Starward Auth",
+      "schemes": ["starward"]
     },
     "icon": "build/icon.icns",
     "publish": [

@@ -1,4 +1,4 @@
-# @northstar/desktop
+# @starward/desktop
 
 Everything that ships in the `.dmg`. Two halves:
 
@@ -40,12 +40,12 @@ state.
 ## Dev workflow
 
 ```bash
-npm --workspace @northstar/desktop run dev
+npm --workspace @starward/desktop run dev
 ```
 
 ## Build a release `.dmg`
 
 ```bash
-VITE_CLOUD_API_URL=https://northstar-api.fly.dev \
-  npm --workspace @northstar/desktop run electron:build:mac
+VITE_CLOUD_API_URL=https://starward-api.fly.dev \
+  npm --workspace @starward/desktop run electron:build:mac
 ```

@@ -1,4 +1,4 @@
-/* NorthStar — useCommand hook (Phase 5b)
+/* Starward — useCommand hook (Phase 5b)
  *
  * Thin wrapper around `runCommand` so page components can dispatch a
  * mutation with a one-liner and still get `running` / `error` state for
@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CommandKind } from "@northstar/core";
+import type { CommandKind } from "@starward/core";
 import { runCommand } from "../services/transport";
 
 export interface UseCommandResult {

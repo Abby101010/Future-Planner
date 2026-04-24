@@ -1,11 +1,11 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Memory service (renderer → cloud HTTP)
+   Starward — Memory service (renderer → cloud HTTP)
 
    Frontend API for the Three-Tier Memory Architecture.
    All calls route through cloudInvoke (Phase 13: cloud-only).
    ────────────────────────────────────────────────────────── */
 
-import type { MemorySummary, ReflectionResult, ContextualNudge } from "@northstar/core";
+import type { MemorySummary, ReflectionResult, ContextualNudge } from "@starward/core";
 import { cloudInvoke } from "./cloudTransport";
 
 // ── Query ───────────────────────────────────────────────

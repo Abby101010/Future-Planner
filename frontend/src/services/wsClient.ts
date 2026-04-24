@@ -1,4 +1,4 @@
-/* NorthStar — WebSocket client singleton (Phase 5b)
+/* Starward — WebSocket client singleton (Phase 5b)
  *
  * Talks to the server's per-user WS channel. Inbound frames are envelopes
  * with a `kind` the server picked from `EventKind`. Listeners register by
@@ -18,8 +18,8 @@
  *     be surfaced to listeners, since the payload shape is unknown.
  */
 
-import type { Envelope, EventKind, QueryKind } from "@northstar/core";
-import { PROTOCOL_VERSION } from "@northstar/core";
+import type { Envelope, EventKind, QueryKind } from "@starward/core";
+import { PROTOCOL_VERSION } from "@starward/core";
 import { getAuthTokenSync } from "./auth";
 import { createLogger } from "../utils/logger";
 

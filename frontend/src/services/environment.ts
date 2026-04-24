@@ -1,4 +1,4 @@
-/* NorthStar — Environment context collector
+/* Starward — Environment context collector
  *
  * Gathers the user's local time, timezone, and (optionally) GPS
  * coordinates. Cached for 10 minutes so we don't hammer the

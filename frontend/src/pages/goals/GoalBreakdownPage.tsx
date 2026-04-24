@@ -2,16 +2,12 @@
 
 import { useState } from "react";
 import { useQuery } from "../../hooks/useQuery";
-import { getAuthToken } from "../../services/auth";
+import { postJson } from "../../services/transport";
 
 type GoalBreakdownView = {
   goalBreakdown: unknown;
   scheduledTasks: Array<Record<string, unknown>>;
 };
-
-const CLOUD_API_URL = (
-  (import.meta.env.VITE_CLOUD_API_URL as string | undefined) || ""
-).replace(/\/$/, "");
 
 export default function GoalBreakdownPage() {
   const [goalId, setGoalId] = useState("");
@@ -30,17 +26,9 @@ export default function GoalBreakdownPage() {
     setBreakdownStatus("…");
     setBreakdownResult(null);
     try {
-      const res = await fetch(`${CLOUD_API_URL}/ai/goal-breakdown`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${await getAuthToken()}`,
-        },
-        body: JSON.stringify({ goalId }),
-      });
-      const body = await res.json();
+      const body = await postJson<unknown>("/ai/goal-breakdown", { goalId });
       setBreakdownResult(body);
-      setBreakdownStatus(res.ok ? "ok" : `HTTP ${res.status}`);
+      setBreakdownStatus("ok");
       refetch();
     } catch (e) {
       setBreakdownStatus(`error: ${(e as Error).message}`);

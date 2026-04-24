@@ -1,4 +1,4 @@
-/* NorthStar client test harness — bare HTML shell. */
+/* Starward client test harness — bare HTML shell. */
 
 import { useEffect } from "react";
 import useStore from "./store/useStore";

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Reminder } from "@northstar/core";
+import type { Reminder } from "@starward/core";
 
 const POLL_INTERVAL_MS = 30_000;
 

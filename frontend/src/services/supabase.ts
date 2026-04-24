@@ -1,4 +1,4 @@
-/* NorthStar — Supabase client singleton
+/* Starward — Supabase client singleton
  *
  * Initializes the Supabase JS client with auth configured for:
  * - Automatic token refresh

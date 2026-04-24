@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Electron preload
+   Starward — Electron preload
 
    Exposes a minimal `electronAuth` bridge so the renderer can:
    - Open OAuth URLs in the system browser

@@ -1,7 +1,7 @@
-/* NorthStar — standardized view/command transport (Phase 5b)
+/* Starward — standardized view/command transport (Phase 5b)
  *
  * Thin client over the server's new /view/:kind and /commands/:kind routes.
- * Every response is a standardized `Envelope<T>` from @northstar/core; this
+ * Every response is a standardized `Envelope<T>` from @starward/core; this
  * module validates the protocol version, throws on `ok: false`, and returns
  * `envelope.data` on success.
  *
@@ -10,8 +10,8 @@
  * and `useCommand` hooks are the only callers of this file today.
  */
 
-import type { Envelope, QueryKind, CommandKind } from "@northstar/core";
-import { PROTOCOL_VERSION } from "@northstar/core";
+import type { Envelope, QueryKind, CommandKind } from "@starward/core";
+import { PROTOCOL_VERSION } from "@starward/core";
 import { getAuthToken } from "./auth";
 import { createLogger } from "../utils/logger";
 

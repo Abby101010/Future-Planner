@@ -1,4 +1,4 @@
-/* NorthStar — AI service (thin wrappers over cloud AI endpoints)
+/* Starward — AI service (thin wrappers over cloud AI endpoints)
  *
  * Every function here is a one-shot POST to /ai/<channel> with a typed
  * payload. No local state, no job queue, no progress stubs — if a page
@@ -24,7 +24,7 @@ import type {
   PlanEditSuggestion,
   RepeatSchedule,
   Reminder,
-} from "@northstar/core";
+} from "@starward/core";
 import { cloudInvoke } from "./cloudTransport";
 import { postSseStream } from "./transport";
 import { collectEnvironment } from "./environment";
@@ -79,7 +79,6 @@ export async function generateDailyTasks(
   goals?: Goal[],
   confirmedQuickTasks?: DailyTask[],
   vacationMode?: { active: boolean; startDate: string; endDate: string } | null,
-  weeklyAvailability?: import("@northstar/core").TimeBlock[]
 ): Promise<DailyLog> {
   // Check if today is a vacation day
   const isVacationDay = vacationMode?.active &&
@@ -99,7 +98,6 @@ export async function generateDailyTasks(
       priority: t.priority,
       category: t.category,
     })),
-    weeklyAvailability: weeklyAvailability || [],
     goals: (goals || []).map((g) => ({
       title: g.title,
       goalType: g.goalType,
@@ -472,8 +470,8 @@ export async function fetchNewsBriefing(
     isHabit?: boolean;
   }>,
   topic?: string,
-): Promise<import("@northstar/core").NewsBriefing> {
-  return aiRequest<import("@northstar/core").NewsBriefing>(
+): Promise<import("@starward/core").NewsBriefing> {
+  return aiRequest<import("@starward/core").NewsBriefing>(
     "news-briefing",
     { goals, ...(topic ? { topic } : {}) },
   );

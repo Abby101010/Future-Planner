@@ -1,4 +1,4 @@
-/* NorthStar — useAiStream hook (Phase 5b)
+/* Starward — useAiStream hook (Phase 5b)
  *
  * Accumulates `ai:token-delta` events for a single streamId into a
  * component-local buffer and exposes `{ text, running, finished }`. When

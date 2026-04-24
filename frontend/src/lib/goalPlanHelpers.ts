@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   NorthStar — Goal plan helpers
+   Starward — Goal plan helpers
 
    Phase 7: only `computeMilestoneProgress` is still used (by
    GoalPlanPage for the milestone progress bar). All the other
@@ -10,7 +10,7 @@
    — anything that mutates state should be a command on the server.
    ────────────────────────────────────────────────────────── */
 
-import type { GoalPlan, GoalPlanTask, GoalPlanMilestone } from "@northstar/core";
+import type { GoalPlan, GoalPlanTask, GoalPlanMilestone } from "@starward/core";
 
 function flattenPlanTasks(plan: GoalPlan): GoalPlanTask[] {
   const tasks: GoalPlanTask[] = [];

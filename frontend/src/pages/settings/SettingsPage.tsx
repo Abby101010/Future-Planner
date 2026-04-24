@@ -10,15 +10,12 @@ export default function SettingsPage() {
   const { data, loading, error, refetch } = useQuery<unknown>("view:settings");
   const { run } = useCommand();
   const [settingsJson, setSettingsJson] = useState("{}");
-  const [availabilityJson, setAvailabilityJson] = useState("[]");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (data) {
-      const d = data as { user?: { settings?: unknown; weeklyAvailability?: unknown } };
+      const d = data as { user?: { settings?: unknown } };
       if (d.user?.settings) setSettingsJson(JSON.stringify(d.user.settings, null, 2));
-      if (d.user?.weeklyAvailability)
-        setAvailabilityJson(JSON.stringify(d.user.weeklyAvailability, null, 2));
     }
   }, [data]);
 
@@ -26,8 +23,7 @@ export default function SettingsPage() {
     setStatus("…");
     try {
       const settings = JSON.parse(settingsJson);
-      const weeklyAvailability = JSON.parse(availabilityJson);
-      await run("command:update-settings", { settings, weeklyAvailability });
+      await run("command:update-settings", { settings });
       setStatus("ok");
       refetch();
     } catch (e) {
@@ -40,6 +36,27 @@ export default function SettingsPage() {
     setStatus("…");
     try {
       await run("command:reset-data", {});
+      setStatus("ok");
+      refetch();
+    } catch (e) {
+      setStatus(`error: ${(e as Error).message}`);
+    }
+  }
+
+  const enableNewsFeed =
+    (data as { user?: { settings?: { enableNewsFeed?: boolean } } } | undefined)
+      ?.user?.settings?.enableNewsFeed !== false; // default ON
+
+  async function toggleNewsFeed() {
+    setStatus("…");
+    try {
+      const currentSettings = JSON.parse(settingsJson);
+      const newSettings = {
+        ...currentSettings,
+        enableNewsFeed: !enableNewsFeed,
+      };
+      await run("command:update-settings", { settings: newSettings });
+      setSettingsJson(JSON.stringify(newSettings, null, 2));
       setStatus("ok");
       refetch();
     } catch (e) {
@@ -66,21 +83,22 @@ export default function SettingsPage() {
         value={settingsJson}
         onChange={(e) => setSettingsJson(e.target.value)}
       />
-
-      <h2>command:update-settings — weeklyAvailability</h2>
-      <textarea
-        className="settings-availability-args"
-        data-testid="settings-availability-args"
-        rows={8}
-        cols={60}
-        value={availabilityJson}
-        onChange={(e) => setAvailabilityJson(e.target.value)}
-      />
       <div>
         <button data-testid="settings-update-settings" onClick={updateSettings}>
           run update-settings
         </button>
       </div>
+
+      <h2>News Feed visibility</h2>
+      <label data-testid="settings-news-feed-toggle-label">
+        <input
+          type="checkbox"
+          data-testid="settings-news-feed-toggle"
+          checked={enableNewsFeed}
+          onChange={toggleNewsFeed}
+        />
+        {" "}Show News Feed in sidebar
+      </label>
 
       <h2>sign out</h2>
       <button data-testid="settings-sign-out" onClick={signOut}>

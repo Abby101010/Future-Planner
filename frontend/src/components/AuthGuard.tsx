@@ -1,4 +1,4 @@
-/* NorthStar — Auth guard
+/* Starward — Auth guard
  *
  * Gates the entire app behind authentication. Shows a loading spinner while
  * the session hydrates, LoginPage when unauthenticated, or children when
