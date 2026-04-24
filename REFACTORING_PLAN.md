@@ -1,4 +1,4 @@
-# NorthStar Refactoring Plan
+# Starward Refactoring Plan
 
 ## Prompt for Claude Code
 
@@ -6,17 +6,17 @@ Copy everything below the line into Claude Code as a single prompt.
 
 ---
 
-I need you to refactor this NorthStar codebase. Do each phase completely before moving to the next. After each phase, the app must still compile and work. Never break the build mid-phase.
+I need you to refactor this Starward codebase. Do each phase completely before moving to the next. After each phase, the app must still compile and work. Never break the build mid-phase.
 
 ## Current Architecture & Deployment
 
-NorthStar is a personal AI-powered goal planner. It runs as two cooperating pieces:
+Starward is a personal AI-powered goal planner. It runs as two cooperating pieces:
 
 1. **Electron desktop app** (`frontend/`) — React 18 + Vite renderer, Electron 33 main process with a full local AI pipeline (14 Claude handlers via `@anthropic-ai/sdk`). Currently has a local SQLite database (better-sqlite3) and JSON file fallback — **both should be removed**. All data should go through Supabase Postgres via the cloud backend. Users install a `.dmg`/`.exe`/`.AppImage`.
 
-2. **Cloud backend** (`backend/`) — Express 5 + TypeScript server deployed on **Fly.io** (`app = "northstar-api"`, region `yyz`, shared-cpu-1x 512MB, auto-stop/start). Database is **Supabase Postgres** (every table has `user_id` column, multi-user-ready). Auth is currently hardcoded phase 1 (`Bearer sophie` → `DEV_USER_ID=sophie` on server).
+2. **Cloud backend** (`backend/`) — Express 5 + TypeScript server deployed on **Fly.io** (`app = "starward-api"`, region `yyz`, shared-cpu-1x 512MB, auto-stop/start). Database is **Supabase Postgres** (every table has `user_id` column, multi-user-ready). Auth is currently hardcoded phase 1 (`Bearer sophie` → `DEV_USER_ID=sophie` on server).
 
-**Transport seam:** The renderer's `src/services/cloudTransport.ts` decides routing. If `VITE_CLOUD_API_URL` is set at build time (the `electron:dev` script sets it to `https://northstar-api.fly.dev`), ~50 IPC channels route via HTTP POST to the Fly.io backend. Otherwise everything stays on local Electron IPC. The `src/repositories/index.ts` layer dispatches transparently — same function signature whether it goes to cloud or IPC.
+**Transport seam:** The renderer's `src/services/cloudTransport.ts` decides routing. If `VITE_CLOUD_API_URL` is set at build time (the `electron:dev` script sets it to `https://starward-api.fly.dev`), ~50 IPC channels route via HTTP POST to the Fly.io backend. Otherwise everything stays on local Electron IPC. The `src/repositories/index.ts` layer dispatches transparently — same function signature whether it goes to cloud or IPC.
 
 **Backend Fly.io config:**
 - Dockerfile: 2-stage build (node:22-alpine), copies `dist/` + `node_modules` + `schema.sql`
@@ -44,7 +44,7 @@ Create `packages/core/` with this layout:
 
 ```
 packages/core/
-  package.json          # name: "@northstar/core", no runtime deps except @anthropic-ai/sdk
+  package.json          # name: "@starward/core", no runtime deps except @anthropic-ai/sdk
   tsconfig.json         # target: ES2022, module: NodeNext, composite: true
   src/
     index.ts            # barrel export
@@ -95,16 +95,16 @@ Every handler in `packages/core/src/ai/handlers/` must:
 
 Remove from handlers: any `import { insertJob }`, `import { getCurrentUserId }`, `import { loadMemory }`, `import { getMonthlyContext }`. Those are caller concerns.
 
-### 1d. Update both apps to import from `@northstar/core`
+### 1d. Update both apps to import from `@starward/core`
 
 **Frontend `electron/ai/router.ts`:**
-- Change all handler imports from `./handlers/xxx` to `@northstar/core/ai/handlers/xxx`
+- Change all handler imports from `./handlers/xxx` to `@starward/core/ai/handlers/xxx`
 - Change prompt/sanitize/personalize imports similarly
 - Keep the coordinator routing logic (it's desktop-only for now)
 - Keep `getClient()` in `electron/ai/client.ts` (it reads from user settings — desktop-specific)
 
 **Backend `src/ai/router.ts`:**
-- Change all handler imports to `@northstar/core`
+- Change all handler imports to `@starward/core`
 - Keep `getClient()` in `backend/src/ai/client.ts` (reads from env — server-specific)
 
 **Delete the following duplicated files after imports are updated:**
@@ -143,13 +143,13 @@ Add a root `package.json` with `"private": true` and scripts for building.
 In `frontend/package.json` and `backend/package.json`, add:
 ```json
 "dependencies": {
-  "@northstar/core": "workspace:*"
+  "@starward/core": "workspace:*"
 }
 ```
 
 Update `frontend/tsconfig.node.json` and `backend/tsconfig.json` to add a project reference to `packages/core/tsconfig.json`.
 
-Make sure `frontend/vite.config.ts` resolves `@northstar/core` properly (Vite should handle workspace packages, but verify).
+Make sure `frontend/vite.config.ts` resolves `@starward/core` properly (Vite should handle workspace packages, but verify).
 
 ### 1f. Verify
 
@@ -347,7 +347,7 @@ export default function TasksPage() {
 
 ## Phase 6: Add tests with Vitest
 
-**Goal:** Test every pure function in `@northstar/core` and every custom hook.
+**Goal:** Test every pure function in `@starward/core` and every custom hook.
 
 ### 6a. Set up Vitest
 
@@ -462,7 +462,7 @@ Add `createLogger` calls to these files (at minimum):
 
 ## Phase 8 — Bug Fix: Restore Local Dev AI Fallback (MID)
 
-**Problem:** `submitAndWait()` in `frontend/src/services/ai.ts:56-59` throws unconditionally when `VITE_CLOUD_API_URL` is not set. This means running `npm run dev` (which does NOT set the env var) breaks ALL AI features. Only `npm run electron:dev` works, because it hardcodes `VITE_CLOUD_API_URL=https://northstar-api.fly.dev`.
+**Problem:** `submitAndWait()` in `frontend/src/services/ai.ts:56-59` throws unconditionally when `VITE_CLOUD_API_URL` is not set. This means running `npm run dev` (which does NOT set the env var) breaks ALL AI features. Only `npm run electron:dev` works, because it hardcodes `VITE_CLOUD_API_URL=https://starward-api.fly.dev`.
 
 The Electron main process still has all 14 AI handlers locally (`frontend/electron/ai/router.ts` → `handleAIRequestDirect()`), and the IPC bridge is intact (`window.electronAPI.invoke()` in `frontend/electron/preload.ts`). The bridge was just never wired into `submitAndWait()` after slice 6 deleted the job queue.
 
@@ -838,7 +838,7 @@ northstar/                            # Renamed from Future-Planner
 ├── README.md
 │
 ├── packages/
-│   └── core/                         # @northstar/core — shared business logic
+│   └── core/                         # @starward/core — shared business logic
 │       ├── package.json
 │       ├── tsconfig.json             # extends ../../tsconfig.base.json
 │       └── src/
@@ -861,7 +861,7 @@ northstar/                            # Renamed from Future-Planner
 │
 ├── apps/
 │   ├── desktop/                      # Electron app (was frontend/)
-│   │   ├── package.json              # Deps: @northstar/core, react, electron (NO better-sqlite3)
+│   │   ├── package.json              # Deps: @starward/core, react, electron (NO better-sqlite3)
 │   │   ├── vite.config.ts
 │   │   ├── index.html
 │   │   ├── electron/                 # Main process (MUCH smaller now)
@@ -881,12 +881,12 @@ northstar/                            # Renamed from Future-Planner
 │   │       └── styles/              # Design tokens + component styles
 │   │
 │   └── server/                      # Cloud API (was backend/)
-│       ├── package.json             # Deps: @northstar/core, express, pg
+│       ├── package.json             # Deps: @starward/core, express, pg
 │       ├── Dockerfile               # Same 2-stage build, new paths
 │       ├── fly.toml                 # Same Fly.io config
 │       └── src/
 │           ├── index.ts             # Express bootstrap
-│           ├── routes/              # Thin route handlers → delegate to @northstar/core
+│           ├── routes/              # Thin route handlers → delegate to @starward/core
 │           ├── middleware/           # Auth + error + requestContext (stays here)
 │           └── db/                  # Postgres pool + schema + migrate
 ```
@@ -900,8 +900,8 @@ Create root `package.json`:
   "name": "northstar",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @northstar/desktop run dev",
-    "dev:server": "pnpm --filter @northstar/server run dev",
+    "dev": "pnpm --filter @starward/desktop run dev",
+    "dev:server": "pnpm --filter @starward/server run dev",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test"
@@ -952,9 +952,9 @@ mv frontend apps/desktop
 # Rename backend/ → apps/server/
 mv backend apps/server
 
-# Update apps/desktop/package.json name to "@northstar/desktop"
-# Update apps/server/package.json name to "@northstar/server"
-# Add "@northstar/core": "workspace:*" to both dependencies
+# Update apps/desktop/package.json name to "@starward/desktop"
+# Update apps/server/package.json name to "@starward/server"
+# Add "@starward/core": "workspace:*" to both dependencies
 ```
 
 ### 12c. Update all import paths
@@ -987,9 +987,9 @@ fly deploy
 fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=... DEV_USER_ID=sophie
 ```
 
-But the Dockerfile needs to be aware of the monorepo structure if `@northstar/core` is a workspace dependency. Two options:
+But the Dockerfile needs to be aware of the monorepo structure if `@starward/core` is a workspace dependency. Two options:
 
-**Option A (recommended for now):** Make `@northstar/core` a pre-built package. Add a `"prepack"` script to `packages/core/` that compiles TS → JS. The `apps/server/` Dockerfile copies the compiled core into `node_modules/` during build.
+**Option A (recommended for now):** Make `@starward/core` a pre-built package. Add a `"prepack"` script to `packages/core/` that compiles TS → JS. The `apps/server/` Dockerfile copies the compiled core into `node_modules/` during build.
 
 **Option B (better long-term):** Use a Dockerfile at the repo root that copies the full monorepo, runs `pnpm install --frozen-lockfile`, builds all packages, then copies only `apps/server/dist` + `node_modules` into the runtime stage. Update `fly.toml` to set the build context to the repo root:
 
@@ -1007,7 +1007,7 @@ But the Dockerfile needs to be aware of the monorepo structure if `@northstar/co
 - `pnpm dev` starts the Electron app (with local IPC)
 - `pnpm dev:server` starts the Express server
 - `cd apps/server && fly deploy` deploys successfully
-- The Electron app can talk to `https://northstar-api.fly.dev` when `VITE_CLOUD_API_URL` is set
+- The Electron app can talk to `https://starward-api.fly.dev` when `VITE_CLOUD_API_URL` is set
 
 ---
 
@@ -1100,12 +1100,12 @@ Update the `electron:dev` script comment and the README to make it clear that `V
 Update `.env.example` at the project root:
 ```bash
 # REQUIRED — the app talks to this backend for all data + AI
-VITE_CLOUD_API_URL=https://northstar-api.fly.dev
+VITE_CLOUD_API_URL=https://starward-api.fly.dev
 ```
 
 ### 13h. Verification
 
-- Remove `~/.config/NorthStar/northstar.db` and `northstar-data.json` from the dev data directory
+- Remove `~/.config/Starward/northstar.db` and `northstar-data.json` from the dev data directory
 - Start the Electron app — it should boot with no errors (no SQLite)
 - All data loads from Supabase Postgres via the Fly.io backend
 - Creating a goal, adding a task, chatting — all data persists in Postgres
@@ -1118,7 +1118,7 @@ VITE_CLOUD_API_URL=https://northstar-api.fly.dev
 
 | Action | Files | Lines saved |
 |--------|-------|-------------|
-| Move to `@northstar/core` | 14 handlers + prompts + sanitize + personalize + model-config + cognitiveBudget + contextEvaluator | — |
+| Move to `@starward/core` | 14 handlers + prompts + sanitize + personalize + model-config + cognitiveBudget + contextEvaluator | — |
 | Delete backend duplicates | `backend/src/ai/handlers/*`, `backend/src/ai/prompts.ts`, `backend/src/ai/sanitize.ts`, `backend/src/ai/personalize.ts`, `backend/src/model-config.ts`, `backend/src/domain/cognitiveBudget.ts`, `backend/src/database.ts` | ~2,000 lines |
 | Delete frontend duplicates (now in core) | `frontend/electron/ai/handlers/*`, `frontend/electron/ai/prompts.ts`, etc. | ~1,700 lines |
 | Delete api-server.ts | `frontend/electron/api-server.ts` | 333 lines |
@@ -1163,4 +1163,4 @@ VITE_CLOUD_API_URL=https://northstar-api.fly.dev
 13. **Phase 11 (streaming)** — complex, depends on the transport layer being stable
 14. **Phase 14 (task watcher)** — do last. Requires Phase 13 (cloud-only data) and Phase 7 (logging). This is a new feature, not a fix — everything else should be stable first.
 
-After each phase, run `pnpm typecheck` from the root to verify no type errors across all packages. Launch the Electron app and verify the core flows work: onboarding, goal creation, daily task generation, home chat. For cloud changes, verify `fly deploy` succeeds and the deployed API responds at `https://northstar-api.fly.dev/health`.
+After each phase, run `pnpm typecheck` from the root to verify no type errors across all packages. Launch the Electron app and verify the core flows work: onboarding, goal creation, daily task generation, home chat. For cloud changes, verify `fly deploy` succeeds and the deployed API responds at `https://starward-api.fly.dev/health`.

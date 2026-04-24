@@ -29,6 +29,7 @@ export const ALL_QUERY_KINDS: QueryKind[] = [
   "view:onboarding",
   "view:goal-plan",
   "view:goal-breakdown",
+  "view:goal-dashboard",
 ];
 
 export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {

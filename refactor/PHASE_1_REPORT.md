@@ -1,4 +1,4 @@
-# Phase 1 Audit Report: NorthStar AI Architecture
+# Phase 1 Audit Report: Starward AI Architecture
 
 > **Date**: 2026-04-16
 > **Scope**: Read-only audit of AI calls, blocking paths, rule-engine candidates, coordinators, invalidation, and memory costs.

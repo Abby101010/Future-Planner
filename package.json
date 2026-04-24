@@ -3,9 +3,9 @@
   "workspaces": ["backend", "backend/core", "frontend"],
   "scripts": {
     "typecheck": "tsc -b backend/core backend frontend",
-    "build:server": "npm --workspace @northstar/server run build",
-    "build:desktop": "npm --workspace @northstar/desktop run build",
-    "dev:server": "npm --workspace @northstar/server run dev",
-    "dev:desktop": "npm --workspace @northstar/desktop run electron:dev"
+    "build:server": "npm --workspace @starward/server run build",
+    "build:desktop": "npm --workspace @starward/desktop run build",
+    "dev:server": "npm --workspace @starward/server run dev",
+    "dev:desktop": "npm --workspace @starward/desktop run electron:dev"
   }
 }

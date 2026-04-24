@@ -1,4 +1,4 @@
-# NorthStar — System Spec for LLM Context
+# Starward — System Spec for LLM Context
 
 **Purpose.** This document is a dense, factual reference for another LLM picking up work on this codebase. Every claim cites a file path. No marketing prose. Read top to bottom once; then use as lookup.
 
@@ -10,13 +10,13 @@
 
 ## 1. Product Summary
 
-NorthStar (北极星) is an AI-assisted goal-planning app. A user states a multi-year goal; a multi-agent pipeline produces a hierarchical plan (years → milestones → weeks → daily tasks). A second daily-planner pipeline materialises each day's tasks given capacity, memory, and behavioural signals. The app also tracks reminders, nudges, pace, calendar availability, monthly context, and streams AI chat.
+Starward (星程) is an AI-assisted goal-planning app. A user states a multi-year goal; a multi-agent pipeline produces a hierarchical plan (years → milestones → weeks → daily tasks). A second daily-planner pipeline materialises each day's tasks given capacity, memory, and behavioural signals. The app also tracks reminders, nudges, pace, calendar availability, monthly context, and streams AI chat.
 
 ## 2. Monorepo Layout
 
 ```
-packages/core/     @northstar/core     — shared types + protocol enums
-packages/server/   Express 5 API       — runs on Fly.io (app: northstar-api)
+packages/core/     @starward/core     — shared types + protocol enums
+packages/server/   Express 5 API       — runs on Fly.io (app: starward-api)
 packages/desktop/  Electron + React    — bare-HTML test harness
 ```
 

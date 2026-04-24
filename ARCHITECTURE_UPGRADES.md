@@ -1,4 +1,4 @@
-# NorthStar — Additive AI Architecture Upgrades
+# Starward — Additive AI Architecture Upgrades
 
 > Describes the five additive layers shipped on top of the existing CQRS + Electron architecture. **Every phase is strictly additive** — no existing handler, route, CommandKind, or QueryKind was modified; only new files and (for `EventKind`) new enum values were appended.
 
@@ -16,7 +16,7 @@ For the broader app structure and end-to-end feature flows, see `APP_STRUCTURE.m
 | 4     | Scheduled background jobs | `src/scheduler/`                                | live       |
 | 5     | Tool-use layer            | `src/tools/`, `src/routes/toolChat.ts`          | live       |
 
-All code lives under `packages/server/`. The renderer, `@northstar/core`, and the Electron IPC surface were left alone except for one additive enum append in `packages/core/src/protocol/kinds.ts` (`"agent:critique"` event kind).
+All code lives under `packages/server/`. The renderer, `@starward/core`, and the Electron IPC surface were left alone except for one additive enum append in `packages/core/src/protocol/kinds.ts` (`"agent:critique"` event kind).
 
 ---
 
@@ -107,9 +107,9 @@ Expanding to other handlers = copy-pasting the detached block at the bottom of a
 
 ### Components
 
-- **Queue runtime:** BullMQ + ioredis. Queue name: `northstar-bg`.
+- **Queue runtime:** BullMQ + ioredis. Queue name: `starward-bg` (renamed from `northstar-bg` during the NorthStar → Starward rename; old queue was drained before the switch).
 - **Env var:** `REDIS_URL`. When unset the module is a no-op — `enqueueJob` silently drops, `startBullWorker` skips. Matches the additive-only guarantee.
-- **Backing store:** Fly Upstash Redis (`northstar-redis`, yyz region, Pay-as-you-go plan). Warning: BullMQ's continuous polling costs ~$1/mo on PAYG — if traffic grows, switch to Fixed 250MB ($10/mo flat) via `fly redis update`.
+- **Backing store:** Fly Upstash Redis (`starward-redis`, yyz region, Pay-as-you-go plan). Warning: BullMQ's continuous polling costs ~$1/mo on PAYG — if traffic grows, switch to Fixed 250MB ($10/mo flat) via `fly redis update`.
 - **API:** `src/jobs/queue.ts` exports
   - `enqueueJob(name, payload, opts?)` — returns jobId or null when Redis unavailable.
   - `registerJobHandler(name, handler)` — register before `startBullWorker`.
@@ -188,7 +188,7 @@ The `_internal` object is exposed specifically so operators can invoke the tick 
 ### Verifying scheduler timing on production
 
 ```bash
-fly ssh console -a northstar-api -C "node -e \"
+fly ssh console -a starward-api -C "node -e \"
   const s = require('/repo/packages/server/dist/scheduler');
   s._internal.listSchedulableUsers().then(u => console.log(u));
   console.log(s._internal.localHourAndDate('America/Toronto'));
@@ -315,7 +315,7 @@ If you (future Claude) are about to violate one of these, stop and ask first.
 
 ## 10. Deployment + smoke testing
 
-Everything runs on Fly (`northstar-api` app, `yyz` region). Two machines, rolling deploy strategy.
+Everything runs on Fly (`starward-api` app, `yyz` region). Two machines, rolling deploy strategy.
 
 ### Deploying server changes
 
@@ -330,12 +330,12 @@ Server migrations run automatically on boot (`src/db/migrate.ts` called from `sr
 
 ```bash
 # Set secrets first
-fly secrets set VOYAGE_API_KEY=... -a northstar-api
+fly secrets set VOYAGE_API_KEY=... -a starward-api
 
 # Ingest (local — needs DATABASE_URL which you can grab from Fly)
-DATABASE_URL=$(fly ssh console -a northstar-api -C "sh -c 'printenv DATABASE_URL'" | tail -1) \
+DATABASE_URL=$(fly ssh console -a starward-api -C "sh -c 'printenv DATABASE_URL'" | tail -1) \
 VOYAGE_API_KEY=... \
-npm run ingest-knowledge --workspace=@northstar/server
+npm run ingest-knowledge --workspace=@starward/server
 ```
 
 Ingest is idempotent on `(source, chunk_index)`, so re-running after edits is safe.
@@ -343,7 +343,7 @@ Ingest is idempotent on `(source, chunk_index)`, so re-running after edits is sa
 ### Smoke-testing Phase 5 tools from CLI
 
 ```bash
-curl -X POST https://northstar-api.fly.dev/ai-tools/chat \
+curl -X POST https://starward-api.fly.dev/ai-tools/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $SUPABASE_JWT" \
   -d '{"message": "what do I have on my plate today?"}'
@@ -377,31 +377,31 @@ These are intentionally NOT implemented. If a future change appears to require t
 
 ```bash
 # Current Fly state
-fly status -a northstar-api
+fly status -a starward-api
 
 # Recent logs
-fly logs -a northstar-api --no-tail | tail -40
+fly logs -a starward-api --no-tail | tail -40
 
 # SSH into the running machine
-fly ssh console -a northstar-api
+fly ssh console -a starward-api
 
 # Verify a module in the deployed image
-fly ssh console -a northstar-api -C "sh -c 'grep -c per-user /repo/packages/server/dist/scheduler/index.js'"
+fly ssh console -a starward-api -C "sh -c 'grep -c per-user /repo/packages/server/dist/scheduler/index.js'"
 
 # Invoke the scheduler tick manually (does not wait for the cron)
-fly ssh console -a northstar-api -C "node -e \"
+fly ssh console -a starward-api -C "node -e \"
   require('/repo/packages/server/dist/scheduler')._internal.hourlyTick()
     .then(() => process.exit(0));
 \""
 
 # Check a user's persisted timezone
-fly ssh console -a northstar-api -C "node -e \"
+fly ssh console -a starward-api -C "node -e \"
   require('/repo/packages/server/dist/scheduler')._internal.listSchedulableUsers()
     .then(u => { console.log(u); process.exit(0); });
 \""
 
 # Inspect what's in the knowledge_chunks table
-fly ssh console -a northstar-api -C "node -e \"
+fly ssh console -a starward-api -C "node -e \"
   const { Pool } = require('/repo/node_modules/pg');
   const p = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   p.query('SELECT source, count(*) FROM knowledge_chunks GROUP BY source')

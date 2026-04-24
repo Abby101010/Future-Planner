@@ -1,8 +1,8 @@
-# NorthStar 北极星
+# Starward 星程
 
 **AI-powered goal planning and daily productivity companion.**
 
-Tell NorthStar where you want to go. It'll have a real conversation with you to
+Tell Starward where you want to go. It'll have a real conversation with you to
 understand your goal, build a personalized roadmap with reasoning behind every
 decision, and generate focused daily tasks that actually fit your life.
 
@@ -26,7 +26,7 @@ account works across machines.
 
 ## Architecture
 
-NorthStar runs as two cooperating pieces:
+Starward runs as two cooperating pieces:
 
 ```
 ┌──────────────────────┐         HTTPS         ┌────────────────────────┐
@@ -126,8 +126,8 @@ npx tsx src/db/migrate.ts
 ```bash
 cd packages/desktop
 # Builds the universal macOS .dmg with the cloud URL baked in
-VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run electron:build:mac
-# → packages/desktop/release/NorthStar-<version>-universal.dmg
+VITE_CLOUD_API_URL=https://starward-api.fly.dev npm run electron:build:mac
+# → packages/desktop/release/Starward-<version>-universal.dmg
 ```
 
 ## Deployment
@@ -136,10 +136,10 @@ VITE_CLOUD_API_URL=https://northstar-api.fly.dev npm run electron:build:mac
 
 ```bash
 # One-time
-fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=... DEV_USER_ID=sophie -a northstar-api
+fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=... DEV_USER_ID=sophie -a starward-api
 
 # Every deploy — packages/server/ is its own self-contained build context now.
-cd packages/server && fly deploy -a northstar-api
+cd packages/server && fly deploy -a starward-api
 ```
 
 ### Frontend → GitHub Releases

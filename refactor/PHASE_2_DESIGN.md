@@ -40,7 +40,7 @@ Already exists at server path. The functions are pure — they take `Goal[]` + n
 1. Copy `detectPaceMismatches()`, `detectCrossGoalOverload()`, `splitPlan()`, `mergePlans()`, `countPlanStats()` and helper functions to `packages/core/src/domain/paceDetection.ts`
 2. Export from `packages/core` barrel
 3. Update `packages/server/src/services/paceDetection.ts` to re-export from core (backward compat)
-4. Desktop client can now import directly from `@northstar/core` and compute locally
+4. Desktop client can now import directly from `@starward/core` and compute locally
 
 **Interface** (unchanged):
 

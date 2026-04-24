@@ -1,10 +1,10 @@
-# NorthStar 北极星 — App Structure & Details
+# Starward 星程 — App Structure & Details
 
 > AI-powered goal planning and daily productivity companion, delivered as an Electron desktop app backed by a cloud API.
 
 ## What It Is
 
-NorthStar is a personal planning assistant that:
+Starward is a personal planning assistant that:
 1. Has a **multi-turn conversation** with the user to clarify their goal.
 2. Builds an **AI-generated hierarchical roadmap** (milestones → years → months → weeks → days → tasks) with reasoning.
 3. Generates **daily task lists** that respect a cognitive budget and the user's weekly availability.
@@ -209,7 +209,7 @@ Runner: `packages/server/src/db/migrate.ts` — executes at startup.
 
 ### Deployment
 
-`Dockerfile` + `fly.toml` at repo root → `fly deploy` from `packages/server/`. App name: `northstar-api`. Secrets: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `DEV_USER_ID`.
+`Dockerfile` + `fly.toml` at repo root → `fly deploy` from `packages/server/`. App name: `starward-api`. Secrets: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `DEV_USER_ID`.
 
 ---
 

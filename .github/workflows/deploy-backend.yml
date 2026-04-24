@@ -4,7 +4,7 @@
 # frontend/, docs, or other unrelated paths.
 #
 # Required repo secret: FLY_API_TOKEN
-#   Create one with:  fly tokens create deploy -a northstar-api
+#   Create one with:  fly tokens create deploy -a starward-api
 #   Then add it under: Settings → Secrets and variables → Actions
 # ──────────────────────────────────────────────────────────────
 name: Deploy backend to Fly

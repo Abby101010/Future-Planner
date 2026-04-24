@@ -1,4 +1,4 @@
-# NorthStar API — Fly.io config
+# Starward API — Fly.io config
 # Deploy from repo root with: fly deploy
 # Set secrets with: fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=... DEV_USER_ID=sophie
 #

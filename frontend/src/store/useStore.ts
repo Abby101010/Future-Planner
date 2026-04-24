@@ -68,9 +68,6 @@ const useStore = create<StoreApi>((set) => ({
 
   pendingChatMessage: null,
   setPendingChatMessage: (msg) => set({ pendingChatMessage: msg }),
-
-  isSidebarCollapsed: false,
-  toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
 }));
 
 export default useStore;

@@ -1,4 +1,4 @@
-# NorthStar — Feature Flow Diagrams & Audit Report
+# Starward — Feature Flow Diagrams & Audit Report
 
 **Audit date:** 2026-04-19
 **Scope:** `Client - Future-Planner/packages/{core,server,desktop}`
@@ -33,7 +33,7 @@ flowchart LR
     JW["Job worker (2s poll)"]
   end
 
-  subgraph Core["@northstar/core"]
+  subgraph Core["@starward/core"]
     Kinds["kinds.ts — 10 views, 43 commands, 9 events"]
     Types["domain types"]
   end
