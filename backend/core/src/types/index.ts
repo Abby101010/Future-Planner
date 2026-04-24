@@ -212,6 +212,11 @@ export interface WeekPlan {
   /** Display label ("Apr 14 – Apr 20"). BreakdownTab.tsx reads `w.label`;
    *  `focus`/`startDate`/`endDate` are kept for any programmatic reader. */
   label?: string;
+  /** True for weeks the planner hasn't filled in yet (future / token-
+   *  budget stubs). BreakdownTab.tsx hides the expand affordance for
+   *  locked weeks and `estimatePlanProgress` counts them for
+   *  extrapolated totals. */
+  locked?: boolean;
 }
 
 export interface DayPlan {

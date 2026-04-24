@@ -11,6 +11,7 @@ import * as repos from "../repositories";
 import type { Goal, MonthlyContext, GoalPlanMilestone } from "@starward/core";
 import { findActivePlanJobsByUser, type PlanJobDescriptor } from "../job-db";
 import { getCurrentUserId } from "../middleware/requestContext";
+import { estimatePlanProgress } from "../services/planProgress";
 
 export interface PlanProgress {
   completed: number;
@@ -65,27 +66,13 @@ function currentMonthKey(): string {
 }
 
 function planProgress(goal: Goal): PlanProgress {
-  let total = 0;
-  let completed = 0;
-  if (goal.plan && Array.isArray(goal.plan.years)) {
-    for (const yr of goal.plan.years) {
-      for (const mo of yr.months) {
-        for (const wk of mo.weeks) {
-          for (const dy of wk.days) {
-            for (const tk of dy.tasks) {
-              total++;
-              if (tk.completed) completed++;
-            }
-          }
-        }
-      }
-    }
-  }
-  return {
-    completed,
-    total,
-    percent: total > 0 ? Math.round((completed / total) * 100) : 0,
-  };
+  // Delegates to the shared estimator so Planning / Goal-Plan / Goal-
+  // Dashboard all report the same projected total (materialized tasks
+  // + extrapolated load for locked weeks).
+  const { completed, projectedTotal, percent } = estimatePlanProgress(
+    goal.plan,
+  );
+  return { completed, total: projectedTotal, percent };
 }
 
 /** Derive pace for a goal from its status alone, as a safe default. Phase G

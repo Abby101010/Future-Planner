@@ -22,6 +22,7 @@ import type {
   InsightCard,
 } from "@starward/core";
 import { generateInsightCards } from "../agents/dashboardInsightAgent";
+import { estimatePlanProgress } from "../services/planProgress";
 
 export interface GoalDashboardViewArgs {
   goalId: string;
@@ -65,26 +66,15 @@ function computeProgress(plan: GoalPlan | null, goal: Goal): DashboardProgressDa
     };
   }
 
-  let totalTasks = 0;
-  let completedTasks = 0;
-  for (const yr of plan.years ?? []) {
-    for (const mo of yr.months ?? []) {
-      for (const wk of mo.weeks ?? []) {
-        for (const dy of wk.days ?? []) {
-          for (const tk of dy.tasks ?? []) {
-            totalTasks++;
-            if (tk.completed) completedTasks++;
-          }
-        }
-      }
-    }
-  }
+  // Delegates to the shared estimator so Dashboard reports the same
+  // projected total (materialized + locked-week extrapolation) as
+  // Planning and Goal-Plan. See services/planProgress.ts.
+  const { completed: completedTasks, projectedTotal: totalTasks, percent } =
+    estimatePlanProgress(plan);
 
   const milestones = plan.milestones ?? [];
   const currentIdx = milestones.findIndex((m) => !m.completed);
   const currentMilestoneIndex = currentIdx === -1 ? milestones.length : currentIdx;
-
-  const percent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   // Naive status heuristic: compare today vs. plan's projected completion.
   // More sophisticated pace logic lives in paceDetection; that signal will

@@ -158,6 +158,7 @@ function mapWeek(week: GoalPlanWeek): WeekPlan {
     days,
     id: week.id,
     label: week.label ?? "",
+    locked: Boolean(week.locked),
   };
 }
 

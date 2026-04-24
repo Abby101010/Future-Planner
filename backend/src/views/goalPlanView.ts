@@ -15,6 +15,7 @@ import type {
   GoalPlanMilestone,
 } from "@starward/core";
 import { detectPaceMismatches, detectCrossGoalOverload, type PaceMismatch, type OverloadAdvisory } from "../services/paceDetection";
+import { estimatePlanProgress } from "../services/planProgress";
 import { loadMemory, computeCapacityProfile } from "../memory";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { getEffectiveDate, getEffectiveDaysAgo } from "../dateUtils";
@@ -71,28 +72,12 @@ export interface GoalPlanView {
 }
 
 function computePlanProgress(plan: GoalPlan | null): GoalPlanProgress {
-  if (!plan || !Array.isArray(plan.years)) {
-    return { total: 0, completed: 0, percent: 0 };
-  }
-  let total = 0;
-  let completed = 0;
-  for (const yr of plan.years) {
-    for (const mo of yr.months) {
-      for (const wk of mo.weeks) {
-        for (const dy of wk.days) {
-          for (const tk of dy.tasks) {
-            total++;
-            if (tk.completed) completed++;
-          }
-        }
-      }
-    }
-  }
-  return {
-    total,
-    completed,
-    percent: total > 0 ? Math.round((completed / total) * 100) : 0,
-  };
+  // Delegates to the shared estimator so Planning / Goal-Plan / Goal-
+  // Dashboard all report the same projected total (materialized tasks
+  // + extrapolated load for locked weeks), rather than three
+  // independent under-counts.
+  const { completed, projectedTotal, percent } = estimatePlanProgress(plan);
+  return { total: projectedTotal, completed, percent };
 }
 
 function todayISO(): string {
