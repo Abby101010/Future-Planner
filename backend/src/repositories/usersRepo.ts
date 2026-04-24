@@ -160,6 +160,35 @@ export async function updateDeviceIntegrations(
   );
 }
 
+/** Read a named subset of jsonb keys directly from `users.payload`.
+ *
+ *  Exists because `rowToProfile` only maps a fixed set of payload fields
+ *  (age, currentRole, etc.) into the typed `UserProfile` shape — everything
+ *  else lives opaquely in the `payload` column. The onboarding view needs
+ *  `onboardingStep`, `onboardingMessages`, `proposedGoal`, `onboardingGoalId`,
+ *  `onboardingFirstTaskId` — none of which are surfaced on UserProfile —
+ *  and this helper gives it a typed direct read.
+ *
+ *  Write path (`updatePayload` below) must stay symmetric with this read
+ *  path: every key a handler writes to `payload` should be readable here
+ *  or via an explicit UserProfile mapping, not silently dropped. */
+export async function getPayloadFields<T>(
+  keys: readonly string[],
+): Promise<Partial<T>> {
+  const userId = requireUserId();
+  const rows = await query<{ payload: UserRow["payload"] }>(
+    `select payload from users where user_id = $1`,
+    [userId],
+  );
+  if (rows.length === 0) return {};
+  const parsed = parseJson(rows[0].payload) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    if (k in parsed) out[k] = parsed[k];
+  }
+  return out as Partial<T>;
+}
+
 /** Merge a partial object into the payload jsonb column — no read-modify-write. */
 export async function updatePayload(
   patch: Record<string, unknown>,

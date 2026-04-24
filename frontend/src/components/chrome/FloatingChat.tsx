@@ -104,17 +104,22 @@ export default function FloatingChat() {
     setInput("");
     setStreaming(true);
 
-    // Build chatHistory for the API — all three backend handlers
-    // (chat, home-chat, goal-plan-chat) map `chatHistory` directly into the
-    // Claude messages array, so the current user message MUST be included as
-    // the last entry (see backend/core/src/ai/handlers/{chat,homeChat,goalPlanChat}.ts).
-    // Strip the local "∟streaming∟" placeholder prefix we use for in-flight
-    // assistant deltas — the history must only contain clean turns. Cap at
-    // 50 turns; the goalPlanChat handler further trims to 8 on its side.
-    const cleanHistory = messages
+    // Build chatHistory for the API — ONLY prior turns. The backend
+    // handlers append the current `userInput` themselves:
+    //   - chat.ts:325     → messages.push({ role: "user", content: userInput })
+    //   - homeChat.ts:450 → same
+    //   - goalPlanChat.ts:142-145 → defensive: pushes only if last entry isn't already this message
+    // Including the current user message here would produce a duplicate
+    // trailing user turn, which Anthropic rejects with the confusing
+    // "messages.N.content: Field required" error. Also strip the local
+    // "∟streaming∟" placeholder prefix and any empty-content messages
+    // (from turns where the stream errored before any delta arrived).
+    // Cap at 50 turns; goalPlanChat further trims to 8 on its side.
+    const chatHistory = messages
       .filter((m) => !(m.role === "assistant" && m.text.startsWith("∟streaming∟")))
-      .map((m) => ({ role: m.role, content: m.text }));
-    const chatHistory = [...cleanHistory, { role: "user" as const, content: text }].slice(-50);
+      .filter((m) => typeof m.text === "string" && m.text.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.text }))
+      .slice(-50);
 
     let acc = "";
     const body: Record<string, unknown> =

@@ -30,8 +30,13 @@ Last updated: 2026-04-23 — **NorthStar → Starward rename COMPLETE across eve
     │   ├─ Page load                         → GET /view/onboarding  → returns {step, messages, proposedGoal, currentGoalId, firstTaskId, memoryFacts, memoryPreferences, onboardingComplete, timezone, greetingName, goalRaw}
     │   └─ Step is server-computed (welcome / discovery / goal-naming / clarification / plan-reveal / first-task / complete)
     │
-    ├─ Step 1 — Welcome (client-only)
-    │   └─ Click "Get started"               → (no API, client-only)
+    ├─ Feature: Skip onboarding (escape hatch, available on every step)
+    │   └─ Click "Skip →" button (top-right of onboarding shell)
+    │                                        → POST /commands/complete-onboarding  {}  → sets onboardingComplete=true on the user row; FE then navigates to `tasks`. No goal is created and no plan is generated — user arrives at an empty Today page and can use the "New goal" button from Planning whenever they want. Implemented on every step via `<SkipOnboardingButton>` in `frontend/src/pages/onboarding/OnboardingPage.tsx`.
+    │
+    ├─ Step 1 — Welcome
+    │   ├─ Click "Get started"               → POST /commands/send-onboarding-message  {message:"hi"}  → seeds step=discovery + appends the first assistant turn to messages[]
+    │   └─ Click "Skip →"                    → see "Skip onboarding" feature above
     │
     ├─ Step 2 — Sign up (via AuthGuard / LoginPage)
     │   ├─ Email+password                    → Supabase SDK: signInWithPassword / signUp

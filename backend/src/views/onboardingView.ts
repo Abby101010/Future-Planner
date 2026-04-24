@@ -70,30 +70,13 @@ interface OnboardingPayload {
   onboardingFirstTaskId?: string;
 }
 
-/** Read a user's onboarding payload keys. Kept local; repositories layer
- *  returns a flat UserProfile so the payload is already parsed. */
-function readOnboardingPayload(user: UserProfile | null): OnboardingPayload {
-  if (!user) return {};
-  // Repositories expose a few payload extras as top-level profile fields;
-  // the onboarding-specific ones aren't promoted, so they'd round-trip via
-  // a separate helper once wired. For now the in-memory user object carries
-  // them on `.onboardingPayload` when cmdSendOnboardingMessage etc. write
-  // them via repos.users.updatePayload(); the view reads them the same way.
-  const withPayload = user as unknown as {
-    onboardingStep?: OnboardingStep;
-    onboardingMessages?: OnboardingMessage[];
-    proposedGoal?: ProposedOnboardingGoal;
-    onboardingGoalId?: string;
-    onboardingFirstTaskId?: string;
-  };
-  return {
-    onboardingStep: withPayload.onboardingStep,
-    onboardingMessages: withPayload.onboardingMessages,
-    proposedGoal: withPayload.proposedGoal,
-    onboardingGoalId: withPayload.onboardingGoalId,
-    onboardingFirstTaskId: withPayload.onboardingFirstTaskId,
-  };
-}
+const ONBOARDING_PAYLOAD_KEYS = [
+  "onboardingStep",
+  "onboardingMessages",
+  "proposedGoal",
+  "onboardingGoalId",
+  "onboardingFirstTaskId",
+] as const;
 
 /** Derive a step value when the persisted one is missing (legacy users). */
 function deriveStep(
@@ -109,8 +92,15 @@ function deriveStep(
 }
 
 export async function resolveOnboardingView(): Promise<OnboardingView> {
-  const user = await repos.users.get();
-  const payload = readOnboardingPayload(user);
+  // Fetch the typed UserProfile for onboardingComplete/timezone/name AND
+  // the onboarding-specific jsonb keys via a dedicated helper. Those keys
+  // are NOT exposed on UserProfile (see rowToProfile in usersRepo.ts),
+  // so a direct payload read is the only correct path. Symmetric with
+  // cmdSendOnboardingMessage + siblings, which write via updatePayload.
+  const [user, payload] = await Promise.all([
+    repos.users.get(),
+    repos.users.getPayloadFields<OnboardingPayload>(ONBOARDING_PAYLOAD_KEYS),
+  ]);
 
   // Load facts + preferences so the UI can show "here's what I remember
   // about you so far" during steps 3–5. Signals are not returned here

@@ -123,6 +123,53 @@ export default function OnboardingPage() {
 
 // ── Shell ─────────────────────────────────────────────────────
 
+/** Skip-onboarding button shown in the top-right of every step.
+ *  Fires `command:complete-onboarding` (empty body → backend flips
+ *  onboardingComplete: true on the current user row). On success we
+ *  navigate to tasks; the WS invalidation triggers a view:onboarding
+ *  refetch so the next time the user lands on onboarding they see the
+ *  "complete" branch (Go to today). */
+function SkipOnboardingButton() {
+  const { run, running } = useCommand();
+  const setView = useStore((s) => s.setView);
+  async function skip() {
+    try {
+      await run("command:complete-onboarding", {});
+    } catch (err) {
+      // Non-fatal: even if the command errors we still drop the user into
+      // the main app. They can re-enter onboarding via the sidebar later.
+      console.warn("[onboarding] skip: complete-onboarding failed:", err);
+    }
+    setView("tasks");
+  }
+  return (
+    <button
+      data-testid="onboarding-skip"
+      onClick={skip}
+      disabled={running}
+      title="Skip the onboarding flow and go straight to the main app"
+      style={{
+        marginLeft: 14,
+        padding: "4px 10px",
+        border: "1px solid var(--border)",
+        background: "var(--bg)",
+        color: "var(--fg-mute)",
+        fontSize: 11,
+        letterSpacing: "0.04em",
+        cursor: running ? "progress" : "pointer",
+        borderRadius: 4,
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        fontFamily: "inherit",
+        opacity: running ? 0.6 : 1,
+      }}
+    >
+      Skip <Icon name="arrow-right" size={11} />
+    </button>
+  );
+}
+
 function OnbShell({
   children,
   stepN,
@@ -209,6 +256,7 @@ function OnbShell({
             <Icon name="arrow-left" size={12} /> Back
           </button>
         )}
+        <SkipOnboardingButton />
       </header>
       <div style={{ flex: 1, display: "flex", justifyContent: "center", padding: "40px 24px 80px" }}>
         <div style={{ width: "100%", maxWidth: 680 }}>{children}</div>

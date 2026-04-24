@@ -74,6 +74,30 @@ function AppShell() {
     };
   }, []);
 
+  // Gated flows render full-screen with NO sidebar, NO floating chrome. The
+  // sidebar is irrelevant before the user has completed onboarding, and the
+  // WsIndicator flashes "view:invalidate" toasts that are distracting during
+  // a guided flow. This mirrors the prototype's <PageWelcome>/<PageOnboarding>
+  // render paths, which returned the page directly at the top of App.
+  if (currentView === "welcome") {
+    return (
+      <I18nProvider language={language}>
+        <div data-testid="app-booting" style={{ padding: 40, textAlign: "center" }}>
+          booting…
+        </div>
+      </I18nProvider>
+    );
+  }
+  if (currentView === "onboarding") {
+    return (
+      <I18nProvider language={language}>
+        <ErrorBoundary>
+          <OnboardingPage />
+        </ErrorBoundary>
+      </I18nProvider>
+    );
+  }
+
   const goalPlanId = currentView.startsWith("goal-plan-")
     ? currentView.replace("goal-plan-", "")
     : null;
@@ -84,8 +108,6 @@ function AppShell() {
         <Sidebar />
         <main className="app-main" data-testid="app-main">
           <ErrorBoundary>
-            {currentView === "welcome" && <p data-testid="app-booting">booting…</p>}
-            {currentView === "onboarding" && <OnboardingPage />}
             {currentView === "planning" && <PlanningPage />}
             {currentView === "tasks" && <TasksPage />}
             {currentView === "calendar" && <CalendarPage />}
@@ -96,7 +118,7 @@ function AppShell() {
           </ErrorBoundary>
         </main>
 
-        {/* Global floating chrome */}
+        {/* Global floating chrome — only in the main app, never in gated flows. */}
         <SettingsDialog />
         <FloatingChat />
         <ChatFab />
