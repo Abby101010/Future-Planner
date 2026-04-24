@@ -395,6 +395,30 @@ export async function findByPlanNodeId(
   return rows.length > 0 ? rowToTask(rows[0]) : null;
 }
 
+/** Delete all big_goal daily_tasks for `goalId` whose `plan_node_id` no
+ *  longer exists in `goal_plan_nodes`. Used after `goalPlan.replacePlan`
+ *  so orphaned rows (materialized from a plan that's since been edited
+ *  out) don't keep showing up on the Tasks page. Returns the delete
+ *  count. Only touches tasks with source='big_goal' and a non-null
+ *  plan_node_id — hand-entered tasks attached to a goal are untouched. */
+export async function removeOrphanedPlanTasks(goalId: string): Promise<number> {
+  const userId = requireUserId();
+  const result = await query<{ id: string }>(
+    `delete from daily_tasks
+       where user_id = $1
+         and goal_id = $2
+         and source = 'big_goal'
+         and plan_node_id is not null
+         and plan_node_id not in (
+           select id from goal_plan_nodes
+             where user_id = $1 and goal_id = $2
+         )
+       returning id`,
+    [userId, goalId],
+  );
+  return result.length;
+}
+
 // Re-export canonical "delete" name since it's a reserved word.
 export { remove as delete_ };
 export type { DailyTask };

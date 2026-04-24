@@ -855,8 +855,21 @@ function _getGlobalWeekIndex(plan: GoalPlan, targetWk: GoalPlanWeek | undefined)
 }
 
 /** Replace all nodes for a goal with the flattened representation of
- *  `plan`. Used by regenerate-goal-plan: wipes the old tree and writes
- *  the new one under the same goal. */
+ *  `plan`. Used by regenerate-goal-plan, by the goal-plan-chat stream
+ *  on full replacement / patch / replan, and by adaptive reschedule.
+ *
+ *  ⚠ Invariant: if the goal is already `planConfirmed`, this call also
+ *  prunes any orphan `daily_tasks` rows (rows whose plan_node_id no
+ *  longer exists in the rewritten tree) and re-materializes the
+ *  14-day rolling horizon. That way chat-driven plan edits propagate
+ *  to the Tasks page and Calendar automatically — callers do NOT need
+ *  to remember to call the materializer. Unconfirmed goals (still in
+ *  initial planning) are left alone: no orphan prune, no materialize.
+ *
+ *  The `goals` repo is imported inside the function to avoid a
+ *  circular import at module load time (goalsRepo → goalPlanRepo is
+ *  not a path today, but this keeps the graph safe). Same for the
+ *  service imports. */
 export async function replacePlan(
   goalId: string,
   plan: GoalPlan,
@@ -868,6 +881,29 @@ export async function replacePlan(
   const nodes = flattenPlan(goalId, plan);
   if (nodes.length > 0) {
     await upsertNodes(goalId, nodes);
+  }
+
+  // Auto-sync daily_tasks for confirmed plans. Skip for unconfirmed goals
+  // (initial planning iterations) so we don't pollute the Tasks page
+  // before the user accepts the plan.
+  try {
+    const { get: getGoal } = await import("./goalsRepo");
+    const goal = await getGoal(goalId);
+    if (goal?.planConfirmed) {
+      const { pruneOrphanedPlanTasks, materializePlanTasks } = await import(
+        "../services/planMaterialization"
+      );
+      await pruneOrphanedPlanTasks(goalId);
+      await materializePlanTasks(goalId, plan);
+    }
+  } catch (err) {
+    // Materialization is a side-effect — never block plan persistence
+    // on a materialization failure. Log and move on; cmdConfirmGoalPlan
+    // or the next adaptive-reschedule will retry.
+    console.warn(
+      `[goalPlanRepo.replacePlan] post-write materialization failed for goal ${goalId}:`,
+      err,
+    );
   }
 }
 

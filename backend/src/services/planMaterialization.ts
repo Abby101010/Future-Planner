@@ -22,6 +22,15 @@
 import type { GoalPlan, GoalPlanTask } from "@starward/core";
 import * as repos from "../repositories";
 
+/** Delete daily_tasks rows for this goal whose `plan_node_id` no longer
+ *  exists in `goal_plan_nodes`. Call this BEFORE `materializePlanTasks`
+ *  when a plan has been rewritten — otherwise the old (now-orphan) rows
+ *  keep showing up on the Tasks page alongside the new materializations.
+ *  Returns the delete count. */
+export async function pruneOrphanedPlanTasks(goalId: string): Promise<number> {
+  return repos.dailyTasks.removeOrphanedPlanTasks(goalId);
+}
+
 /** Walk the plan hierarchy, resolve day labels to dates, and insert
  *  `daily_tasks` rows for any task within the next 14 days. Idempotent:
  *  plan tasks already materialized (by plan_node_id) are skipped, so
