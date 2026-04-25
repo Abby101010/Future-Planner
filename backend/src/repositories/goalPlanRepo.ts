@@ -1118,3 +1118,74 @@ export async function listNextUncompletedTasks(
     };
   });
 }
+
+/**
+ * Find uncompleted task nodes scheduled for the FUTURE (after `asOfDate`)
+ * within `horizonDays`. Used by the smart task-rotation flow as the
+ * "future-day bonus" tier — when today's pipeline (today + overdue) is
+ * exhausted but the cognitive budget still has room, pull the next
+ * upcoming plan task and insert it as a bonus the user can complete in
+ * advance.
+ *
+ * Same dedup as listNextUncompletedTasks: excludes plan nodes that
+ * already have a daily_tasks row, so completing the future-day plan
+ * task today won't duplicate it tomorrow.
+ *
+ * Ordered by chronological soonest-first so we surface near-term bonus
+ * candidates before far-future ones.
+ */
+export async function listNextFutureTasks(
+  goalId: string | null,
+  asOfDate: string,
+  horizonDays: number = 7,
+  limit: number = 5,
+): Promise<GoalPlanTaskForCalendar[]> {
+  const userId = requireUserId();
+  const horizonEnd = new Date(asOfDate + "T00:00:00");
+  horizonEnd.setDate(horizonEnd.getDate() + Math.max(1, horizonDays));
+  const horizonStr = horizonEnd.toISOString().split("T")[0];
+
+  const params: unknown[] = goalId
+    ? [userId, asOfDate, horizonStr, limit, goalId]
+    : [userId, asOfDate, horizonStr, limit];
+
+  const rows = await query<
+    GoalPlanNodeRow & { day_date: string; goal_title: string; goal_importance: string }
+  >(
+    `select t.*, d.start_date as day_date, g.title as goal_title, g.priority as goal_importance
+     from goal_plan_nodes t
+     join goal_plan_nodes d on d.user_id = t.user_id and d.id = t.parent_id
+     join goals g on g.user_id = t.user_id and g.id = t.goal_id
+     left join daily_tasks dt on dt.user_id = t.user_id and dt.plan_node_id = t.id
+     where t.user_id = $1
+       and t.node_type = 'task'
+       and d.node_type = 'day'
+       and d.start_date > $2
+       and d.start_date <= $3
+       and (t.payload->>'completed')::boolean is not true
+       and dt.id is null
+       and g.status not in ('archived', 'completed')
+       and g.plan_confirmed = true
+       ${goalId ? "and t.goal_id = $5" : ""}
+     order by d.start_date asc, t.order_index asc
+     limit $4`,
+    params,
+  );
+
+  return rows.map((r) => {
+    const pl = parseJson(r.payload);
+    return {
+      id: r.id,
+      goalId: r.goal_id,
+      goalTitle: r.goal_title,
+      goalImportance: r.goal_importance ?? "medium",
+      title: r.title,
+      description: r.description,
+      date: r.day_date,
+      durationMinutes: (pl.durationMinutes as number) ?? 30,
+      priority: (pl.priority as string) ?? "should-do",
+      category: (pl.category as string) ?? "planning",
+      completed: false,
+    };
+  });
+}

@@ -1,16 +1,28 @@
 /**
- * Smart Task Rotation — triggered after a big goal task is completed.
+ * Smart Task Rotation — triggered after ANY task is completed.
  *
  * Checks remaining cognitive budget and auto-inserts the next best task
  * from any source (user pool or goal plans) into today's daily_tasks.
+ * Called from cmdToggleTask regardless of the completed task's `source`
+ * — completing a user-created task should refill the day just as
+ * completing a big-goal task does.
  *
  * Priority order:
  *   1. User-created pool tasks with today's date (user explicitly scheduled)
- *   2. Same goal, next chronological plan task
+ *   2. Same goal, next chronological plan task (today / overdue) —
+ *      skipped when completedGoalId is null
  *   3. Cross-goal: fairness scoring (underserved goals, importance, urgency)
  *   4. User-created pool tasks with no date (unscheduled general tasks)
+ *   5. Future-day plan tasks (within 7d horizon) — inserted as BONUS so
+ *      the user can complete tomorrow's work in advance when today is
+ *      done. Marked `priority: "bonus"` + `isBonus: true` to match the
+ *      cmdGenerateBonusTask convention; the FE shows them with the
+ *      same affordance.
  *
- * Only rotates 1 task at a time. Respects cognitive budget.
+ * Only rotates 1 task at a time. Respects cognitive budget. The 1:1
+ * "complete one → one new appears" cadence is intentional: looping to
+ * fill the budget at every completion would surprise the user. The
+ * task list stays the same size, just rotates fresh content in.
  */
 
 import * as crypto from "node:crypto";
@@ -69,7 +81,7 @@ function scoreCandidate(
 
 export async function rotateNextTask(
   completedTaskId: string,
-  completedGoalId: string,
+  completedGoalId: string | null,
   today: string,
 ): Promise<TaskRotationResult> {
   // 1. Budget check
@@ -136,20 +148,23 @@ export async function rotateNextTask(
     }
   }
 
-  // 3. Priority 2 — Same-goal plan tasks
-  const sameGoalTasks = await repos.goalPlan.listNextUncompletedTasks(
-    completedGoalId,
-    today,
-    3,
-  );
-  for (const candidate of sameGoalTasks) {
-    const weight = computeCognitiveWeight(
-      candidate.goalImportance,
-      candidate.durationMinutes,
-      candidate.priority,
+  // 3. Priority 2 — Same-goal plan tasks (skipped when no goalId, e.g.
+  //    after completing a user-created task with no plan attachment).
+  if (completedGoalId) {
+    const sameGoalTasks = await repos.goalPlan.listNextUncompletedTasks(
+      completedGoalId,
+      today,
+      3,
     );
-    if (weight <= remainingWeight) {
-      return insertPlanTask(candidate, weight, today, pkg.existingTasks.length, completedTaskId);
+    for (const candidate of sameGoalTasks) {
+      const weight = computeCognitiveWeight(
+        candidate.goalImportance,
+        candidate.durationMinutes,
+        candidate.priority,
+      );
+      if (weight <= remainingWeight) {
+        return insertPlanTask(candidate, weight, today, pkg.existingTasks.length, completedTaskId);
+      }
     }
   }
 
@@ -226,6 +241,33 @@ export async function rotateNextTask(
     }
   }
 
+  // 6. Priority 5 — Future-day plan tasks (bonus tier). Today's pipeline
+  //    is exhausted; pull tomorrow/+1/+2/... up to a 7-day horizon and
+  //    insert as a bonus the user can do in advance. Cross-goal so the
+  //    same fairness signal applies.
+  const futurePlanTasks = await repos.goalPlan.listNextFutureTasks(
+    null,
+    today,
+    7,
+    10,
+  );
+  for (const candidate of futurePlanTasks) {
+    const weight = computeCognitiveWeight(
+      candidate.goalImportance,
+      candidate.durationMinutes,
+      candidate.priority,
+    );
+    if (weight <= remainingWeight && candidate.durationMinutes <= pkg.budget.remainingMinutes) {
+      return insertBonusFutureTask(
+        candidate,
+        weight,
+        today,
+        pkg.existingTasks.length,
+        completedTaskId,
+      );
+    }
+  }
+
   return { rotated: false, reason: "no-candidates" };
 }
 
@@ -254,6 +296,58 @@ async function insertPlanTask(
       category: candidate.category || "planning",
       whyToday: `Auto-rotated: next task from ${candidate.goalTitle}`,
       source: "auto-rotated",
+      rotatedFromTaskId: completedTaskId,
+    },
+  });
+  return {
+    rotated: true,
+    reason: "inserted",
+    insertedTask: {
+      id: taskId,
+      title: candidate.title,
+      goalId: candidate.goalId,
+      goalTitle: candidate.goalTitle,
+    },
+  };
+}
+
+/**
+ * Insert a FUTURE-dated plan task as a bonus on today. The plan node's
+ * scheduled day is in the future (tomorrow / +N within the rotation
+ * horizon), but we let the user complete it today as a get-ahead bonus.
+ *
+ * Uses `priority: "bonus"` + `payload.isBonus: true` so it matches the
+ * cmdGenerateBonusTask convention — the FE renders bonuses with a
+ * distinct affordance and the view excludes them from KPIs (see
+ * tasksView.ts:354 `!isBonusTask(t)`).
+ */
+async function insertBonusFutureTask(
+  candidate: GoalPlanTaskForCalendar,
+  weight: number,
+  today: string,
+  orderIndex: number,
+  completedTaskId: string,
+): Promise<TaskRotationResult> {
+  const taskId = crypto.randomUUID();
+  await repos.dailyTasks.insert({
+    id: taskId,
+    date: today,
+    goalId: candidate.goalId,
+    planNodeId: candidate.id,
+    title: candidate.title,
+    completed: false,
+    orderIndex,
+    source: "big_goal" as TaskSource,
+    payload: {
+      description: candidate.description || "",
+      durationMinutes: candidate.durationMinutes,
+      cognitiveWeight: weight,
+      priority: "bonus",
+      category: candidate.category || "planning",
+      whyToday: `Bonus: working ahead on ${candidate.goalTitle} (${candidate.date})`,
+      source: "auto-rotated-bonus",
+      isBonus: true,
+      originallyScheduledFor: candidate.date,
       rotatedFromTaskId: completedTaskId,
     },
   });

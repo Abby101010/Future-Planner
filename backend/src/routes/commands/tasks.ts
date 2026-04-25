@@ -100,24 +100,35 @@ export async function cmdToggleTask(
       }
     }
 
-    // Big goal auto-completion: when a big_goal task is completed,
-    // recalculate goal progress and auto-complete if all tasks are done.
+    // Big-goal-specific: recalculate goal progress so the per-goal
+    // dashboard reflects this completion.
     if (task && task.source === "big_goal" && task.goalId && next) {
       try {
         await recalcGoalProgress(task.goalId);
       } catch (err) {
         console.warn("[toggle-task] goal progress recalc failed:", err);
       }
+    }
 
-      // Smart task rotation: fill freed budget with next best task
+    // Smart task rotation: any completion frees cognitive budget, so
+    // try to backfill with the next best task — regardless of whether
+    // the completed task came from a big goal or was user-created.
+    // rotateNextTask handles the priority order including a future-day
+    // bonus tier (see coordinators/dailyPlanner/taskRotation.ts JSDoc).
+    if (task && next) {
       const userId = getCurrentUserId();
       const tz = timezoneStore.getStore() || "UTC";
       const todayForRotation = getEffectiveDate();
+      const goalIdForRotation = task.goalId ?? null;
       setImmediate(() => {
         runWithUserId(userId, () =>
           timezoneStore.run(tz, async () => {
             try {
-              const result = await rotateNextTask(taskId, task.goalId!, todayForRotation);
+              const result = await rotateNextTask(
+                taskId,
+                goalIdForRotation,
+                todayForRotation,
+              );
               if (result.rotated) {
                 emitViewInvalidate(userId, {
                   viewKinds: ["view:tasks", "view:dashboard"],
