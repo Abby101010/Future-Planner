@@ -69,12 +69,36 @@ export async function cmdUpsertReminder(
   return { ok: true, reminderId: id };
 }
 
+/**
+ * Pick a single reminder id from the body. Canonical key is `id` per
+ * API_CONTRACT.md (line 340–341). `reminderId` is accepted as a legacy
+ * fallback so any caller still on the off-spec shape during a deploy
+ * window doesn't 500. New code should send `id`.
+ */
+function pickReminderId(body: Record<string, unknown>): string | undefined {
+  const id = body.id;
+  if (typeof id === "string" && id) return id;
+  const legacy = body.reminderId;
+  if (typeof legacy === "string" && legacy) return legacy;
+  return undefined;
+}
+
+/** Same accept-either rule for batch ops: `ids` is canonical, `reminderIds`
+ *  is the legacy fallback. */
+function pickReminderIds(body: Record<string, unknown>): string[] | undefined {
+  const ids = body.ids;
+  if (Array.isArray(ids)) return ids as string[];
+  const legacy = body.reminderIds;
+  if (Array.isArray(legacy)) return legacy as string[];
+  return undefined;
+}
+
 export async function cmdAcknowledgeReminder(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const reminderId = body.reminderId as string | undefined;
+  const reminderId = pickReminderId(body);
   if (!reminderId) {
-    throw new Error("command:acknowledge-reminder requires args.reminderId");
+    throw new Error("command:acknowledge-reminder requires args.id");
   }
   await repos.reminders.acknowledge(reminderId);
   return { ok: true, reminderId };
@@ -83,9 +107,9 @@ export async function cmdAcknowledgeReminder(
 export async function cmdDeleteReminder(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const reminderId = body.reminderId as string | undefined;
+  const reminderId = pickReminderId(body);
   if (!reminderId) {
-    throw new Error("command:delete-reminder requires args.reminderId");
+    throw new Error("command:delete-reminder requires args.id");
   }
   await repos.reminders.remove(reminderId);
   return { ok: true, reminderId };
@@ -94,10 +118,10 @@ export async function cmdDeleteReminder(
 export async function cmdDeleteRemindersBatch(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const ids = body.reminderIds as string[] | undefined;
+  const ids = pickReminderIds(body);
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new Error(
-      "command:delete-reminders-batch requires args.reminderIds (non-empty array)",
+      "command:delete-reminders-batch requires args.ids (non-empty array)",
     );
   }
   let deletedCount = 0;

@@ -163,11 +163,14 @@ export async function dispatchChatIntent(
         i.action === "delete_all",
       );
       if (i.action === "delete" || i.action === "delete_all") {
+        // Canonical contract per API_CONTRACT.md is `{id}` / `{ids}`.
+        // Backend tolerates the legacy `reminderId` / `reminderIds`
+        // names too, but new callers should use the documented shape.
         if (resolved.length === 1) {
-          await run(cmd("command:delete-reminder"), { reminderId: resolved[0].id });
+          await run(cmd("command:delete-reminder"), { id: resolved[0].id });
         } else if (resolved.length > 1) {
           await run(cmd("command:delete-reminders-batch"), {
-            reminderIds: resolved.map((r) => r.id),
+            ids: resolved.map((r) => r.id),
           });
         }
       } else if (i.action === "edit") {
@@ -199,7 +202,7 @@ export async function dispatchChatIntent(
         }
       } else if (i.action === "acknowledge") {
         for (const target of resolved) {
-          await run(cmd("command:acknowledge-reminder"), { reminderId: target.id });
+          await run(cmd("command:acknowledge-reminder"), { id: target.id });
         }
       }
       break;
