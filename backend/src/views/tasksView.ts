@@ -434,8 +434,14 @@ export async function resolveTasksView(): Promise<TasksView> {
     tasksByDate.set(t.date, arr);
   }
 
+  // Goal title lookup so hydrated tasks carry `goalTitle` for the
+  // "from <goal>" subtext on TaskRow + Calendar side view. The same
+  // map is reused by the suggested-reschedule + overflow paths
+  // further down (see goalMap reference below).
+  const goalMap = new Map(goals.map((g) => [g.id, g.title]));
+
   let hydratedLogs: DailyLog[] = logs
-    .map((log) => hydrateDailyLog(log, tasksByDate.get(log.date) ?? []))
+    .map((log) => hydrateDailyLog(log, tasksByDate.get(log.date) ?? [], goalMap))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
   const todayLogRaw = hydratedLogs.find((l) => l.date === today) ?? null;
@@ -451,7 +457,7 @@ export async function resolveTasksView(): Promise<TasksView> {
       await repos.dailyLogs.ensureExists(today);
       const freshLog = await repos.dailyLogs.get(today);
       if (freshLog) {
-        resolvedTodayLog = hydrateDailyLog(freshLog, todayTaskRecords);
+        resolvedTodayLog = hydrateDailyLog(freshLog, todayTaskRecords, goalMap);
         hydratedLogs = [resolvedTodayLog, ...hydratedLogs];
       }
     }
@@ -678,7 +684,8 @@ export async function resolveTasksView(): Promise<TasksView> {
   // just a confirmation card asking the user to pick a new day.
   // (pendingRescheduleRaw was fetched in the initial parallel batch.)
   const pendingRescheduleRecords = pendingRescheduleRaw;
-  const goalMap = new Map(goals.map((g) => [g.id, g.title]));
+  // goalMap was built earlier (above hydratedLogs) so hydrate calls can
+  // attach goalTitle. Reused here for the reschedule + overflow paths.
 
   // Compute suggested reschedule dates by looking at cognitive load for
   // each of the next 7 days. We recommend the day with the lightest load

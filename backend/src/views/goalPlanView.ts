@@ -146,9 +146,12 @@ export async function resolveGoalPlanView(
   }
   const taskRecords = await repos.dailyTasks.listForDateRange(today, rangeEnd);
   const { flattenDailyTask } = await import("./_mappers");
+  // Single-entry goalsById so scheduledTasks carry goalTitle for the
+  // "from <goal>" subtext in the calendar embed.
+  const goalsById = new Map<string, string>([[goal.id, goal.title]]);
   const scheduledTasks: DailyTask[] = taskRecords
     .filter((r) => (r.payload as Record<string, unknown>).scheduledTime)
-    .map((r) => flattenDailyTask(r, r.date));
+    .map((r) => flattenDailyTask(r, r.date, goalsById));
 
   // Pace mismatch detection for this goal — use the reconstructed plan
   // (same data the UI displays), not the inline goal.plan which may lag.

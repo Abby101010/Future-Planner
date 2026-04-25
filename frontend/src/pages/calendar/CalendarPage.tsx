@@ -564,6 +564,7 @@ function DateSideView({
               >
                 {fmtHM(t.scheduledStartIso)}
                 {t.estimatedDurationMinutes ? ` · ${t.estimatedDurationMinutes}m` : ""}
+                {t.goalTitle ? ` · ${t.goalTitle}` : ""}
               </div>
             </div>
           </div>
@@ -1132,6 +1133,20 @@ function DayBlock({ task, onChange }: { task: DailyTask; onChange: () => void })
       >
         {task.title}
       </div>
+      {task.goalTitle && (
+        <div
+          style={{
+            fontSize: 9,
+            color: "var(--fg-faint)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            marginTop: 1,
+          }}
+        >
+          {task.goalTitle}
+        </div>
+      )}
       <div
         onMouseDown={(e) => startDrag(e, "resize")}
         style={{

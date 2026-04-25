@@ -354,6 +354,12 @@ export interface DailyTask {
   goalId?: string | null;
   /** Source GoalPlanTask.id when this task was picked from a plan. */
   planNodeId?: string | null;
+  /** Source goal's display title — populated by view resolvers when a
+   *  goalId is set. The FE TaskRow shows this as a minimalistic
+   *  "from <goal>" subtext so the user can see at a glance which goal
+   *  a task belongs to without opening the goal. Optional because not
+   *  every task is plan-attached (user-created tasks have no goal). */
+  goalTitle?: string;
   // ── Calendar-unified fields (optional) ──
   /** Date this task is scheduled for (YYYY-MM-DD, populated by calendar view). */
   date?: string;

@@ -70,6 +70,7 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     vacationState,
     monthlyContexts,
     user,
+    goalsForTitles,
   ] = await Promise.all([
     repos.dailyTasks.listForDate(today),
     repos.pendingTasks.list(),
@@ -79,11 +80,19 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     repos.vacationMode.get(),
     repos.monthlyContext.list(),
     repos.users.get(),
+    repos.goals.list(),
   ]);
 
   const greetingName = user?.name?.trim() || "";
 
-  const todayTasks: DailyTask[] = todayTaskRecords.map((r) => flattenDailyTask(r));
+  // Goal title lookup so flattenDailyTask can attach `goalTitle` for
+  // TaskRow's "from <goal>" subtext. See _mappers.ts JSDoc.
+  const goalsById = new Map<string, string>(
+    goalsForTitles.map((g) => [g.id, g.title]),
+  );
+  const todayTasks: DailyTask[] = todayTaskRecords.map((r) =>
+    flattenDailyTask(r, undefined, goalsById),
+  );
   const recentNudges: ContextualNudge[] = nudgeRecords.map(nudgeToContextual);
 
   const pendingTasks: PendingTask[] = pendingRecords.map((p) => {

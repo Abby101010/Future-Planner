@@ -14,7 +14,19 @@ import type { DailyLogRecord } from "../repositories/dailyLogsRepo";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 import type { NudgeRecord } from "../repositories/nudgesRepo";
 
-export function flattenDailyTask(r: DailyTaskRecord, date?: string): DailyTask {
+/** Flatten a DailyTaskRecord into the @starward/core DailyTask shape.
+ *
+ *  Optional `goalsById` lets view resolvers attach the source goal's
+ *  display title onto each task — picked up by TaskRow + Calendar
+ *  side view as a minimalistic subtext ("from <Goal>") so users can
+ *  see at a glance which goal a task belongs to. Pass it whenever
+ *  the caller has already loaded `repos.goals.list()`; without it the
+ *  field is left undefined and TaskRow simply omits the subtext. */
+export function flattenDailyTask(
+  r: DailyTaskRecord,
+  date?: string,
+  goalsById?: Map<string, string>,
+): DailyTask {
   const p = r.payload || {};
   const recurring = p.recurring as DailyTask["recurring"] | undefined;
   return {
@@ -36,6 +48,7 @@ export function flattenDailyTask(r: DailyTaskRecord, date?: string): DailyTask {
     skipped: p.skipped as boolean | undefined,
     source: r.source,
     goalId: r.goalId ?? null,
+    goalTitle: r.goalId ? goalsById?.get(r.goalId) : undefined,
     planNodeId: r.planNodeId ?? null,
     // Calendar-unified fields
     date: date ?? r.date,
@@ -62,13 +75,14 @@ export function flattenDailyTask(r: DailyTaskRecord, date?: string): DailyTask {
 export function hydrateDailyLog(
   log: DailyLogRecord,
   taskRecords: DailyTaskRecord[],
+  goalsById?: Map<string, string>,
 ): DailyLog {
   const p = log.payload || {};
   return {
     id: (p.id as string) ?? `log-${log.date}`,
     userId: (p.userId as string) ?? "",
     date: log.date,
-    tasks: taskRecords.map((r) => flattenDailyTask(r)),
+    tasks: taskRecords.map((r) => flattenDailyTask(r, undefined, goalsById)),
     heatmapEntry: (p.heatmapEntry as DailyLog["heatmapEntry"]) ?? {
       date: log.date,
       completionLevel: 0,

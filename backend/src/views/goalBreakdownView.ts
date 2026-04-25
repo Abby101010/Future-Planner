@@ -235,10 +235,18 @@ export async function resolveGoalBreakdownView(
   const endISO = end.toISOString().split("T")[0];
 
   const taskRecords = await repos.dailyTasks.listForDateRange(today, endISO);
+  // Build goalId→title map so scheduledTasks carry goalTitle for the
+  // "from <goal>" subtext on TaskRow / Calendar side view. Cross-goal
+  // here because scheduledTasks aren't necessarily scoped to one goal
+  // when goalId is omitted (the legacy cross-goal path).
+  const allGoalsForTitles = await repos.goals.list();
+  const goalsById = new Map<string, string>(
+    allGoalsForTitles.map((g) => [g.id, g.title]),
+  );
   const scheduledTasks = taskRecords
     .filter((r) => (r.payload as Record<string, unknown>).scheduledTime)
     .filter((r) => !goalId || r.goalId === goalId)
-    .map((r) => flattenDailyTask(r, r.date));
+    .map((r) => flattenDailyTask(r, r.date, goalsById));
 
   let goalBreakdown: GoalBreakdown | null = null;
   if (goalId) {

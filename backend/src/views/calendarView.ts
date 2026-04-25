@@ -168,7 +168,9 @@ export async function resolveCalendarView(
     (r) => r.date >= startDate && r.date <= endDate,
   );
 
-  const tasks = taskRecords.map((r) => flattenDailyTask(r, r.date));
+  // Build goalId→title map so TaskRow / side view can show "from <goal>".
+  const goalsById = new Map<string, string>(goals.map((g) => [g.id, g.title]));
+  const tasks = taskRecords.map((r) => flattenDailyTask(r, r.date, goalsById));
   const expanded = expandRecurring(tasks, startDate, endDate);
 
   // Deduplicate: filter out goal plan tasks that already have a
