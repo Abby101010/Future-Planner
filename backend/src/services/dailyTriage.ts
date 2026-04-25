@@ -187,14 +187,29 @@ export async function lightTriage(
     }
   }
 
-  // Step 4 — auto-cap the active list at the cognitive budget. Active
-  // = not completed, not skipped, not already-bonus. Anything beyond
-  // MAX_DAILY_TASKS (after sorted) gets demoted to bonus tier.
-  // must-do tasks are protected. Plan-attached tasks ARE demoted —
-  // the plan tree retains them; rotation re-promotes as the user
-  // completes. Without this, multi-goal users land over-budget and
-  // the FE can never bring the active count back to budget without
-  // user intervention.
+  // Step 4 — auto-cap the active list. Active = not completed, not
+  // skipped, not already-bonus. Anything beyond `cap` (after sorted)
+  // gets demoted to bonus tier. must-do tasks are protected.
+  // Plan-attached tasks ARE demoted — the plan tree retains them;
+  // rotation re-promotes as the user completes.
+  //
+  // Cap precedence: the user's monthly busyness signal
+  // (monthly_contexts.maxDailyTasks, set by FE MonthlyIntensityCard
+  // via the analyze-monthly-context handler) wins over the default
+  // ceiling. This is what makes "intense month" actually trim the
+  // active list to 1, not just shape the LLM prompt. Falls back to
+  // the default ceiling on any read error or absent context. Logged
+  // with `cap` + `source` so the cap origin is observable in logs.
+  const monthKey = date.slice(0, 7);
+  let monthly: Awaited<ReturnType<typeof repos.monthlyContext.get>> = null;
+  try {
+    monthly = await repos.monthlyContext.get(monthKey);
+  } catch (err) {
+    console.warn("[triage] monthly load failed:", err);
+  }
+  const cap = monthly?.maxDailyTasks ?? COGNITIVE_BUDGET.MAX_DAILY_TASKS;
+  const capSource = monthly ? "monthly" : "default";
+
   let demoted = 0;
   const activeForCap = sorted.filter((t) => {
     if (t.completed) return false;
@@ -204,7 +219,7 @@ export async function lightTriage(
     return true;
   });
 
-  if (activeForCap.length > COGNITIVE_BUDGET.MAX_DAILY_TASKS) {
+  if (activeForCap.length > cap) {
     const isProtected = (t: DailyTaskRecord): boolean => {
       const pl = t.payload as Record<string, unknown>;
       return pl.priority === "must-do";
@@ -212,7 +227,7 @@ export async function lightTriage(
     // The TAIL (lowest tier + lowest cost) of `activeForCap` is the
     // demotion candidate set. We've already sorted by (tier asc, cost
     // desc) — so just walk from the bottom up, skipping protected.
-    let toDemote = activeForCap.length - COGNITIVE_BUDGET.MAX_DAILY_TASKS;
+    let toDemote = activeForCap.length - cap;
     for (let i = activeForCap.length - 1; i >= 0 && toDemote > 0; i--) {
       const t = activeForCap[i];
       if (isProtected(t)) continue;
@@ -257,7 +272,7 @@ export async function lightTriage(
   }
 
   console.log(
-    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted}`,
+    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted} cap=${cap} source=${capSource}`,
   );
 
   return {

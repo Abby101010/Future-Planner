@@ -70,8 +70,12 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:defer-overflow": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:undo-defer": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:trim-today": ["view:dashboard", "view:tasks", "view:calendar"],
-  "command:save-monthly-context": ["view:planning", "view:dashboard"],
-  "command:delete-monthly-context": ["view:planning", "view:dashboard"],
+  // Monthly context drives the lightTriage cap on view:tasks (see
+  // services/dailyTriage.ts), so writes must invalidate view:tasks
+  // too — otherwise the FE month-start nudge stays visible until the
+  // next manual refetch.
+  "command:save-monthly-context": ["view:planning", "view:dashboard", "view:tasks"],
+  "command:delete-monthly-context": ["view:planning", "view:dashboard", "view:tasks"],
   "command:update-settings": ["view:settings"],
   "command:complete-onboarding": ["view:onboarding", "view:dashboard"],
   "command:reset-data": ALL_QUERY_KINDS,
