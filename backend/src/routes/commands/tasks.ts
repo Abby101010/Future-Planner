@@ -31,10 +31,19 @@ import { rotateNextTask } from "../../coordinators/dailyPlanner/taskRotation";
  * the FE can call `command:create-task` with as little as `{title}` and
  * get a valid task scheduled for today. Older code paths that send
  * explicit `date` keep working unchanged.
+ *
+ * Cognitive-budget interaction: when the target date is already at-or-
+ * over `COGNITIVE_BUDGET.MAX_DAILY_TASKS`, the new task is auto-tagged
+ * `priority: "bonus"` + `payload.isBonus: true`. We don't refuse the
+ * insert (the user explicitly asked for it) — we just classify it
+ * correctly so it renders in the bonus tier instead of stretching
+ * today's active list past capacity. tasksView.ts:354 filters bonus
+ * tasks out of active KPIs, so progress reads stay honest.
  */
 export async function cmdCreateTask(
   body: Record<string, unknown>,
 ): Promise<unknown> {
+  const { COGNITIVE_BUDGET } = await import("@starward/core");
   const id = (body.id as string | undefined) ?? crypto.randomUUID();
   const title = body.title as string | undefined;
   if (!title || !title.trim()) {
@@ -50,6 +59,14 @@ export async function cmdCreateTask(
   const source = (body.source as TaskSource | undefined)
     ?? (body.goalId ? "big_goal" : "user_created");
   const existing = await repos.dailyTasks.listForDate(date);
+
+  // Auto-bonus when the day is already at capacity. Caller can override
+  // by explicitly setting payload.priority — we only auto-tag when the
+  // caller didn't pre-specify a priority.
+  if (existing.length >= COGNITIVE_BUDGET.MAX_DAILY_TASKS && !payload.priority) {
+    payload.priority = "bonus";
+    payload.isBonus = true;
+  }
   // Dual-write: if payload supplies legacy HH:MM schedule, also populate ISO columns.
   const tz = timezoneStore.getStore() || "UTC";
   const scheduledStartIso = composeIso(date, payload.scheduledTime as string | undefined, tz);

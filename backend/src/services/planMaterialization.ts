@@ -19,6 +19,7 @@
  * point eliminates the "forgot to materialize" bug class.
  */
 
+import { COGNITIVE_BUDGET } from "@starward/core";
 import type { GoalPlan, GoalPlanTask } from "@starward/core";
 import * as repos from "../repositories";
 
@@ -35,7 +36,15 @@ export async function pruneOrphanedPlanTasks(goalId: string): Promise<number> {
  *  `daily_tasks` rows for any task within the next 14 days. Idempotent:
  *  plan tasks already materialized (by plan_node_id) are skipped, so
  *  calling twice in a row is safe. Returns how many new rows were
- *  inserted. */
+ *  inserted.
+ *
+ *  ⚠ Cognitive budget cap: each calendar day gets at most
+ *  `COGNITIVE_BUDGET.MAX_DAILY_TASKS` plan-derived rows. Plan tasks
+ *  beyond that are LEFT UN-MATERIALIZED in the plan tree. They flow
+ *  in via `rotateNextTask` (already budget-aware) when the user
+ *  completes a task on that day, OR get materialized later when
+ *  capacity frees up. This stops a multi-goal user from waking up to
+ *  a 10-task day that exceeds the documented capacity ceiling. */
 export async function materializePlanTasks(
   goalId: string,
   plan: GoalPlan | null,
@@ -73,9 +82,25 @@ export async function materializePlanTasks(
     existingTasks.filter((t) => t.planNodeId).map((t) => t.planNodeId),
   );
 
+  // Pre-count existing rows per date so the budget cap accounts for
+  // tasks already there (from another goal's prior materialization,
+  // user-created tasks, etc.). We update this map in-loop as we
+  // insert so a single materialize call can't itself overflow.
+  const countByDate = new Map<string, number>();
+  for (const t of existingTasks) {
+    countByDate.set(t.date, (countByDate.get(t.date) ?? 0) + 1);
+  }
+  const MAX = COGNITIVE_BUDGET.MAX_DAILY_TASKS;
+
   let count = 0;
   for (const { date, task } of tasksToMaterialize) {
     if (existingPlanNodeIds.has(task.id)) continue;
+    if ((countByDate.get(date) ?? 0) >= MAX) {
+      // Day at capacity — leave this plan task in the tree. Rotation
+      // (or a future materialize after a completion frees a slot)
+      // will pick it up.
+      continue;
+    }
     const taskId = `plan-${goalId.slice(0, 8)}-${task.id}`;
     try {
       const existing = await repos.dailyTasks.listForDate(date);
@@ -99,6 +124,7 @@ export async function materializePlanTasks(
         },
       });
       count++;
+      countByDate.set(date, (countByDate.get(date) ?? 0) + 1);
     } catch {
       // Duplicate key — already materialized, safe to skip.
     }
