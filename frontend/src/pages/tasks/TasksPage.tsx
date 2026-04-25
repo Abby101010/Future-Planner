@@ -24,6 +24,15 @@ import type {
   UINudge,
 } from "./tasksTypes";
 
+/** A task is "off the active list" when it's been completed OR skipped.
+ *  Mirrors the backend contract in backend/src/views/tasksView.ts:354
+ *  (`!t.skipped && !isBonusTask(t)`): skipped tasks don't count toward
+ *  today's active KPIs and shouldn't render in the active list. Keep
+ *  this predicate in sync with the backend filter. */
+function isOffActiveList(t: UITask): boolean {
+  return Boolean(t.done ?? t.completed) || Boolean(t.skipped);
+}
+
 interface TasksView {
   tasks?: UITask[];
   reminders?: UIReminder[];
@@ -237,11 +246,11 @@ export default function TasksPage() {
     setChatOpen(true);
   }
 
-  const visibleTasks = showDone ? tasks : tasks.filter((t) => !(t.done ?? t.completed));
+  const visibleTasks = showDone ? tasks : tasks.filter((t) => !isOffActiveList(t));
   const doneCount = tasks.filter((t) => t.done ?? t.completed).length;
-  const leftCount = tasks.length - doneCount;
+  const leftCount = tasks.filter((t) => !isOffActiveList(t)).length;
   const plannedMin = tasks
-    .filter((t) => !(t.done ?? t.completed))
+    .filter((t) => !isOffActiveList(t))
     .reduce((sum, t) => sum + (t.duration ?? t.estimatedDurationMinutes ?? 0), 0);
   const plannedLabel = `${Math.floor(plannedMin / 60)}h ${plannedMin % 60}m`;
 

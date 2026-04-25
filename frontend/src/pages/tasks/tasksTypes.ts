@@ -13,6 +13,10 @@ export interface UITask {
   scheduledStartIso?: string;
   done?: boolean;
   completed?: boolean;
+  /** Set when the user clicked "skip" — the task remains in `tasks[]`
+   *  but is off the active list. Treat skipped == not visible in
+   *  today's active rendering (mirrors backend tasksView.ts:354). */
+  skipped?: boolean;
   weight?: "must" | "should" | "nice" | string;
   timeBlock?: string;
   tag?: string;
