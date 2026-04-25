@@ -30,6 +30,7 @@ export type CommandKind =
   | "command:delete-reminders-batch"
   | "command:defer-overflow"
   | "command:undo-defer"
+  | "command:trim-today"
   | "command:save-monthly-context"
   | "command:delete-monthly-context"
   | "command:update-settings"

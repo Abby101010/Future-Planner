@@ -37,6 +37,7 @@ import {
   cmdCreatePendingTask,
   cmdDeferOverflow,
   cmdUndoDefer,
+  cmdTrimToday,
   cmdDismissNudge,
   cmdRescheduleTask,
   cmdSnoozeReschedule,
@@ -174,6 +175,9 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:undo-defer":
         result = await cmdUndoDefer(body);
+        break;
+      case "command:trim-today":
+        result = await cmdTrimToday(body);
         break;
       case "command:save-monthly-context":
         result = await cmdSaveMonthlyContext(body);

@@ -69,6 +69,7 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:delete-reminders-batch": ["view:dashboard", "view:tasks", "view:settings", "view:calendar"],
   "command:defer-overflow": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:undo-defer": ["view:dashboard", "view:tasks", "view:calendar"],
+  "command:trim-today": ["view:dashboard", "view:tasks", "view:calendar"],
   "command:save-monthly-context": ["view:planning", "view:dashboard"],
   "command:delete-monthly-context": ["view:planning", "view:dashboard"],
   "command:update-settings": ["view:settings"],

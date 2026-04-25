@@ -25,6 +25,7 @@ export {
   cmdCreatePendingTask,
   cmdDeferOverflow,
   cmdUndoDefer,
+  cmdTrimToday,
   cmdDismissNudge,
   cmdRescheduleTask,
   cmdSnoozeReschedule,

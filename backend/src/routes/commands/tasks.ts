@@ -1087,3 +1087,118 @@ export async function cmdAnalyzeImage(
   // this command intentionally does NOT write to the DB.
   return { ok: true, result };
 }
+
+/**
+ * Trim today's daily_tasks to the cognitive-budget ceiling by
+ * demoting the lowest-priority excess to bonus tier.
+ *
+ * Lifecycle:
+ *   1. Load incomplete, un-skipped tasks for today.
+ *   2. Sort: protected first (must-do, plan-attached), then by tier +
+ *      cognitiveCost desc.
+ *   3. Anything beyond MAX_DAILY_TASKS (default 5) gets demoted —
+ *      payload.priority="bonus", payload.isBonus=true. tasksView's
+ *      isBonusTask filter then keeps them off the active list while
+ *      they remain reversible (undo: just clear isBonus).
+ *
+ * Why a separate command instead of a SQL trim:
+ *   - Reversible (priority/isBonus, not delete).
+ *   - Consults the same TIER_RANK that the scheduler uses.
+ *   - Plan-attached + must-do tasks are PROTECTED — never demoted.
+ *
+ * Use case: a user lands on Tasks with > MAX_DAILY_TASKS rows from a
+ * pre-budget-cap day (or after disabling the cap). One click resets
+ * the active list to a coordinated size without losing data.
+ *
+ * No LLM call. Pure deterministic re-classification. Fires
+ * view:invalidate on completion.
+ */
+export async function cmdTrimToday(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const { COGNITIVE_BUDGET } = await import("@starward/core");
+  const date = (body.date as string | undefined) || getEffectiveDate();
+  const all = await repos.dailyTasks.listForDate(date);
+
+  // Active set = not completed, not skipped, not already bonus.
+  const active = all.filter((t) => {
+    if (t.completed) return false;
+    const pl = t.payload as Record<string, unknown>;
+    if (pl.skipped) return false;
+    if (pl.priority === "bonus" || pl.isBonus) return false;
+    return true;
+  });
+
+  if (active.length <= COGNITIVE_BUDGET.MAX_DAILY_TASKS) {
+    return { ok: true, demoted: 0, alreadyAtBudget: true, total: active.length };
+  }
+
+  const TIER_RANK: Record<string, number> = {
+    lifetime: 0,
+    quarter: 1,
+    week: 2,
+    day: 3,
+  };
+  const tierRank = (t: typeof active[number]): number => {
+    const tier =
+      (t.tier as string | undefined) ??
+      ((t.payload as Record<string, unknown>)?.tier as string | undefined);
+    return tier && TIER_RANK[tier] !== undefined ? TIER_RANK[tier] : 2.5;
+  };
+  const isProtected = (t: typeof active[number]): boolean => {
+    // Plan-attached tasks (big_goal source with a planNodeId) are part
+    // of the user's committed plan — never auto-demote them. Same for
+    // explicit must-do priority.
+    const pl = t.payload as Record<string, unknown>;
+    if (pl.priority === "must-do") return true;
+    if (t.source === "big_goal" && t.planNodeId) return true;
+    return false;
+  };
+
+  // Sort: protected first, then tier asc, then cost desc. The TAIL of
+  // this sort is the demote candidate set.
+  const sorted = [...active].sort((a, b) => {
+    const aProt = isProtected(a) ? 0 : 1;
+    const bProt = isProtected(b) ? 0 : 1;
+    if (aProt !== bProt) return aProt - bProt;
+    const aTier = tierRank(a);
+    const bTier = tierRank(b);
+    if (aTier !== bTier) return aTier - bTier;
+    const aCost = (a.cognitiveCost as number | null) ?? 0;
+    const bCost = (b.cognitiveCost as number | null) ?? 0;
+    return bCost - aCost;
+  });
+
+  const keep = sorted.slice(0, COGNITIVE_BUDGET.MAX_DAILY_TASKS);
+  const demote = sorted.slice(COGNITIVE_BUDGET.MAX_DAILY_TASKS);
+
+  let demoted = 0;
+  for (const t of demote) {
+    if (isProtected(t)) continue; // belt-and-suspenders
+    try {
+      await repos.dailyTasks.update(t.id, {
+        payload: {
+          priority: "bonus",
+          isBonus: true,
+          demotedFrom:
+            (t.payload as Record<string, unknown>)?.priority ?? "should-do",
+          demotedAt: new Date().toISOString(),
+        },
+      });
+      demoted++;
+    } catch (err) {
+      console.warn(`[trim-today] demote ${t.id} failed:`, err);
+    }
+  }
+
+  console.log(
+    `[trim-today] date=${date} active=${active.length} kept=${keep.length} demoted=${demoted}`,
+  );
+
+  return {
+    ok: true,
+    demoted,
+    kept: keep.length,
+    total: active.length,
+  };
+}

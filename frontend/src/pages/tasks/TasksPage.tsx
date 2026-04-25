@@ -105,6 +105,13 @@ export default function TasksPage() {
     await run("command:refresh-daily-plan", {});
     refetchAll();
   });
+  // One-shot: demote excess incomplete tasks to bonus tier so today's
+  // active list lands at the cognitive-budget ceiling. Reversible —
+  // payload.demotedFrom records the original priority.
+  const trimToday = wrap(async () => {
+    await run("command:trim-today", {});
+    refetchAll();
+  });
   const regenerateDaily = wrap(async () => {
     const r = await run<{ jobId?: string }>("command:regenerate-daily-tasks", {});
     if (r?.jobId) startJob(r.jobId, "Regenerating daily tasks");
@@ -289,6 +296,17 @@ export default function TasksPage() {
               disabled={running}
             >
               Refresh
+            </Button>
+            <Button
+              tone="ghost"
+              size="sm"
+              onClick={trimToday}
+              data-api="POST /commands/trim-today"
+              data-testid="tasks-trim-today"
+              disabled={running}
+              title="Demote excess tasks to bonus tier (cognitive budget = 5)"
+            >
+              Trim to budget
             </Button>
             <Button
               tone="ghost"
