@@ -85,6 +85,13 @@ export async function cmdCreateTask(
     scheduledEndIso,
   });
   await repos.dailyLogs.ensureExists(date);
+
+  // Fire-and-forget light triage: annotate the new row + re-sort the
+  // day. Caller-perceived latency unchanged. See
+  // services/dailyTriage.ts for the contract.
+  const { fireLightTriage } = await import("../../services/dailyTriageDispatch");
+  fireLightTriage(date);
+
   return { ok: true, taskId: id };
 }
 
@@ -160,9 +167,24 @@ export async function cmdToggleTask(
                 todayForRotation,
               );
               if (result.rotated) {
-                emitViewInvalidate(userId, {
-                  viewKinds: ["view:tasks", "view:dashboard"],
-                });
+                // Rotation inserted a new row — run triage so its
+                // tier/cost gets annotated and the day re-orders.
+                // Triage emits its own view:invalidate; no need to
+                // duplicate it here.
+                try {
+                  const { lightTriage } = await import(
+                    "../../services/dailyTriage"
+                  );
+                  await lightTriage(todayForRotation);
+                } catch (triageErr) {
+                  console.warn(
+                    "[toggle-task] post-rotation triage failed:",
+                    triageErr,
+                  );
+                  emitViewInvalidate(userId, {
+                    viewKinds: ["view:tasks", "view:dashboard"],
+                  });
+                }
               }
             } catch (err) {
               console.warn("[toggle-task] smart rotation failed:", err);

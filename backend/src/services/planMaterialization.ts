@@ -129,6 +129,26 @@ export async function materializePlanTasks(
       // Duplicate key — already materialized, safe to skip.
     }
   }
+
+  // Fire-and-forget light triage for each date that received new rows.
+  // Each call is one LLM round-trip max (annotator); they run in
+  // parallel and don't block the materialize result. The user's plan
+  // confirm/regenerate returns immediately; the rows reorder ~1-2s
+  // later via the triage's view:invalidate.
+  if (count > 0) {
+    const touchedDates = Array.from(countByDate.entries())
+      .filter(([, n]) => n > 0)
+      .map(([d]) => d);
+    if (touchedDates.length > 0) {
+      try {
+        const { fireLightTriage } = await import("./dailyTriageDispatch");
+        for (const d of touchedDates) fireLightTriage(d);
+      } catch (err) {
+        console.warn("[materialize] triage dispatch failed:", err);
+      }
+    }
+  }
+
   return count;
 }
 
