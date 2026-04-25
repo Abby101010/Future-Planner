@@ -49,8 +49,7 @@ export default function DashboardTab({ goalId }: DashboardTabProps) {
   });
   const { run, running } = useCommand();
   const setChatOpen = useStore((s) => s.setChatOpen);
-  const setChatChannel = useStore((s) => s.setChatChannel);
-  const setChatGoalId = useStore((s) => s.setChatGoalId);
+  const setChatModeOverride = useStore((s) => s.setChatModeOverride);
 
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -108,8 +107,9 @@ export default function DashboardTab({ goalId }: DashboardTabProps) {
   }
 
   function openChat() {
-    setChatChannel("goal-plan");
-    setChatGoalId(goalId);
+    // Goal Dashboard auto-routes chat to goal-plan mode (the parent
+    // view is `goal-plan-<id>`). Clear any prior "general" override.
+    setChatModeOverride(null);
     setChatOpen(true);
   }
 

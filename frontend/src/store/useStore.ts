@@ -48,14 +48,14 @@ interface StoreApi {
   pendingChatMessage: string | null;
   setPendingChatMessage: (msg: string | null) => void;
 
-  /** Active AI chat channel — home | chat | goal-plan. Read by FloatingChat. */
-  chatChannel: "home" | "chat" | "goal-plan";
-  setChatChannel: (c: "home" | "chat" | "goal-plan") => void;
-
-  /** When chat is opened for a specific goal, the goalId routes the stream
-   *  to /ai/goal-plan-chat/stream. */
-  chatGoalId: string;
-  setChatGoalId: (id: string) => void;
+  /** Per-page chat is auto-routed via `currentView`: goal-plan-* views
+   *  scope chat to that goal, anything else uses general/home mode.
+   *  Setting this to "general" overrides the auto-route so the user
+   *  can talk to home chat while sitting on a Goal Plan page. Set to
+   *  null (default) to follow the page. The override clears whenever
+   *  `currentView` changes (handled in setView). */
+  chatModeOverride: "general" | null;
+  setChatModeOverride: (mode: "general" | null) => void;
 
   /** Sidebar collapse (64px icons-only vs. 224px). */
   isSidebarCollapsed: boolean;
@@ -68,7 +68,9 @@ interface StoreApi {
 
 const useStore = create<StoreApi>((set) => ({
   currentView: "welcome",
-  setView: (view) => set({ currentView: view }),
+  // Clear the chat mode override on every navigation so leaving a Goal
+  // Plan page (or jumping to one) doesn't carry a stale override.
+  setView: (view) => set({ currentView: view, chatModeOverride: null }),
 
   activeChatId: null,
   setActiveChatId: (id) => set({ activeChatId: id }),
@@ -86,11 +88,8 @@ const useStore = create<StoreApi>((set) => ({
   pendingChatMessage: null,
   setPendingChatMessage: (msg) => set({ pendingChatMessage: msg }),
 
-  chatChannel: "home",
-  setChatChannel: (c) => set({ chatChannel: c }),
-
-  chatGoalId: "",
-  setChatGoalId: (id) => set({ chatGoalId: id }),
+  chatModeOverride: null,
+  setChatModeOverride: (mode) => set({ chatModeOverride: mode }),
 
   isSidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),

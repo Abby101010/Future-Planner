@@ -1,16 +1,24 @@
 /* FloatingChat — always-available AI chat panel.
  *
- * Three SSE channels per contract:
- *   - home      → POST /ai/home-chat/stream
- *   - chat      → POST /ai/chat/stream
- *   - goal-plan → POST /ai/goal-plan-chat/stream  (requires goalId)
+ * Single endpoint, auto-routed by page context:
+ *   POST /ai/chat/stream  (handleUnifiedChat on the backend)
  *
- * Plus the `clear-home-chat` command (home channel only) and a toggleable
- * ChatSessionsWindow (list / save / delete sessions + attachments).
+ * Mode is computed from `currentView`:
+ *   - currentView starts with "goal-plan-<id>" → goal-plan mode, scoped
+ *     to that goal. The backend reads context.currentPage="goal-plan"
+ *     and switches to the plan-edit prompt + persistence path.
+ *   - everything else → general mode. Home-chat persistence + intent
+ *     dispatch (create-task / create-goal / set-vacation / etc.).
  *
- * Absorbs the logic that lived in components/Chat.tsx. */
+ * The user can override the auto-route to "general" via a banner button
+ * (e.g. when sitting on a Goal Plan page but wanting to ask the home
+ * coach a general question). The override clears on the next navigation.
+ *
+ * The legacy /ai/home-chat/stream and /ai/goal-plan-chat/stream
+ * endpoints are still live for backward compatibility but no FE caller
+ * remains. */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppView, Goal } from "@starward/core";
 import useStore from "../../store/useStore";
 import { useQuery } from "../../hooks/useQuery";
@@ -23,16 +31,7 @@ import ChatSessionsWindow from "./ChatSessionsWindow";
 import PendingGoalCard from "./PendingGoalCard";
 import { startJob } from "./JobStatusDock";
 
-type ChatChannel = "home" | "chat" | "goal-plan";
-
-const CHANNEL_META: Record<
-  ChatChannel,
-  { label: string; api: string; clearCmd?: "command:clear-home-chat"; needsGoalId?: boolean }
-> = {
-  home: { label: "Home chat", api: "/ai/home-chat/stream", clearCmd: "command:clear-home-chat" },
-  chat: { label: "General chat", api: "/ai/chat/stream" },
-  "goal-plan": { label: "Goal plan chat", api: "/ai/goal-plan-chat/stream", needsGoalId: true },
-};
+const CHAT_API = "/ai/chat/stream";
 
 interface Message {
   role: "user" | "assistant";
@@ -45,15 +44,29 @@ interface StreamResult {
   [k: string]: unknown;
 }
 
+/** Extract the goalId from a `goal-plan-<id>` view, or null. */
+function goalIdFromView(view: string | undefined): string | null {
+  if (!view || !view.startsWith("goal-plan-")) return null;
+  const id = view.slice("goal-plan-".length);
+  return id.length > 0 ? id : null;
+}
+
 export default function FloatingChat() {
   const open = useStore((s) => s.isChatOpen);
   const close = () => useStore.getState().setChatOpen(false);
-  const channel = useStore((s) => s.chatChannel);
-  const setChannel = useStore((s) => s.setChatChannel);
-  const goalId = useStore((s) => s.chatGoalId);
-  const setGoalId = useStore((s) => s.setChatGoalId);
+  const currentView = useStore((s) => s.currentView);
+  const chatModeOverride = useStore((s) => s.chatModeOverride);
+  const setChatModeOverride = useStore((s) => s.setChatModeOverride);
   const pendingMessage = useStore((s) => s.pendingChatMessage);
   const setPendingMessage = useStore((s) => s.setPendingChatMessage);
+
+  // Auto-routed mode + goalId. The override flips a goal-plan view to
+  // general mode without leaving the page; clearing it (or navigating)
+  // returns to auto-routed.
+  const viewGoalId = goalIdFromView(currentView);
+  const isGoalScoped = !!viewGoalId && chatModeOverride !== "general";
+  const goalId = isGoalScoped ? viewGoalId! : "";
+  const mode: "goal-plan" | "general" = isGoalScoped ? "goal-plan" : "general";
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -73,11 +86,14 @@ export default function FloatingChat() {
   const setView = useStore((s) => s.setView);
   const setResearchTopic = useStore((s) => s.setResearchTopic);
 
-  // Read current goals so manage-* intents can resolve a goal by id.
+  // Read current goals so manage-* intents can resolve a goal by id,
+  // and so we can show the active goal title on the mode banner.
   const { data: planningView } = useQuery<{ goals?: Goal[] }>("view:planning");
   const goals = planningView?.goals ?? [];
-
-  const ch = CHANNEL_META[channel];
+  const activeGoal = useMemo(
+    () => (goalId ? goals.find((g) => g.id === goalId) : undefined),
+    [goalId, goals],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999 });
@@ -95,26 +111,17 @@ export default function FloatingChat() {
   async function send(override?: string) {
     const text = (override ?? input).trim();
     if (!text || streaming) return;
-    if (ch.needsGoalId && !goalId) {
-      setError("goalId required for goal-plan channel");
-      return;
-    }
     setError(null);
     setMessages((m) => [...m, { role: "user", text }]);
     setInput("");
     setStreaming(true);
 
-    // Build chatHistory for the API — ONLY prior turns. The backend
-    // handlers append the current `userInput` themselves:
-    //   - chat.ts:325     → messages.push({ role: "user", content: userInput })
-    //   - homeChat.ts:450 → same
-    //   - goalPlanChat.ts:142-145 → defensive: pushes only if last entry isn't already this message
-    // Including the current user message here would produce a duplicate
-    // trailing user turn, which Anthropic rejects with the confusing
-    // "messages.N.content: Field required" error. Also strip the local
-    // "∟streaming∟" placeholder prefix and any empty-content messages
-    // (from turns where the stream errored before any delta arrived).
-    // Cap at 50 turns; goalPlanChat further trims to 8 on its side.
+    // Build chatHistory for the API — ONLY prior turns. The unified
+    // handler appends the current userInput itself; including it here
+    // produces a duplicate trailing user turn that Anthropic rejects
+    // with "messages.N.content: Field required". Also strip local
+    // "∟streaming∟" placeholders + empty-content messages (failed
+    // streams). Capped at 50; the backend trims further.
     const chatHistory = messages
       .filter((m) => !(m.role === "assistant" && m.text.startsWith("∟streaming∟")))
       .filter((m) => typeof m.text === "string" && m.text.trim().length > 0)
@@ -122,15 +129,25 @@ export default function FloatingChat() {
       .slice(-50);
 
     let acc = "";
-    const body: Record<string, unknown> =
-      channel === "chat"
-        ? { userInput: text, chatHistory, context: {}, goals: [], todayTasks: [], activeReminders: [] }
-        : channel === "home"
-          ? { userInput: text, chatHistory }
-          : { userInput: text, goalId, chatHistory };
+    // Unified body. context.currentPage drives the backend's mode
+    // branching (handleUnifiedChat in backend/core/src/ai/handlers/
+    // chat.ts) and goalId is read at the top level for the plan-fetch
+    // step in /ai/chat/stream.
+    const body: Record<string, unknown> = {
+      userInput: text,
+      chatHistory,
+      context: {
+        currentPage: mode === "goal-plan" ? "goal-plan" : currentView,
+        ...(mode === "goal-plan" ? { selectedGoalId: goalId } : {}),
+      },
+      ...(mode === "goal-plan" ? { goalId } : {}),
+      goals: [],
+      todayTasks: [],
+      activeReminders: [],
+    };
 
     try {
-      await postSseStream<StreamResult>(ch.api, body, {
+      await postSseStream<StreamResult>(CHAT_API, body, {
         onDelta: (delta) => {
           acc += delta;
           setMessages((m) => {
@@ -186,9 +203,12 @@ export default function FloatingChat() {
   }
 
   async function clearHome() {
-    if (!ch.clearCmd) return;
+    // Only meaningful in general/home mode — that's the path that
+    // persists to home_chat_messages. Goal-plan mode persists to
+    // goal.planChat which is cleared via the goal lifecycle, not here.
+    if (mode !== "general") return;
     try {
-      await run(ch.clearCmd, {});
+      await run("command:clear-home-chat", {});
       setMessages([]);
     } catch (e) {
       setError((e as Error).message);
@@ -230,24 +250,17 @@ export default function FloatingChat() {
           <div style={{ color: "var(--accent)", display: "flex" }}>
             <Icon name="sparkle" size={14} />
           </div>
-          <select
-            data-testid="chat-channel"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value as ChatChannel)}
+          <span
+            data-testid="chat-title"
             style={{
               flex: 1,
-              padding: "3px 6px",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
               fontSize: "var(--t-sm)",
               fontWeight: 600,
-              background: "var(--bg)",
+              color: "var(--fg)",
             }}
           >
-            <option value="home">{CHANNEL_META.home.label}</option>
-            <option value="chat">{CHANNEL_META.chat.label}</option>
-            <option value="goal-plan">{CHANNEL_META["goal-plan"].label}</option>
-          </select>
+            Starward
+          </span>
           <button
             data-testid="chat-sessions-toggle"
             onClick={() => setShowSessions((s) => !s)}
@@ -262,7 +275,7 @@ export default function FloatingChat() {
           >
             <Icon name="tree" size={14} />
           </button>
-          {ch.clearCmd && (
+          {mode === "general" && (
             <button
               data-testid="chat-clear-home"
               onClick={clearHome}
@@ -293,28 +306,77 @@ export default function FloatingChat() {
           </button>
         </header>
 
-        {ch.needsGoalId && (
+        {/* Mode banner. Auto-shown in goal-plan mode so the user knows
+            the chat is scoped to a specific goal; one-click revert to
+            general mode. Hidden in general mode (no banner = home). */}
+        {mode === "goal-plan" && (
           <div
+            data-testid="chat-mode-banner"
             style={{
-              padding: "8px 14px",
+              padding: "6px 14px",
               borderBottom: "1px solid var(--border-soft)",
-              background: "var(--bg-soft)",
+              background: "var(--gold-faint)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 11,
+              color: "var(--fg-mute)",
             }}
           >
-            <input
-              data-testid="chat-goal-id-input"
-              value={goalId}
-              onChange={(e) => setGoalId(e.target.value)}
-              placeholder="goalId (required)"
+            <Icon name="tree" size={11} style={{ color: "var(--accent)" }} />
+            <span style={{ flex: 1 }}>
+              Talking about{" "}
+              <span style={{ color: "var(--fg)", fontWeight: 600 }}>
+                {activeGoal?.title ?? `goal ${goalId.slice(0, 8)}`}
+              </span>
+            </span>
+            <button
+              data-testid="chat-back-to-general"
+              onClick={() => setChatModeOverride("general")}
+              title="Switch to general chat"
               style={{
-                width: "100%",
-                padding: "5px 8px",
-                fontSize: "var(--t-sm)",
-                border: "1px solid var(--border)",
-                borderRadius: 4,
-                fontFamily: "var(--font-mono)",
+                border: 0,
+                background: "transparent",
+                cursor: "pointer",
+                color: "var(--fg-mute)",
+                padding: "2px 6px",
+                fontSize: 11,
               }}
-            />
+            >
+              ← general
+            </button>
+          </div>
+        )}
+        {mode === "general" && viewGoalId && (
+          <div
+            data-testid="chat-mode-banner-overridden"
+            style={{
+              padding: "6px 14px",
+              borderBottom: "1px solid var(--border-soft)",
+              background: "var(--bg-soft)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 11,
+              color: "var(--fg-faint)",
+            }}
+          >
+            <span style={{ flex: 1 }}>General mode</span>
+            <button
+              data-testid="chat-back-to-goal"
+              onClick={() => setChatModeOverride(null)}
+              title="Switch back to this goal"
+              style={{
+                border: 0,
+                background: "transparent",
+                cursor: "pointer",
+                color: "var(--fg-mute)",
+                padding: "2px 6px",
+                fontSize: 11,
+              }}
+            >
+              ← back to goal
+            </button>
           </div>
         )}
 
@@ -470,7 +532,11 @@ export default function FloatingChat() {
                 void send();
               }
             }}
-            placeholder={ch.needsGoalId && !goalId ? "Set goalId above first…" : "Message Starward… (Enter to send)"}
+            placeholder={
+              mode === "goal-plan"
+                ? `Ask about "${activeGoal?.title ?? "this goal"}"… (Enter)`
+                : "Message Starward… (Enter to send)"
+            }
             style={{
               flex: 1,
               resize: "none",
@@ -486,9 +552,9 @@ export default function FloatingChat() {
             tone="primary"
             size="sm"
             onClick={() => void send()}
-            data-api={`POST ${ch.api}`}
+            data-api={`POST ${CHAT_API}`}
             data-testid="chat-send"
-            disabled={streaming || (ch.needsGoalId && !goalId)}
+            disabled={streaming}
           >
             <Icon name="arrow-right" size={13} />
           </Button>

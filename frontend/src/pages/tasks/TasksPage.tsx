@@ -46,7 +46,6 @@ export default function TasksPage() {
   const dashQ = useQuery<DashboardView>("view:dashboard");
   const { run, running } = useCommand();
   const setChatOpen = useStore((s) => s.setChatOpen);
-  const setChatChannel = useStore((s) => s.setChatChannel);
   const setPendingChatMessage = useStore((s) => s.setPendingChatMessage);
 
   const [showDone, setShowDone] = useState(false);
@@ -232,7 +231,8 @@ export default function TasksPage() {
     })();
 
   function askChatAboutPace() {
-    setChatChannel("home");
+    // Tasks page is general/home mode automatically — chat auto-routes
+    // by the user's currentView. Just open + seed a message.
     setPendingChatMessage("Help me recover pace on my slipping goal.");
     setChatOpen(true);
   }

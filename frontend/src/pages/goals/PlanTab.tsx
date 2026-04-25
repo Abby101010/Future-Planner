@@ -53,8 +53,7 @@ export default function PlanTab({
 }: PlanTabProps) {
   const { run, running } = useCommand();
   const setChatOpen = useStore((s) => s.setChatOpen);
-  const setChatChannel = useStore((s) => s.setChatChannel);
-  const setChatGoalId = useStore((s) => s.setChatGoalId);
+  const setChatModeOverride = useStore((s) => s.setChatModeOverride);
   const [editing, setEditing] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [newDate, setNewDate] = useState("");
@@ -99,8 +98,10 @@ export default function PlanTab({
   }
 
   function openChat() {
-    setChatChannel("goal-plan");
-    setChatGoalId(goalId);
+    // Goal Plan page auto-routes chat to goal-plan mode (the view is
+    // `goal-plan-<id>`). Just clear any prior "general" override so the
+    // banner shows + plan-edit prompt is used.
+    setChatModeOverride(null);
     setChatOpen(true);
   }
 
