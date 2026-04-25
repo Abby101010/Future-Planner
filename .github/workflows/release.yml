@@ -45,11 +45,13 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --include=optional --no-audit --no-fund
-          echo "--- app-builder-bin layout (root node_modules) ---"
-          ls node_modules/app-builder-bin/ || echo "(absent)"
-          ls node_modules/app-builder-bin/mac/ 2>/dev/null || echo "(no mac/)"
-          ls node_modules/app-builder-bin/linux/x64 2>/dev/null || echo "(no linux/x64/)"
-          ls node_modules/app-builder-bin/win/x64 2>/dev/null || echo "(no win/x64/)"
+          # The binaries inside app-builder-bin lose their +x bit when
+          # extracted by npm in some environments, so spawn() fails
+          # with ENOENT (the kernel rejects non-executable files
+          # before the lookup even resolves). chmod is idempotent and
+          # cross-platform (no-op on Windows where .exe extension
+          # already drives execution).
+          chmod -R +x node_modules/app-builder-bin/ 2>/dev/null || true
         shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
@@ -121,11 +123,13 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --include=optional --no-audit --no-fund
-          echo "--- app-builder-bin layout (root node_modules) ---"
-          ls node_modules/app-builder-bin/ || echo "(absent)"
-          ls node_modules/app-builder-bin/mac/ 2>/dev/null || echo "(no mac/)"
-          ls node_modules/app-builder-bin/linux/x64 2>/dev/null || echo "(no linux/x64/)"
-          ls node_modules/app-builder-bin/win/x64 2>/dev/null || echo "(no win/x64/)"
+          # The binaries inside app-builder-bin lose their +x bit when
+          # extracted by npm in some environments, so spawn() fails
+          # with ENOENT (the kernel rejects non-executable files
+          # before the lookup even resolves). chmod is idempotent and
+          # cross-platform (no-op on Windows where .exe extension
+          # already drives execution).
+          chmod -R +x node_modules/app-builder-bin/ 2>/dev/null || true
         shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
@@ -189,11 +193,13 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --include=optional --no-audit --no-fund
-          echo "--- app-builder-bin layout (root node_modules) ---"
-          ls node_modules/app-builder-bin/ || echo "(absent)"
-          ls node_modules/app-builder-bin/mac/ 2>/dev/null || echo "(no mac/)"
-          ls node_modules/app-builder-bin/linux/x64 2>/dev/null || echo "(no linux/x64/)"
-          ls node_modules/app-builder-bin/win/x64 2>/dev/null || echo "(no win/x64/)"
+          # The binaries inside app-builder-bin lose their +x bit when
+          # extracted by npm in some environments, so spawn() fails
+          # with ENOENT (the kernel rejects non-executable files
+          # before the lookup even resolves). chmod is idempotent and
+          # cross-platform (no-op on Windows where .exe extension
+          # already drives execution).
+          chmod -R +x node_modules/app-builder-bin/ 2>/dev/null || true
         shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
