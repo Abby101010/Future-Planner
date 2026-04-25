@@ -1,24 +1,72 @@
 /**
  * Reminder command handlers.
+ *
+ * All reminder commands are pure DB operations — no AI involvement.
+ * cmdUpsertReminder follows the contract documented in
+ * API_CONTRACT.md (`{id?, title, date, ...}` — flat, id optional).
+ * If `id` is missing, the server generates a UUID. Other reminder
+ * commands (acknowledge / delete / delete-batch) use flat scalar
+ * args; this one matches that convention.
  */
 
+import { randomUUID } from "node:crypto";
+import type { Reminder } from "@starward/core";
 import { repos } from "./_helpers";
 
 export async function cmdUpsertReminder(
   body: Record<string, unknown>,
 ): Promise<unknown> {
-  const reminder = body.reminder as Parameters<
-    typeof repos.reminders.upsert
-  >[0];
-  if (
-    !reminder ||
-    typeof reminder !== "object" ||
-    !(reminder as { id?: string }).id
-  ) {
-    throw new Error("command:upsert-reminder requires args.reminder with an id");
+  // Tolerate the legacy `{ reminder: {...} }` wrapper for any older
+  // caller that still sends it. New callers use the flat shape per
+  // the API contract.
+  const flat: Record<string, unknown> =
+    body.reminder && typeof body.reminder === "object"
+      ? (body.reminder as Record<string, unknown>)
+      : body;
+
+  const id =
+    typeof flat.id === "string" && flat.id ? (flat.id as string) : randomUUID();
+  const title = typeof flat.title === "string" ? (flat.title as string) : "";
+  const date =
+    typeof flat.date === "string" && flat.date
+      ? (flat.date as string)
+      : new Date().toISOString().slice(0, 10);
+
+  if (!title.trim()) {
+    throw new Error("command:upsert-reminder requires a non-empty `title`");
   }
+
+  // Fill the rest of the Reminder shape from caller-provided fields,
+  // falling back to safe defaults so a minimal `{title, date}` body
+  // produces a valid row. The repo upsert reads every field on the
+  // type — see backend/core/src/types/index.ts:918 (`Reminder`).
+  const reminder: Reminder = {
+    id,
+    title: title.trim(),
+    description: typeof flat.description === "string" ? (flat.description as string) : "",
+    reminderTime:
+      typeof flat.reminderTime === "string" && flat.reminderTime
+        ? (flat.reminderTime as string)
+        : new Date(`${date}T09:00:00`).toISOString(),
+    date,
+    acknowledged: Boolean(flat.acknowledged),
+    acknowledgedAt:
+      typeof flat.acknowledgedAt === "string"
+        ? (flat.acknowledgedAt as string)
+        : undefined,
+    repeat:
+      flat.repeat === "daily" || flat.repeat === "weekly" || flat.repeat === "monthly"
+        ? (flat.repeat as "daily" | "weekly" | "monthly")
+        : null,
+    source: flat.source === "chat" ? "chat" : "manual",
+    createdAt:
+      typeof flat.createdAt === "string" && flat.createdAt
+        ? (flat.createdAt as string)
+        : new Date().toISOString(),
+  };
+
   await repos.reminders.upsert(reminder);
-  return { ok: true, reminderId: reminder.id };
+  return { ok: true, reminderId: id };
 }
 
 export async function cmdAcknowledgeReminder(

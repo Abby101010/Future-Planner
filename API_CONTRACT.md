@@ -336,7 +336,7 @@ Last updated: 2026-04-24 — **Goal methodology alignment (migration 0013 + plan
 #### Reminders (commands)
 | Feature | API | Usage |
 |---|---|---|
-| Upsert reminder | POST /commands/upsert-reminder | Body: `{id?, title, date, ...}`. |
+| Upsert reminder | POST /commands/upsert-reminder | Body: `{id?, title, date?, description?, reminderTime?, repeat?, ...}` — flat. `title` is required; `id` is auto-generated server-side when omitted; `date` defaults to today; `reminderTime` defaults to `<date>T09:00:00`. Pure DB upsert — no AI. |
 | Acknowledge reminder | POST /commands/acknowledge-reminder | Body: `{id}`. |
 | Delete reminder | POST /commands/delete-reminder | Body: `{id}`. |
 | Delete reminders batch | POST /commands/delete-reminders-batch | Body: `{ids[]}`. |

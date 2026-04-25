@@ -98,8 +98,10 @@ export async function dispatchChatIntent(
       return "pending-goal";
     }
     case "reminder": {
+      // Flat shape per API_CONTRACT.md — id auto-generated server-side
+      // when omitted. See backend/src/routes/commands/calendar.ts.
       const reminder = i.entity as Record<string, unknown>;
-      await run(cmd("command:upsert-reminder"), { reminder });
+      await run(cmd("command:upsert-reminder"), { ...reminder });
       break;
     }
     case "task": {
@@ -187,14 +189,12 @@ export async function dispatchChatIntent(
             newDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
           }
           await run(cmd("command:upsert-reminder"), {
-            reminder: {
-              ...target,
-              title: (patch?.title as string | undefined) ?? target.title,
-              description: (patch?.description as string | undefined) ?? target.description,
-              reminderTime: newReminderTime,
-              date: newDate,
-              repeat: patch?.repeat !== undefined ? patch.repeat : target.repeat,
-            },
+            ...target,
+            title: (patch?.title as string | undefined) ?? target.title,
+            description: (patch?.description as string | undefined) ?? target.description,
+            reminderTime: newReminderTime,
+            date: newDate,
+            repeat: patch?.repeat !== undefined ? patch.repeat : target.repeat,
           });
         }
       } else if (i.action === "acknowledge") {
