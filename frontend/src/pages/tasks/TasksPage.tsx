@@ -11,7 +11,6 @@ import { useCommand } from "../../hooks/useCommand";
 import TopBar from "../../components/primitives/TopBar";
 import Button from "../../components/primitives/Button";
 import Banner from "../../components/primitives/Banner";
-import { startJob } from "../../components/chrome/JobStatusDock";
 import NotifStack from "./NotifStack";
 import TaskRow from "./TaskRow";
 import AddTaskLine from "./AddTaskLine";
@@ -100,25 +99,15 @@ export default function TasksPage() {
     }
   };
 
-  // Daily planning
+  // Daily planning. Single "Refresh" affordance — runs the AI
+  // scheduler, THEN runs the deterministic budget-trim. The scheduler
+  // re-picks the day; trim demotes any remaining over-budget rows to
+  // bonus tier so the active list lands at the cognitive ceiling.
+  // Both backend commands stay available (chat intents, dev harness)
+  // — only the FE button is consolidated.
   const refreshDaily = wrap(async () => {
     await run("command:refresh-daily-plan", {});
-    refetchAll();
-  });
-  // One-shot: demote excess incomplete tasks to bonus tier so today's
-  // active list lands at the cognitive-budget ceiling. Reversible —
-  // payload.demotedFrom records the original priority.
-  const trimToday = wrap(async () => {
     await run("command:trim-today", {});
-    refetchAll();
-  });
-  const regenerateDaily = wrap(async () => {
-    const r = await run<{ jobId?: string }>("command:regenerate-daily-tasks", {});
-    if (r?.jobId) startJob(r.jobId, "Regenerating daily tasks");
-    refetchAll();
-  });
-  const confirmDaily = wrap(async () => {
-    await run("command:confirm-daily-tasks", {});
     refetchAll();
   });
   const bonusTask = wrap(async () => {
@@ -287,48 +276,16 @@ export default function TasksPage() {
         right={
           <>
             <Button
-              tone="ghost"
+              tone="primary"
               size="sm"
               icon="refresh"
               onClick={refreshDaily}
               data-api="POST /commands/refresh-daily-plan"
               data-testid="tasks-refresh-daily"
               disabled={running}
+              title="Re-run today's plan and trim to the cognitive budget"
             >
               Refresh
-            </Button>
-            <Button
-              tone="ghost"
-              size="sm"
-              onClick={trimToday}
-              data-api="POST /commands/trim-today"
-              data-testid="tasks-trim-today"
-              disabled={running}
-              title="Demote excess tasks to bonus tier (cognitive budget = 5)"
-            >
-              Trim to budget
-            </Button>
-            <Button
-              tone="ghost"
-              size="sm"
-              icon="bolt"
-              onClick={regenerateDaily}
-              data-api="POST /commands/regenerate-daily-tasks"
-              data-testid="tasks-regenerate-daily"
-              disabled={running}
-            >
-              Regenerate
-            </Button>
-            <Button
-              tone="primary"
-              size="sm"
-              icon="check"
-              onClick={confirmDaily}
-              data-api="POST /commands/confirm-daily-tasks"
-              data-testid="tasks-confirm-daily"
-              disabled={running}
-            >
-              Confirm plan
             </Button>
           </>
         }
