@@ -751,7 +751,24 @@ aiRouter.post(
           repos.dailyTasks.listForDate(today),
           resolvePlanningView(),
         ]);
-        const todayTasks = dailyTasksRaw.map((t) => {
+        // Filter to the user's ACTIVE list — what the FE renders on the
+        // Tasks page. Mirrors backend/src/views/tasksView.ts:354
+        // (`!t.skipped && !isBonusTask(t)`) plus completed/isBonus to
+        // match the FE `isOffActiveList` predicate
+        // (frontend/src/pages/tasks/TasksPage.tsx:36). Without this
+        // filter, the chat sees rows that triage demoted to bonus tier
+        // and reports a "38/12 overload" even though the displayed
+        // active list is already at the cognitive cap. The cognitive
+        // load + minute totals the LLM reasons about must reflect what
+        // the user is actually committed to.
+        const activeTasks = dailyTasksRaw.filter((t) => {
+          if (t.completed) return false;
+          const pl = t.payload as Record<string, unknown>;
+          if (pl.skipped) return false;
+          if (pl.priority === "bonus" || pl.isBonus) return false;
+          return true;
+        });
+        const todayTasks = activeTasks.map((t) => {
           const pl = t.payload as Record<string, unknown>;
           return {
             id: t.id,
@@ -768,6 +785,9 @@ aiRouter.post(
         p.activeReminders = reminders;
         p.todayTasks = todayTasks;
         p.goals = planningV.goals;
+        console.log(
+          `[chat-hydration] date=${today} active=${todayTasks.length} raw=${dailyTasksRaw.length} reminders=${reminders.length} goals=${planningV.goals.length}`,
+        );
       } catch (err) {
         console.warn("[ai/chat/stream] context hydration failed:", err);
       }
