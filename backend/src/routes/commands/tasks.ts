@@ -1146,12 +1146,15 @@ export async function cmdTrimToday(
     return tier && TIER_RANK[tier] !== undefined ? TIER_RANK[tier] : 2.5;
   };
   const isProtected = (t: typeof active[number]): boolean => {
-    // Plan-attached tasks (big_goal source with a planNodeId) are part
-    // of the user's committed plan — never auto-demote them. Same for
-    // explicit must-do priority.
+    // Only must-do tasks are absolutely protected. Plan-attached
+    // tasks (big_goal + planNodeId) WERE protected here historically
+    // — but that left users with N goals × M tasks/day stranded
+    // over-budget because every row was "protected." The plan tree
+    // still owns the source-of-truth task; demoting to bonus on
+    // today's render doesn't lose data, and rotation will pull
+    // higher-priority work back in as the user completes things.
     const pl = t.payload as Record<string, unknown>;
     if (pl.priority === "must-do") return true;
-    if (t.source === "big_goal" && t.planNodeId) return true;
     return false;
   };
 

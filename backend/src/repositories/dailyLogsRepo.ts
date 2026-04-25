@@ -166,6 +166,23 @@ export async function remove(date: string): Promise<void> {
   );
 }
 
+/** Shallow-merge `patch` into the daily log's payload jsonb. Used by
+ *  the triage path to stamp `lastTriagedAt` (debounces re-runs). The
+ *  daily log row must exist — call `ensureExists(date)` first. */
+export async function patchPayload(
+  date: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update daily_logs
+        set payload = coalesce(payload, '{}'::jsonb) || $3::jsonb,
+            updated_at = now()
+      where user_id = $1 and log_date = $2`,
+    [userId, date, JSON.stringify(patch)],
+  );
+}
+
 // Re-export canonical "delete" name that can't be used as an identifier.
 export { remove as delete_ };
 // A reference to DailyLog is kept so TS ensures the module lines up with core

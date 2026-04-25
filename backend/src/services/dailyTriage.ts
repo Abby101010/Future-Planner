@@ -1,8 +1,12 @@
-/* Lightweight daily triage.
+/* Lightweight daily triage — the coordinator pass that gates display.
  *
- * Fired (fire-and-forget) after any today-mutation that adds or
- * relocates a `daily_tasks` row: cmdCreateTask, materializePlanTasks,
- * rotateNextTask, and chat-dispatched task intents.
+ * Fired:
+ *   - After any today-mutation (cmdCreateTask, materializePlanTasks,
+ *     rotateNextTask, chat-dispatched task intents) — via fire-and-
+ *     forget setImmediate.
+ *   - From `tasksView` before returning today's task list, debounced
+ *     by daily_logs.payload.lastTriagedAt so the LLM annotator only
+ *     fires when something has actually changed.
  *
  * What it does:
  *   1. Loads daily_tasks for `date`.
@@ -14,24 +18,33 @@
  *      columns from migration 0011 and the legacy payload mirror).
  *   4. Deterministically re-sorts the day by (tier, cognitiveCost desc)
  *      and updates order_index on rows that moved.
- *   5. Emits view:invalidate so the FE re-renders the now-coordinated
- *      list. Caller-perceived latency is unchanged because the entry
- *      points dispatch this via setImmediate after their own response
- *      is returned.
+ *   5. Auto-caps the active list at COGNITIVE_BUDGET.MAX_DAILY_TASKS:
+ *      anything beyond the ceiling is demoted to priority="bonus" with
+ *      payload.demotedFrom recording the original priority for undo.
+ *      must-do tasks are protected from demotion. Plan-attached tasks
+ *      ARE demoted when over budget — the plan tree retains them, and
+ *      rotation re-promotes as capacity frees.
+ *   6. Stamps daily_logs.payload.lastTriagedAt so subsequent reads
+ *      can skip the pass.
+ *   7. Emits view:invalidate (when called fire-and-forget) so the FE
+ *      re-renders the now-coordinated list.
  *
  * What it does NOT do:
  *   - Does NOT run gatekeeper / timeEstimator / scheduler. Those stay
- *     on cmdRefreshDailyPlan (the manual refresh path) where their
- *     full-pipeline cost is justified.
- *   - Does NOT auto-merge overdue tasks or auto-defer over-budget
- *     rows. Audit notes flagged those as separate scoped follow-ups.
+ *     on cmdRefreshDailyPlan where their full-pipeline cost is
+ *     justified.
+ *   - Does NOT auto-merge overdue tasks. Separate scoped follow-up.
  *
- * Failure-tolerant by design: any error logs and returns. The original
- * mutation already succeeded; triage failure must not surface to the
- * user. Same idempotency rules as the rotation path.
+ * Failure-tolerant by design: any error logs and returns.
+ *
+ * ⚠ Contract: this is the gate before today's tasks reach the user.
+ * Any new path that mutates today's daily_tasks must dispatch
+ * fireLightTriage(date). Any view that renders today's tasks should
+ * await lightTriage(date, {emitInvalidate: false}) before returning.
  */
 
 import * as repos from "../repositories";
+import { COGNITIVE_BUDGET } from "@starward/core";
 import { annotatePriorities } from "../agents/priorityAnnotator";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { emitViewInvalidate } from "../ws/events";
@@ -61,13 +74,26 @@ export interface LightTriageResult {
   date: string;
   annotated: number;
   reordered: boolean;
+  demoted: number;
   skipped?: "no-tasks" | "all-annotated";
 }
 
-export async function lightTriage(date: string): Promise<LightTriageResult> {
+export interface LightTriageOptions {
+  /** When false, skip the WS view:invalidate emit. Used when triage is
+   *  called from a request handler that's about to return the
+   *  coordinated data itself — emitting would just trigger a redundant
+   *  refetch. Defaults to true (mutation-path callers). */
+  emitInvalidate?: boolean;
+}
+
+export async function lightTriage(
+  date: string,
+  opts: LightTriageOptions = {},
+): Promise<LightTriageResult> {
+  const emitInvalidate = opts.emitInvalidate !== false;
   const tasks = await repos.dailyTasks.listForDate(date);
   if (tasks.length === 0) {
-    return { date, annotated: 0, reordered: false, skipped: "no-tasks" };
+    return { date, annotated: 0, reordered: false, demoted: 0, skipped: "no-tasks" };
   }
 
   const unannotated = tasks.filter((t) => !isAnnotated(t));
@@ -161,7 +187,65 @@ export async function lightTriage(date: string): Promise<LightTriageResult> {
     }
   }
 
-  if (annotatedCount > 0 || reordered) {
+  // Step 4 — auto-cap the active list at the cognitive budget. Active
+  // = not completed, not skipped, not already-bonus. Anything beyond
+  // MAX_DAILY_TASKS (after sorted) gets demoted to bonus tier.
+  // must-do tasks are protected. Plan-attached tasks ARE demoted —
+  // the plan tree retains them; rotation re-promotes as the user
+  // completes. Without this, multi-goal users land over-budget and
+  // the FE can never bring the active count back to budget without
+  // user intervention.
+  let demoted = 0;
+  const activeForCap = sorted.filter((t) => {
+    if (t.completed) return false;
+    const pl = t.payload as Record<string, unknown>;
+    if (pl.skipped) return false;
+    if (pl.priority === "bonus" || pl.isBonus) return false;
+    return true;
+  });
+
+  if (activeForCap.length > COGNITIVE_BUDGET.MAX_DAILY_TASKS) {
+    const isProtected = (t: DailyTaskRecord): boolean => {
+      const pl = t.payload as Record<string, unknown>;
+      return pl.priority === "must-do";
+    };
+    // The TAIL (lowest tier + lowest cost) of `activeForCap` is the
+    // demotion candidate set. We've already sorted by (tier asc, cost
+    // desc) — so just walk from the bottom up, skipping protected.
+    let toDemote = activeForCap.length - COGNITIVE_BUDGET.MAX_DAILY_TASKS;
+    for (let i = activeForCap.length - 1; i >= 0 && toDemote > 0; i--) {
+      const t = activeForCap[i];
+      if (isProtected(t)) continue;
+      try {
+        await repos.dailyTasks.update(t.id, {
+          payload: {
+            priority: "bonus",
+            isBonus: true,
+            demotedFrom:
+              (t.payload as Record<string, unknown>)?.priority ?? "should-do",
+            demotedAt: new Date().toISOString(),
+          },
+        });
+        demoted++;
+        toDemote--;
+      } catch (err) {
+        console.warn(`[triage] demote ${t.id} failed:`, err);
+      }
+    }
+  }
+
+  // Stamp the daily log so subsequent reads can debounce. Best-effort
+  // — failure here just means the next read may run another pass.
+  try {
+    await repos.dailyLogs.ensureExists(date);
+    await repos.dailyLogs.patchPayload(date, {
+      lastTriagedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn("[triage] lastTriagedAt stamp failed:", err);
+  }
+
+  if (emitInvalidate && (annotatedCount > 0 || reordered || demoted > 0)) {
     try {
       const userId = getCurrentUserId();
       emitViewInvalidate(userId, {
@@ -173,13 +257,17 @@ export async function lightTriage(date: string): Promise<LightTriageResult> {
   }
 
   console.log(
-    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered}`,
+    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted}`,
   );
 
   return {
     date,
     annotated: annotatedCount,
     reordered,
-    skipped: unannotated.length === 0 && !reordered ? "all-annotated" : undefined,
+    demoted,
+    skipped:
+      unannotated.length === 0 && !reordered && demoted === 0
+        ? "all-annotated"
+        : undefined,
   };
 }

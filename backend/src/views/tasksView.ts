@@ -397,6 +397,33 @@ export async function resolveTasksView(): Promise<TasksView> {
   const today = getEffectiveDate();
   const rangeStart = getEffectiveDaysAgo(90);
 
+  // Coordinator gate: today's tasks reach the user as the OUTPUT of
+  // lightTriage, not raw daily_tasks. Annotates unannotated rows,
+  // re-sorts, and auto-caps the active list at MAX_DAILY_TASKS by
+  // demoting excess to bonus tier. Debounced via
+  // daily_logs.payload.lastTriagedAt — runs at most every 5 min OR
+  // when something has been mutated since the last triage. We
+  // suppress the WS emit (this resolver is about to return the
+  // coordinated payload directly; emitting would just round-trip).
+  try {
+    const todayLog = await repos.dailyLogs.get(today);
+    const lastTriagedAt = todayLog
+      ? ((todayLog.payload as Record<string, unknown>)?.lastTriagedAt as
+          | string
+          | undefined)
+      : undefined;
+    const shouldTriage = !lastTriagedAt
+      || Date.now() - new Date(lastTriagedAt).getTime() > 5 * 60_000;
+    if (shouldTriage) {
+      const { lightTriage } = await import("../services/dailyTriage");
+      await lightTriage(today, { emitInvalidate: false });
+    }
+  } catch (err) {
+    // Triage is a coordinator step but never load-bearing — the view
+    // can still render whatever's in daily_tasks. Log + continue.
+    console.warn("[tasksView] pre-render triage skipped:", err);
+  }
+
   const [
     goals,
     logs,
