@@ -169,6 +169,13 @@ export default function FloatingChat() {
           });
           if (result?.intents && Array.isArray(result.intents)) {
             const todayDate = new Date().toISOString().slice(0, 10);
+            // Track per-turn dispatch failures so we can surface them
+            // to the user. The AI sometimes replies "Done — created
+            // your reminder!" even when the dispatch fails (deploy
+            // mismatch, validation, schema drift, etc.). Letting that
+            // lie stand silently is the worst possible UX. Append a
+            // visible warning to the message instead.
+            const dispatchErrors: string[] = [];
             for (const rawIntent of result.intents) {
               try {
                 const signal = await dispatchChatIntent(rawIntent, {
@@ -188,8 +195,35 @@ export default function FloatingChat() {
                   if (i.entity) setPendingGoal(i.entity);
                 }
               } catch (err) {
-                console.warn("[FloatingChat] intent dispatch error:", err);
+                const kind =
+                  (rawIntent as { kind?: string })?.kind ?? "action";
+                const detail = (err as Error)?.message ?? String(err);
+                console.warn(
+                  `[FloatingChat] intent dispatch error (${kind}):`,
+                  err,
+                );
+                dispatchErrors.push(`${kind}: ${detail}`);
               }
+            }
+            if (dispatchErrors.length > 0) {
+              // Augment the AI's reply (don't replace it — the prose
+              // may still be useful). The user sees both the original
+              // message and a truthful warning that the action didn't
+              // land.
+              setMessages((m) => {
+                const last = m[m.length - 1];
+                const warning =
+                  `\n\n⚠ I couldn't actually save that — ` +
+                  dispatchErrors.join("; ") +
+                  `. Try again, or use the relevant page button directly.`;
+                if (last?.role === "assistant") {
+                  return [
+                    ...m.slice(0, -1),
+                    { role: "assistant", text: last.text + warning },
+                  ];
+                }
+                return m;
+              });
             }
           }
         },
