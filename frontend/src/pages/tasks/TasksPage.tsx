@@ -15,6 +15,7 @@ import { startJob } from "../../components/chrome/JobStatusDock";
 import NotifStack from "./NotifStack";
 import TaskRow from "./TaskRow";
 import AddTaskLine from "./AddTaskLine";
+import AddReminderLine from "./AddReminderLine";
 import ReminderRow from "./ReminderRow";
 import type {
   UITask,
@@ -230,13 +231,10 @@ export default function TasksPage() {
       await run("command:delete-reminder", { id });
       refetchAll();
     })();
-  const addReminder = wrap(async () => {
-    await run("command:upsert-reminder", {
-      title: "New reminder",
-      date: new Date().toISOString().slice(0, 10),
-    });
-    refetchAll();
-  });
+  // Reminder creation flows through <AddReminderLine /> rendered inside
+  // the Reminders section. The component owns the input + submit and
+  // calls command:upsert-reminder with real values; the prior bare
+  // "Add" button that inserted a placeholder "New reminder" is gone.
   const delRemindersBatch = wrap(async () => {
     await run("command:delete-reminders-batch", { ids: reminders.map((r) => r.id) });
     refetchAll();
@@ -425,16 +423,6 @@ export default function TasksPage() {
               </span>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
-              <Button
-                size="xs"
-                tone="ghost"
-                icon="plus"
-                onClick={addReminder}
-                data-api="POST /commands/upsert-reminder"
-                data-testid="reminders-add"
-              >
-                Add
-              </Button>
               {reminders.length > 0 && (
                 <Button
                   size="xs"
@@ -448,6 +436,7 @@ export default function TasksPage() {
               )}
             </div>
           </header>
+          <AddReminderLine onAdded={() => refetchAll()} />
           {reminders.map((r) => (
             <ReminderRow key={r.id} reminder={r} onAck={ackReminder} onDelete={delReminder} />
           ))}
