@@ -36,6 +36,9 @@ export interface UIReminder {
   id: string;
   title: string;
   date?: string;
+  /** UI-only. Set client-side when the reminder comes from the view's
+   *  `overdueReminders` slice. The backend never emits this field. */
+  overdue?: boolean;
 }
 
 export interface UIPendingTask {

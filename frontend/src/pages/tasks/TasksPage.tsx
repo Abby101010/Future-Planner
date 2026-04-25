@@ -44,8 +44,11 @@ function isOffActiveList(t: UITask): boolean {
 
 interface TasksView {
   tasks?: UITask[];
-  activeReminders?: UIReminder[];
+  /** Today-equivalent reminders (incl. daily/weekly/monthly repeats).
+   *  Populated by backend tasksView.ts:499. */
   todayReminders?: UIReminder[];
+  /** One-time, unacknowledged reminders with `r.date < today`.
+   *  Populated by backend tasksView.ts:525. */
   overdueReminders?: UIReminder[];
   pendingTasks?: UIPendingTask[];
   proposals?: UIProposal[];
@@ -55,7 +58,10 @@ interface TasksView {
 interface DashboardView {
   todayTasks?: UITask[];
   pendingTasks?: UIPendingTask[];
-  activeReminders?: UIReminder[];
+  /** Dashboard intentionally excludes `activeReminders` here — see
+   *  TasksView above. The Tasks page reads today + overdue only. */
+  todayReminders?: UIReminder[];
+  overdueReminders?: UIReminder[];
   nudges?: UINudge[];
   proposals?: UIProposal[];
   paceBanner?: { title?: string; body?: string } | null;
@@ -81,15 +87,20 @@ export default function TasksPage() {
   }, []);
 
   const tasks: UITask[] = tasksQ.data?.tasks ?? dashQ.data?.todayTasks ?? [];
-  // view:tasks emits `activeReminders` (broad, all active) plus separate
-  // narrower lists `todayReminders` and `overdueReminders`. The "Reminders"
-  // section here shows the user's full active set, so we read
-  // activeReminders. Keep in sync with backend tasksView.ts:103 — earlier
-  // versions of this code read `reminders`, a field that doesn't exist
-  // on either view, which silently rendered an empty list while
-  // upsert-reminder was succeeding server-side.
-  const reminders: UIReminder[] =
-    tasksQ.data?.activeReminders ?? dashQ.data?.activeReminders ?? [];
+  // Reminders rendered here = overdueReminders ∪ todayReminders.
+  // `activeReminders` is intentionally NOT used: it's the broad set
+  // (incl. future-dated entries) consumed by other surfaces like the
+  // calendar. Cross-stack contract lives in
+  // backend/src/views/tasksView.ts:499 (today, with repeat handling)
+  // + tasksView.ts:525 (overdue = past, unacknowledged, one-time).
+  const todayList: UIReminder[] =
+    tasksQ.data?.todayReminders ?? dashQ.data?.todayReminders ?? [];
+  const overdueList: UIReminder[] =
+    tasksQ.data?.overdueReminders ?? dashQ.data?.overdueReminders ?? [];
+  const reminders: UIReminder[] = [
+    ...overdueList.map((r) => ({ ...r, overdue: true })),
+    ...todayList,
+  ];
   const pending: UIPendingTask[] = tasksQ.data?.pendingTasks ?? dashQ.data?.pendingTasks ?? [];
   const proposals: UIProposal[] = tasksQ.data?.proposals ?? dashQ.data?.proposals ?? [];
   const nudges: UINudge[] = tasksQ.data?.nudges ?? dashQ.data?.nudges ?? [];

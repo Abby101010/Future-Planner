@@ -58,6 +58,24 @@ export default function ReminderRow({ reminder: r, onAck, onDelete }: ReminderRo
         >
           {r.title}
         </span>
+        {r.overdue && (
+          <span
+            data-testid={`reminder-overdue-${r.id}`}
+            style={{
+              fontSize: "var(--t-2xs)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--danger)",
+              border: "1px solid var(--danger)",
+              borderRadius: 4,
+              padding: "1px 6px",
+              flexShrink: 0,
+              fontWeight: 600,
+            }}
+          >
+            Overdue
+          </span>
+        )}
         {r.date && (
           <span
             className="tnum"
