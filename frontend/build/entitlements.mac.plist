@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Hardened Runtime entitlements for Starward (Electron).
+
+		Required because `mac.hardenedRuntime: true` in package.json
+		opts the app into Apple's hardened-runtime checks. Without
+		these, the app crashes on launch (V8 JIT can't allocate
+		executable memory; Electron Helper can't load unsigned dylibs
+		shipped inside the framework).
+
+		The set is the standard Electron + outbound-network minimum.
+		Add narrower entitlements only if a feature (e.g. camera,
+		mic, calendar) actually needs them — broad entitlements
+		expand the attack surface.
+	-->
+
+	<!-- V8 needs a writable+executable code cache to JIT JavaScript. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+
+	<!-- V8's snapshot mechanism + some native deps allocate
+	     executable memory outside the JIT region. -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+
+	<!-- Electron forks helper processes that read DYLD_* env vars to
+	     locate the framework. Hardened runtime strips DYLD_* by
+	     default; this flag opts back in for our own helpers. -->
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+
+	<!-- Electron loads unsigned third-party dylibs inside the
+	     framework (V8, ffmpeg, etc.). Disabling library validation
+	     is the documented Electron requirement; signing those
+	     dylibs ourselves isn't possible without forking Electron. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!-- The app makes HTTPS calls to northstar-api.fly.dev for the
+	     view + command APIs and SSE streams for chat. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>
