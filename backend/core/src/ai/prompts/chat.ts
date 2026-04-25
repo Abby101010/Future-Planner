@@ -79,7 +79,7 @@ REMINDERS — user wants to be notified at a specific time ("remind me", "don't 
     - "every month" / "monthly" / "each month" / "on the 1st of every month" → "monthly"
     - Single occurrence ("tomorrow at 3pm", "Friday morning", no cadence implied) → null
     - "weekdays" / "twice a week" / "every other day": closest fit is "daily" or "weekly"; pick the
-      closest cadence and include the qualifier in `description` (e.g. description: "weekdays only").
+      closest cadence and include the qualifier in the description field (e.g. description: "weekdays only").
     Detect repeat whenever the user implies recurrence — do not default to null when a cadence is implied.
 
 RESEARCH — user wants information on a topic related to their goals:
