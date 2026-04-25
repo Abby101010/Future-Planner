@@ -32,12 +32,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build runs from frontend/ — the desktop workspace is where the
+      # vite + electron build script lives. The root package.json has
+      # no `build` script (intentional — the monorepo build is per
+      # workspace), so `npm run build` from root would fail with
+      # "Missing script: build". Same reasoning applies to the
+      # electron-builder step: its config is in frontend/package.json
+      # `build` field, paths inside use frontend/-relative roots
+      # (build/icon.icns etc.), so it must run from frontend/.
       - name: Build Vite + Electron (macOS)
+        working-directory: frontend
         run: npm run build
         env:
           CI: true
+          VITE_CLOUD_API_URL: https://northstar-api.fly.dev
+          VITE_SUPABASE_URL: https://fgrufbpmvvbhkrefwulk.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw
 
       - name: Package with electron-builder (macOS .dmg)
+        working-directory: frontend
         run: npx electron-builder --mac --universal --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,8 +60,8 @@ jobs:
         with:
           name: release-macos
           path: |
-            release/*.dmg
-            release/latest-mac.yml
+            frontend/release/*.dmg
+            frontend/release/latest-mac.yml
 
   # ─── Windows (.exe via NSIS) ──────────────────────────────
   build-windows:
@@ -67,11 +80,16 @@ jobs:
         run: npm ci
 
       - name: Build Vite + Electron (Windows)
+        working-directory: frontend
         run: npm run build
         env:
           CI: true
+          VITE_CLOUD_API_URL: https://northstar-api.fly.dev
+          VITE_SUPABASE_URL: https://fgrufbpmvvbhkrefwulk.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw
 
       - name: Package with electron-builder (Windows NSIS)
+        working-directory: frontend
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -81,8 +99,8 @@ jobs:
         with:
           name: release-windows
           path: |
-            release/*.exe
-            release/latest.yml
+            frontend/release/*.exe
+            frontend/release/latest.yml
 
   # ─── Linux (.AppImage) ───────────────────────────────────
   build-linux:
@@ -101,11 +119,16 @@ jobs:
         run: npm ci
 
       - name: Build Vite + Electron (Linux)
+        working-directory: frontend
         run: npm run build
         env:
           CI: true
+          VITE_CLOUD_API_URL: https://northstar-api.fly.dev
+          VITE_SUPABASE_URL: https://fgrufbpmvvbhkrefwulk.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZncnVmYnBtdnZiaGtyZWZ3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3OTg3MjEsImV4cCI6MjA5MTM3NDcyMX0.LTb1Jrj-WOMAMM81h_Qxsf04TXwkLAQDiqaLlF49MHw
 
       - name: Package with electron-builder (Linux AppImage)
+        working-directory: frontend
         run: npx electron-builder --linux --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -115,8 +138,8 @@ jobs:
         with:
           name: release-linux
           path: |
-            release/*.AppImage
-            release/latest-linux.yml
+            frontend/release/*.AppImage
+            frontend/release/latest-linux.yml
 
   # ─── Promote draft release to published ─────────────────
   # electron-builder uploads each platform's artifacts (including the
