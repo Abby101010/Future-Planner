@@ -29,6 +29,7 @@ import * as chatRepo from "../repositories/chatRepo";
 import * as repos from "../repositories";
 import { emitViewInvalidate } from "../ws/events";
 import { getEffectiveDate } from "../dateUtils";
+import { resolvePlanningView } from "../views/planningView";
 
 export const aiRouter = Router();
 
@@ -733,6 +734,44 @@ aiRouter.post(
     await enrichWithEnvironment(payload as unknown as Record<string, unknown>, envRaw);
 
     const isGoalPlanMode = payload.context?.currentPage === "goal-plan";
+
+    // Hydrate live context from the DB. The chat is meant to be a global
+    // agent that "sees everything" — but the FE (FloatingChat) sends
+    // empty arrays for goals/todayTasks/activeReminders by design, so
+    // we are the source of truth here. Any client that posts to this
+    // endpoint inherits the same context coverage automatically.
+    // Failure is non-fatal: chat degrades to "no context" but still
+    // answers. Only runs in general (non goal-plan) mode — goal-plan
+    // mode hydrates plan-specific context just below.
+    if (!isGoalPlanMode) {
+      try {
+        const today = getEffectiveDate();
+        const [reminders, dailyTasksRaw, planningV] = await Promise.all([
+          repos.reminders.listActive(),
+          repos.dailyTasks.listForDate(today),
+          resolvePlanningView(),
+        ]);
+        const todayTasks = dailyTasksRaw.map((t) => {
+          const pl = t.payload as Record<string, unknown>;
+          return {
+            id: t.id,
+            title: t.title,
+            completed: t.completed,
+            skipped: Boolean(pl.skipped),
+            cognitiveWeight: (pl.cognitiveWeight as number) ?? 3,
+            durationMinutes:
+              t.estimatedDurationMinutes ?? (pl.durationMinutes as number) ?? 30,
+            goalId: t.goalId,
+          };
+        });
+        const p = payload as unknown as Record<string, unknown>;
+        p.activeReminders = reminders;
+        p.todayTasks = todayTasks;
+        p.goals = planningV.goals;
+      } catch (err) {
+        console.warn("[ai/chat/stream] context hydration failed:", err);
+      }
+    }
 
     // For goal-plan mode, always use the freshest plan from DB rather
     // than relying on the client's potentially stale copy. This ensures

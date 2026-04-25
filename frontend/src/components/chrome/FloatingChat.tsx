@@ -141,6 +141,13 @@ export default function FloatingChat() {
         ...(mode === "goal-plan" ? { selectedGoalId: goalId } : {}),
       },
       ...(mode === "goal-plan" ? { goalId } : {}),
+      // The backend (`/ai/chat/stream` in routes/ai.ts) hydrates these
+      // from the DB before calling buildUnifiedChatRequest, so the chat
+      // is a global agent that sees everything regardless of which view
+      // the FE has cached. We send empty arrays intentionally — passing
+      // FE state would re-introduce a stale-cache risk and make every
+      // future chat caller (mobile, SDK) responsible for plumbing
+      // context. Source of truth lives server-side.
       goals: [],
       todayTasks: [],
       activeReminders: [],
