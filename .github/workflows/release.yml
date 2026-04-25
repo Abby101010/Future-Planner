@@ -27,19 +27,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          # No `cache: npm` — actions/setup-node restores from a hash
+          # keyed on package-lock.json, but the cached node_modules
+          # for this repo carries an incomplete app-builder-bin layout
+          # (the per-platform binary subdirs are dropped). Disabling
+          # the cache forces a clean tarball extraction every run,
+          # which materializes mac/ linux/ win/ correctly.
 
-      # Install at root with explicit --include=optional so
-      # app-builder-bin's per-platform binary subdirs (mac/, linux/,
-      # win/) materialize under the hoisted node_modules/. Workspaces
-      # hoist + missing optional deps is the documented cause of the
-      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT"
-      # failure mode; `npm rebuild` re-runs install scripts to
-      # re-populate any binaries that npm ci skipped.
+      # Workspaces + npm ci sometimes drop app-builder-bin's
+      # per-platform binary subdirs (mac/, linux/, win/) under the
+      # hoisted root node_modules. Plain `npm install` re-resolves
+      # transitive optional deps and re-runs binary extraction. The
+      # diagnostic ls is intentionally chatty so future regressions
+      # are diagnosable from the workflow log alone — if any subdir
+      # is missing, app-builder-bin tarball was extracted incomplete
+      # and the next step (electron-builder) will fail with ENOENT.
       - name: Install dependencies
         run: |
-          npm ci --include=optional
-          npm rebuild app-builder-bin || true
+          npm install --include=optional --no-audit --no-fund
+          echo "--- app-builder-bin layout (root node_modules) ---"
+          ls node_modules/app-builder-bin/ || echo "(absent)"
+          ls node_modules/app-builder-bin/mac/ 2>/dev/null || echo "(no mac/)"
+          ls node_modules/app-builder-bin/linux/x64 2>/dev/null || echo "(no linux/x64/)"
+          ls node_modules/app-builder-bin/win/x64 2>/dev/null || echo "(no win/x64/)"
+        shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
       # from `@starward/core` (types + handlers); the symlink resolves
@@ -92,19 +103,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          # No `cache: npm` — actions/setup-node restores from a hash
+          # keyed on package-lock.json, but the cached node_modules
+          # for this repo carries an incomplete app-builder-bin layout
+          # (the per-platform binary subdirs are dropped). Disabling
+          # the cache forces a clean tarball extraction every run,
+          # which materializes mac/ linux/ win/ correctly.
 
-      # Install at root with explicit --include=optional so
-      # app-builder-bin's per-platform binary subdirs (mac/, linux/,
-      # win/) materialize under the hoisted node_modules/. Workspaces
-      # hoist + missing optional deps is the documented cause of the
-      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT"
-      # failure mode; `npm rebuild` re-runs install scripts to
-      # re-populate any binaries that npm ci skipped.
+      # Workspaces + npm ci sometimes drop app-builder-bin's
+      # per-platform binary subdirs (mac/, linux/, win/) under the
+      # hoisted root node_modules. Plain `npm install` re-resolves
+      # transitive optional deps and re-runs binary extraction. The
+      # diagnostic ls is intentionally chatty so future regressions
+      # are diagnosable from the workflow log alone — if any subdir
+      # is missing, app-builder-bin tarball was extracted incomplete
+      # and the next step (electron-builder) will fail with ENOENT.
       - name: Install dependencies
         run: |
-          npm ci --include=optional
-          npm rebuild app-builder-bin || true
+          npm install --include=optional --no-audit --no-fund
+          echo "--- app-builder-bin layout (root node_modules) ---"
+          ls node_modules/app-builder-bin/ || echo "(absent)"
+          ls node_modules/app-builder-bin/mac/ 2>/dev/null || echo "(no mac/)"
+          ls node_modules/app-builder-bin/linux/x64 2>/dev/null || echo "(no linux/x64/)"
+          ls node_modules/app-builder-bin/win/x64 2>/dev/null || echo "(no win/x64/)"
+        shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
       # from `@starward/core` (types + handlers); the symlink resolves
@@ -149,19 +171,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          # No `cache: npm` — actions/setup-node restores from a hash
+          # keyed on package-lock.json, but the cached node_modules
+          # for this repo carries an incomplete app-builder-bin layout
+          # (the per-platform binary subdirs are dropped). Disabling
+          # the cache forces a clean tarball extraction every run,
+          # which materializes mac/ linux/ win/ correctly.
 
-      # Install at root with explicit --include=optional so
-      # app-builder-bin's per-platform binary subdirs (mac/, linux/,
-      # win/) materialize under the hoisted node_modules/. Workspaces
-      # hoist + missing optional deps is the documented cause of the
-      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT"
-      # failure mode; `npm rebuild` re-runs install scripts to
-      # re-populate any binaries that npm ci skipped.
+      # Workspaces + npm ci sometimes drop app-builder-bin's
+      # per-platform binary subdirs (mac/, linux/, win/) under the
+      # hoisted root node_modules. Plain `npm install` re-resolves
+      # transitive optional deps and re-runs binary extraction. The
+      # diagnostic ls is intentionally chatty so future regressions
+      # are diagnosable from the workflow log alone — if any subdir
+      # is missing, app-builder-bin tarball was extracted incomplete
+      # and the next step (electron-builder) will fail with ENOENT.
       - name: Install dependencies
         run: |
-          npm ci --include=optional
-          npm rebuild app-builder-bin || true
+          npm install --include=optional --no-audit --no-fund
+          echo "--- app-builder-bin layout (root node_modules) ---"
+          ls node_modules/app-builder-bin/ || echo "(absent)"
+          ls node_modules/app-builder-bin/mac/ 2>/dev/null || echo "(no mac/)"
+          ls node_modules/app-builder-bin/linux/x64 2>/dev/null || echo "(no linux/x64/)"
+          ls node_modules/app-builder-bin/win/x64 2>/dev/null || echo "(no win/x64/)"
+        shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
       # from `@starward/core` (types + handlers); the symlink resolves
