@@ -12,10 +12,25 @@
  *   ★ Starward (bottom logo)
  *
  * Width: 64px collapsed, 224px expanded. 180ms width transition.
+ *
+ * Two-mode interaction:
+ *   - "rest" (isSidebarCollapsed=true, default) — icons only at rest;
+ *     hovering the cursor over the sidebar expands it to full width.
+ *     Cursor leaves → collapses back.
+ *   - "pinned" (isSidebarCollapsed=false) — sidebar stays expanded
+ *     regardless of hover. The toggle button (chevron) flips between
+ *     the two modes.
+ *
+ * Top padding clears the macOS traffic lights placed at
+ * trafficLightPosition (16, 16) by `frontend/electron/main.ts`. ~44px
+ * gives ~14px breathing room below the buttons; harmless on platforms
+ * without a hidden-inset title bar.
+ *
  * Reads view:settings for `enableNewsFeed`.
  * Writes currentView / isSidebarCollapsed / isSettingsOpen to the Zustand store.
  */
 
+import { useState } from "react";
 import useStore from "../store/useStore";
 import { useQuery } from "../hooks/useQuery";
 import type { AppView } from "@starward/core";
@@ -35,9 +50,15 @@ interface NavItem {
 export default function Sidebar() {
   const currentView = useStore((s) => s.currentView);
   const setView = useStore((s) => s.setView);
-  const collapsed = useStore((s) => s.isSidebarCollapsed);
+  const pinned = !useStore((s) => s.isSidebarCollapsed);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+
+  // Local hover peek: when the user has NOT pinned the sidebar open,
+  // entering with the cursor expands it; leaving collapses it back.
+  // Pinned state ignores hover and stays expanded.
+  const [hovering, setHovering] = useState(false);
+  const collapsed = !pinned && !hovering;
 
   const { data: settingsView } = useQuery<SettingsView>("view:settings");
   const enableNewsFeed = settingsView?.user?.settings?.enableNewsFeed !== false;
@@ -61,12 +82,17 @@ export default function Sidebar() {
   return (
     <nav
       data-testid="sidebar-nav"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
       style={{
         width,
         flexShrink: 0,
         borderRight: "1px solid var(--border)",
         background: "var(--bg)",
-        padding: "14px 0 10px",
+        // 44px top clears the macOS traffic-light buttons positioned
+        // at (16, 16) by the Electron config (main.ts:83). 10px bottom
+        // is unchanged.
+        padding: "44px 0 10px",
         display: "flex",
         flexDirection: "column",
         position: "sticky",
@@ -166,7 +192,7 @@ export default function Sidebar() {
           <button
             data-testid="sidebar-collapse"
             onClick={toggleSidebar}
-            title="Collapse sidebar"
+            title={pinned ? "Unpin (collapse on cursor leave)" : "Pin sidebar open"}
             style={{
               border: 0,
               background: "transparent",
@@ -185,7 +211,7 @@ export default function Sidebar() {
         <button
           data-testid="sidebar-expand"
           onClick={toggleSidebar}
-          title="Expand sidebar"
+          title="Pin sidebar open"
           style={{
             margin: "0 14px 10px",
             border: "1px solid var(--border)",

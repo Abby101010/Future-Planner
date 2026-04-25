@@ -57,7 +57,10 @@ interface StoreApi {
   chatModeOverride: "general" | null;
   setChatModeOverride: (mode: "general" | null) => void;
 
-  /** Sidebar collapse (64px icons-only vs. 224px). */
+  /** Sidebar collapse (64px icons-only vs. 224px). Default true: the
+   *  sidebar rests collapsed and expands on cursor hover. Setting this
+   *  to false "pins" the sidebar open, ignoring hover. The toggle
+   *  button switches between the two modes. */
   isSidebarCollapsed: boolean;
   toggleSidebar: () => void;
 
@@ -91,7 +94,7 @@ const useStore = create<StoreApi>((set) => ({
   chatModeOverride: null,
   setChatModeOverride: (mode) => set({ chatModeOverride: mode }),
 
-  isSidebarCollapsed: false,
+  isSidebarCollapsed: true,
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
 
   isSettingsOpen: false,
