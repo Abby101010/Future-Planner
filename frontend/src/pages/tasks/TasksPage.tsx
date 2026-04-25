@@ -16,6 +16,8 @@ import TaskRow from "./TaskRow";
 import AddTaskLine from "./AddTaskLine";
 import AddReminderLine from "./AddReminderLine";
 import ReminderRow from "./ReminderRow";
+import MonthlyIntensityCard from "./MonthlyIntensityCard";
+import type { MonthlyContext } from "@starward/core";
 import type {
   UITask,
   UIReminder,
@@ -65,6 +67,17 @@ interface DashboardView {
   nudges?: UINudge[];
   proposals?: UIProposal[];
   paceBanner?: { title?: string; body?: string } | null;
+  /** Current month's busyness context (set by MonthlyIntensityCard).
+   *  Populated by backend dashboardView.ts:151. */
+  currentMonthContext?: MonthlyContext | null;
+  /** True when no context exists for the current month — drives the
+   *  month-start nudge card rendering. Backend dashboardView.ts:152. */
+  needsMonthlyContext?: boolean;
+}
+
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export default function TasksPage() {
@@ -283,6 +296,9 @@ export default function TasksPage() {
   const plannedLabel = `${Math.floor(plannedMin / 60)}h ${plannedMin % 60}m`;
 
   const paceBanner = dashQ.data?.paceBanner;
+  const currentMonthContext = dashQ.data?.currentMonthContext ?? null;
+  const needsMonthlyContext = dashQ.data?.needsMonthlyContext === true;
+  const showMonthlyCard = needsMonthlyContext;
 
   return (
     <>
@@ -295,6 +311,13 @@ export default function TasksPage() {
         title="Today"
         right={
           <>
+            {currentMonthContext && (
+              <MonthlyIntensityCard
+                current={currentMonthContext}
+                monthKey={currentMonthContext.month}
+                onSaved={refetchAll}
+              />
+            )}
             <Button
               tone="primary"
               size="sm"
@@ -394,6 +417,13 @@ export default function TasksPage() {
           gap: 56,
         }}
       >
+        {showMonthlyCard && (
+          <MonthlyIntensityCard
+            current={null}
+            monthKey={currentMonthKey()}
+            onSaved={refetchAll}
+          />
+        )}
         <section>
           <header
             style={{
