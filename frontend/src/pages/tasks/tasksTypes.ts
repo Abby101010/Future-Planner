@@ -32,10 +32,17 @@ export interface UITask {
   projectTag?: string;
 }
 
+/** Repeat schedule for a reminder. Mirrors the canonical enum on
+ *  `backend/core/src/types/index.ts:Reminder.repeat`; null = one-time. */
+export type UIReminderRepeat = "daily" | "weekly" | "monthly" | null;
+
 export interface UIReminder {
   id: string;
   title: string;
   date?: string;
+  /** Repeat cadence. Sourced from `Reminder.repeat` server-side; the
+   *  manual add UI exposes the same enum. */
+  repeat?: UIReminderRepeat;
   /** UI-only. Set client-side when the reminder comes from the view's
    *  `overdueReminders` slice. The backend never emits this field. */
   overdue?: boolean;

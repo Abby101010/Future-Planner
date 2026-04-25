@@ -76,6 +76,28 @@ export default function ReminderRow({ reminder: r, onAck, onDelete }: ReminderRo
             Overdue
           </span>
         )}
+        {r.repeat && (
+          // Sourced from `Reminder.repeat` (backend/core/src/types/index.ts).
+          // Shows the cadence so users know a reminder is recurring without
+          // opening an edit affordance.
+          <span
+            data-testid={`reminder-repeat-${r.id}`}
+            title={`Repeats ${r.repeat}`}
+            style={{
+              fontSize: "var(--t-2xs)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--fg-mute)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              padding: "1px 6px",
+              flexShrink: 0,
+              fontWeight: 500,
+            }}
+          >
+            {r.repeat}
+          </span>
+        )}
         {r.date && (
           <span
             className="tnum"

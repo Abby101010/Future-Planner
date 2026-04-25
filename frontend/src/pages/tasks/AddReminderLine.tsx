@@ -1,12 +1,15 @@
 /* AddReminderLine — minimalist single-line reminder composer.
  *
- * Type a title + optionally pick a date (defaults to today) and a
- * time (defaults to 09:00). Hit Enter or click + to submit. Sends
- * `command:upsert-reminder` with the documented flat shape:
- *   { title, date, reminderTime? }
+ * Type a title + optionally pick a date (defaults to today), a time
+ * (defaults to 09:00), and a repeat cadence (defaults to one-time).
+ * Hit Enter or click + to submit. Sends `command:upsert-reminder`
+ * with the documented flat shape:
+ *   { title, date, reminderTime?, repeat? }
  * Server (backend/src/routes/commands/calendar.ts) auto-generates
  * `id`, fills `reminderTime` to `<date>T09:00:00` when omitted, and
- * sets sensible defaults for the other Reminder fields.
+ * sets sensible defaults for the other Reminder fields. The `repeat`
+ * enum mirrors `Reminder.repeat` in core types: "daily"|"weekly"|
+ * "monthly"|null.
  *
  * Replaces the bare "Add" button that blindly inserted a placeholder
  * "New reminder" with no edit affordance — that left users stuck with
@@ -17,6 +20,7 @@ import { useState } from "react";
 import { useCommand } from "../../hooks/useCommand";
 import Button from "../../components/primitives/Button";
 import Icon from "../../components/primitives/Icon";
+import type { UIReminderRepeat } from "./tasksTypes";
 
 export interface AddReminderLineProps {
   onAdded: () => void;
@@ -26,11 +30,19 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+const REPEAT_OPTIONS: Array<{ value: "none" | "daily" | "weekly" | "monthly"; label: string }> = [
+  { value: "none", label: "Once" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
 export default function AddReminderLine({ onAdded }: AddReminderLineProps) {
   const { run, running } = useCommand();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(todayISO());
   const [time, setTime] = useState("09:00");
+  const [repeat, setRepeat] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [focus, setFocus] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,15 +50,17 @@ export default function AddReminderLine({ onAdded }: AddReminderLineProps) {
     if (!title.trim()) return;
     setError(null);
     try {
+      const repeatValue: UIReminderRepeat = repeat === "none" ? null : repeat;
       await run("command:upsert-reminder", {
         title: title.trim(),
         date,
         reminderTime: `${date}T${time}:00`,
+        repeat: repeatValue,
       });
       setTitle("");
-      // Date / time intentionally NOT reset — keeps the user in their
-      // current "context" if they're adding a batch of reminders for
-      // the same day/time slot.
+      // Date / time / repeat intentionally NOT reset — keeps the user
+      // in their current "context" if they're adding a batch of
+      // reminders for the same day/time slot or cadence.
       onAdded();
     } catch (e) {
       setError((e as Error).message);
@@ -129,6 +143,29 @@ export default function AddReminderLine({ onAdded }: AddReminderLineProps) {
             width: 80,
           }}
         />
+        <select
+          data-testid="add-reminder-repeat"
+          value={repeat}
+          onChange={(e) =>
+            setRepeat(e.target.value as "none" | "daily" | "weekly" | "monthly")
+          }
+          title="Repeat"
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 3,
+            fontSize: 11,
+            padding: "2px 4px",
+            background: "var(--bg)",
+            color: "var(--fg-mute)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          {REPEAT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <Button
           size="xs"
           tone="ghost"

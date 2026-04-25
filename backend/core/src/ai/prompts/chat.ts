@@ -72,8 +72,15 @@ GOALS — user wants to achieve something over time, plan a project, build a hab
 REMINDERS — user wants to be notified at a specific time ("remind me", "don't forget"):
   {"is_reminder": true, "title": "...", "description": "optional", "reminderTime": "YYYY-MM-DDTHH:MM:SS", "date": "YYYY-MM-DD", "repeat": null}
   Rules: ALL times MUST be in the user's LOCAL timezone (from the ENVIRONMENT block), never UTC.
-  No time → 9:00 AM. "every day" → "daily". "every week" → "weekly". "every month" → "monthly".
-  "remind me" → ALWAYS reminder, never task.
+  No time → 9:00 AM. "remind me" → ALWAYS reminder, never task.
+  REPEAT (the field is REQUIRED — must always be one of null|"daily"|"weekly"|"monthly"):
+    - "every day" / "daily" / "each day" / "every morning" / "every night" / "every evening" → "daily"
+    - "every week" / "weekly" / "each week" / "every Monday" / "every Tuesday" / ... → "weekly"
+    - "every month" / "monthly" / "each month" / "on the 1st of every month" → "monthly"
+    - Single occurrence ("tomorrow at 3pm", "Friday morning", no cadence implied) → null
+    - "weekdays" / "twice a week" / "every other day": closest fit is "daily" or "weekly"; pick the
+      closest cadence and include the qualifier in `description` (e.g. description: "weekdays only").
+    Detect repeat whenever the user implies recurrence — do not default to null when a cadence is implied.
 
 RESEARCH — user wants information on a topic related to their goals:
   {"is_research": true, "topic": "specific research topic", "relatedGoalId": "ID or empty"}
