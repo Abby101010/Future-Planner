@@ -17,6 +17,15 @@ export interface UITask {
    *  but is off the active list. Treat skipped == not visible in
    *  today's active rendering (mirrors backend tasksView.ts:354). */
   skipped?: boolean;
+  /** "must-do" / "should-do" / "bonus" — the AI-assigned priority.
+   *  Bonus tasks are hidden from the active list (cognitive-budget
+   *  cap demotes excess to bonus). Mirrors backend tasksView.ts:354
+   *  `!isBonusTask(t)` filter. */
+  priority?: string;
+  /** Explicit bonus flag set by the triage demote pass and by
+   *  cmdGenerateBonusTask. Either this OR priority="bonus" hides the
+   *  task from the active list. */
+  isBonus?: boolean;
   weight?: "must" | "should" | "nice" | string;
   timeBlock?: string;
   tag?: string;

@@ -24,13 +24,22 @@ import type {
   UINudge,
 } from "./tasksTypes";
 
-/** A task is "off the active list" when it's been completed OR skipped.
- *  Mirrors the backend contract in backend/src/views/tasksView.ts:354
- *  (`!t.skipped && !isBonusTask(t)`): skipped tasks don't count toward
- *  today's active KPIs and shouldn't render in the active list. Keep
- *  this predicate in sync with the backend filter. */
+/** A task is "off the active list" when it's been completed OR skipped
+ *  OR demoted to bonus tier (priority="bonus" or isBonus=true). Mirrors
+ *  the backend contract in backend/src/views/tasksView.ts:354
+ *  (`!t.skipped && !isBonusTask(t)`): bonus + skipped tasks don't
+ *  count toward today's active KPIs and shouldn't render in the
+ *  active list. The triage pass demotes over-budget rows to bonus
+ *  (see services/dailyTriage.ts), so keeping this predicate in sync
+ *  with the backend filter is what makes the cognitive-budget cap
+ *  visible to the user. */
 function isOffActiveList(t: UITask): boolean {
-  return Boolean(t.done ?? t.completed) || Boolean(t.skipped);
+  return (
+    Boolean(t.done ?? t.completed) ||
+    Boolean(t.skipped) ||
+    t.priority === "bonus" ||
+    Boolean(t.isBonus)
+  );
 }
 
 interface TasksView {
