@@ -29,20 +29,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Install at root with explicit --include=optional so
+      # app-builder-bin's per-platform binary subdirs (mac/, linux/,
+      # win/) materialize under the hoisted node_modules/. Workspaces
+      # hoist + missing optional deps is the documented cause of the
+      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT"
+      # failure mode; `npm rebuild` re-runs install scripts to
+      # re-populate any binaries that npm ci skipped.
       - name: Install dependencies
-        run: npm ci
-
-      # In a workspaces install, app-builder-bin's per-platform binary
-      # subdirs (mac/, linux/, win/) sometimes don't materialize at
-      # the hoisted root node_modules, so electron-builder fails with
-      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT".
-      # Reinstall scoped to the frontend workspace to populate them
-      # under frontend/node_modules without disturbing the workspace
-      # symlink for @starward/core. `|| true` because npm exits
-      # non-zero on platform-mismatched optional deps that are
-      # actually fine.
-      - name: Ensure electron-builder native binaries
-        run: cd frontend && npm install --no-save --include=optional
+        run: |
+          npm ci --include=optional
+          npm rebuild app-builder-bin || true
 
       # Build the @starward/core workspace first. The frontend imports
       # from `@starward/core` (types + handlers); the symlink resolves
@@ -97,20 +94,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Install at root with explicit --include=optional so
+      # app-builder-bin's per-platform binary subdirs (mac/, linux/,
+      # win/) materialize under the hoisted node_modules/. Workspaces
+      # hoist + missing optional deps is the documented cause of the
+      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT"
+      # failure mode; `npm rebuild` re-runs install scripts to
+      # re-populate any binaries that npm ci skipped.
       - name: Install dependencies
-        run: npm ci
-
-      # In a workspaces install, app-builder-bin's per-platform binary
-      # subdirs (mac/, linux/, win/) sometimes don't materialize at
-      # the hoisted root node_modules, so electron-builder fails with
-      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT".
-      # Reinstall scoped to the frontend workspace to populate them
-      # under frontend/node_modules without disturbing the workspace
-      # symlink for @starward/core. `|| true` because npm exits
-      # non-zero on platform-mismatched optional deps that are
-      # actually fine.
-      - name: Ensure electron-builder native binaries
-        run: cd frontend && npm install --no-save --include=optional
+        run: |
+          npm ci --include=optional
+          npm rebuild app-builder-bin || true
 
       # Build the @starward/core workspace first. The frontend imports
       # from `@starward/core` (types + handlers); the symlink resolves
@@ -157,20 +151,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Install at root with explicit --include=optional so
+      # app-builder-bin's per-platform binary subdirs (mac/, linux/,
+      # win/) materialize under the hoisted node_modules/. Workspaces
+      # hoist + missing optional deps is the documented cause of the
+      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT"
+      # failure mode; `npm rebuild` re-runs install scripts to
+      # re-populate any binaries that npm ci skipped.
       - name: Install dependencies
-        run: npm ci
-
-      # In a workspaces install, app-builder-bin's per-platform binary
-      # subdirs (mac/, linux/, win/) sometimes don't materialize at
-      # the hoisted root node_modules, so electron-builder fails with
-      # "spawn .../app-builder-bin/mac/app-builder_arm64 ENOENT".
-      # Reinstall scoped to the frontend workspace to populate them
-      # under frontend/node_modules without disturbing the workspace
-      # symlink for @starward/core. `|| true` because npm exits
-      # non-zero on platform-mismatched optional deps that are
-      # actually fine.
-      - name: Ensure electron-builder native binaries
-        run: cd frontend && npm install --no-save --include=optional
+        run: |
+          npm ci --include=optional
+          npm rebuild app-builder-bin || true
 
       # Build the @starward/core workspace first. The frontend imports
       # from `@starward/core` (types + handlers); the symlink resolves
