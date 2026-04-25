@@ -254,6 +254,10 @@ export default function TasksPage() {
     setChatOpen(true);
   }
 
+  // Reminders section: the Add input is hidden until the user clicks
+  // the header "Add" button. Closes again after a successful submit.
+  const [addReminderOpen, setAddReminderOpen] = useState(false);
+
   const visibleTasks = showDone ? tasks : tasks.filter((t) => !isOffActiveList(t));
   const doneCount = tasks.filter((t) => t.done ?? t.completed).length;
   const leftCount = tasks.filter((t) => !isOffActiveList(t)).length;
@@ -423,6 +427,15 @@ export default function TasksPage() {
               </span>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
+              <Button
+                size="xs"
+                tone="ghost"
+                icon="plus"
+                onClick={() => setAddReminderOpen((v) => !v)}
+                data-testid="reminders-add"
+              >
+                {addReminderOpen ? "Cancel" : "Add a reminder"}
+              </Button>
               {reminders.length > 0 && (
                 <Button
                   size="xs"
@@ -436,7 +449,14 @@ export default function TasksPage() {
               )}
             </div>
           </header>
-          <AddReminderLine onAdded={() => refetchAll()} />
+          {addReminderOpen && (
+            <AddReminderLine
+              onAdded={() => {
+                refetchAll();
+                setAddReminderOpen(false);
+              }}
+            />
+          )}
           {reminders.map((r) => (
             <ReminderRow key={r.id} reminder={r} onAck={ackReminder} onDelete={delReminder} />
           ))}
