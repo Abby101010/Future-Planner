@@ -35,7 +35,9 @@ function isOffActiveList(t: UITask): boolean {
 
 interface TasksView {
   tasks?: UITask[];
-  reminders?: UIReminder[];
+  activeReminders?: UIReminder[];
+  todayReminders?: UIReminder[];
+  overdueReminders?: UIReminder[];
   pendingTasks?: UIPendingTask[];
   proposals?: UIProposal[];
   nudges?: UINudge[];
@@ -44,7 +46,7 @@ interface TasksView {
 interface DashboardView {
   todayTasks?: UITask[];
   pendingTasks?: UIPendingTask[];
-  reminders?: UIReminder[];
+  activeReminders?: UIReminder[];
   nudges?: UINudge[];
   proposals?: UIProposal[];
   paceBanner?: { title?: string; body?: string } | null;
@@ -70,7 +72,15 @@ export default function TasksPage() {
   }, []);
 
   const tasks: UITask[] = tasksQ.data?.tasks ?? dashQ.data?.todayTasks ?? [];
-  const reminders: UIReminder[] = tasksQ.data?.reminders ?? dashQ.data?.reminders ?? [];
+  // view:tasks emits `activeReminders` (broad, all active) plus separate
+  // narrower lists `todayReminders` and `overdueReminders`. The "Reminders"
+  // section here shows the user's full active set, so we read
+  // activeReminders. Keep in sync with backend tasksView.ts:103 — earlier
+  // versions of this code read `reminders`, a field that doesn't exist
+  // on either view, which silently rendered an empty list while
+  // upsert-reminder was succeeding server-side.
+  const reminders: UIReminder[] =
+    tasksQ.data?.activeReminders ?? dashQ.data?.activeReminders ?? [];
   const pending: UIPendingTask[] = tasksQ.data?.pendingTasks ?? dashQ.data?.pendingTasks ?? [];
   const proposals: UIProposal[] = tasksQ.data?.proposals ?? dashQ.data?.proposals ?? [];
   const nudges: UINudge[] = tasksQ.data?.nudges ?? dashQ.data?.nudges ?? [];

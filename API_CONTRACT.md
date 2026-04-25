@@ -291,7 +291,7 @@ Last updated: 2026-04-24 — **Goal methodology alignment (migration 0013 + plan
 #### Tasks
 | Feature | API | Usage |
 |---|---|---|
-| Create task | POST /commands/create-task | Body: `{title, durationMinutes?, date?, ...}`. |
+| Create task | POST /commands/create-task | Body: `{title, date?, durationMinutes?, id?, ...}` — `title` required (non-empty); `date` defaults to today; `id` auto-generated when omitted. Pure DB upsert — no AI. |
 | Update task | POST /commands/update-task | Body: `{taskId, updates}`. |
 | Delete task | POST /commands/delete-task | Body: `{taskId}`. |
 | Toggle task complete | POST /commands/toggle-task | Body: `{taskId, completed?}`. |

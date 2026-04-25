@@ -22,15 +22,28 @@ import { routeCantComplete } from "../../coordinators/dailyPlanner/cantCompleteR
 import { packageCurrentPlan, evaluateCapacity } from "../../coordinators/dailyPlanner/memoryPackager";
 import { rotateNextTask } from "../../coordinators/dailyPlanner/taskRotation";
 
+/**
+ * Create a daily task. Per API_CONTRACT.md, body shape is
+ * `{title, date?, durationMinutes?, ...}` — `title` required, everything
+ * else optional. `date` defaults to today (effective date in the user's
+ * timezone), matching the auto-default pattern used in
+ * cmdUpsertReminder. `id` is auto-generated when omitted. This means
+ * the FE can call `command:create-task` with as little as `{title}` and
+ * get a valid task scheduled for today. Older code paths that send
+ * explicit `date` keep working unchanged.
+ */
 export async function cmdCreateTask(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const id = (body.id as string | undefined) ?? crypto.randomUUID();
-  const date = body.date as string | undefined;
   const title = body.title as string | undefined;
-  if (!date || !title) {
-    throw new Error("command:create-task requires args.date and args.title");
+  if (!title || !title.trim()) {
+    throw new Error("command:create-task requires args.title (non-empty string)");
   }
+  const date =
+    typeof body.date === "string" && body.date
+      ? (body.date as string)
+      : getEffectiveDate();
   const payload = (body.payload as Record<string, unknown> | undefined) ?? {};
   if (!payload.source) payload.source = "user-created";
   // Derive column-level source from body or goalId
