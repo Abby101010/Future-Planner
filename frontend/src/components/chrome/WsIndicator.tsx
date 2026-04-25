@@ -2,7 +2,13 @@
  *
  * Subscribes to `view:invalidate` from the real wsClient (not a custom event)
  * and flashes the affected viewKinds for ~2.6s. Visible only when at least
- * one recent event is still animating. */
+ * one recent event is still animating.
+ *
+ * ⚠ Dev-only. Production builds (import.meta.env.PROD) return null
+ * before any subscription. The underlying refetch mechanism (useQuery
+ * → WS subscribe → refetch) works without the visible toast — this
+ * component is purely an internal "system noticed" indicator and was
+ * confusing end users into thinking the events were errors. */
 
 import { useEffect, useState } from "react";
 import { wsClient } from "../../services/wsClient";
@@ -14,9 +20,13 @@ interface Stamp {
 }
 
 export default function WsIndicator() {
+  // Hide in production. Hooks below are still declared (rules-of-hooks)
+  // but `recent` stays empty when the subscription early-returns.
+  const isProd = import.meta.env.PROD;
   const [recent, setRecent] = useState<Stamp[]>([]);
 
   useEffect(() => {
+    if (isProd) return;
     let counter = 0;
     const unsub = wsClient.subscribe("view:invalidate", (payload) => {
       const viewKinds: string[] = Array.isArray((payload as { viewKinds?: unknown })?.viewKinds)
@@ -30,9 +40,9 @@ export default function WsIndicator() {
       }, 2600);
     });
     return unsub;
-  }, []);
+  }, [isProd]);
 
-  if (recent.length === 0) return null;
+  if (isProd || recent.length === 0) return null;
   return (
     <div
       data-testid="ws-indicator"
