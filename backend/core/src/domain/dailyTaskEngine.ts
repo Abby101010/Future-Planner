@@ -13,7 +13,6 @@ import {
   COGNITIVE_BUDGET,
   enforceBudgetSnake,
   computeCognitiveWeight,
-  IMPORTANCE_PRIORITY_RULES,
 } from "./cognitiveBudget.js";
 
 import type {

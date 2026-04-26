@@ -6,7 +6,7 @@
 
 import type { Reminder } from "@starward/core";
 import { query } from "../db/pool";
-import { requireUserId } from "./_context";
+import { requireUserId, EntityNotFoundError } from "./_context";
 
 interface ReminderRow {
   id: string;
@@ -109,6 +109,18 @@ export async function upsert(reminder: Reminder): Promise<void> {
   );
 }
 
+/**
+ * Mark a reminder acknowledged. THROWS EntityNotFoundError when the
+ * id doesn't match a reminder owned by the current user — a no-op
+ * UPDATE is a contract violation, not a successful ack.
+ *
+ * Why this throws instead of warning: the prior "log + return void"
+ * shape made the FE think a check-off succeeded when nothing had
+ * changed in the DB, leaving the row visible after refetch and
+ * producing the "I can't check off my reminders" symptom with no
+ * error message. Throwing surfaces the failure to useCommand →
+ * cmdError state → user-visible banner.
+ */
 export async function acknowledge(id: string): Promise<void> {
   const userId = requireUserId();
   const result = await query<{ id: string }>(
@@ -119,12 +131,14 @@ export async function acknowledge(id: string): Promise<void> {
     [userId, id],
   );
   if (result.length === 0) {
-    console.warn("[remindersRepo] acknowledge: no row matched", { id, userId });
-  } else {
-    console.log("[remindersRepo] acknowledged reminder", id);
+    throw new EntityNotFoundError("reminder", id);
   }
 }
 
+/**
+ * Delete a reminder. Same throw-on-miss contract as `acknowledge` —
+ * see its JSDoc for the rationale.
+ */
 export async function remove(id: string): Promise<void> {
   const userId = requireUserId();
   const result = await query<{ id: string }>(
@@ -132,9 +146,7 @@ export async function remove(id: string): Promise<void> {
     [userId, id],
   );
   if (result.length === 0) {
-    console.warn("[remindersRepo] remove: no row matched", { id, userId });
-  } else {
-    console.log("[remindersRepo] deleted reminder", id);
+    throw new EntityNotFoundError("reminder", id);
   }
 }
 

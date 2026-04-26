@@ -744,6 +744,8 @@ export async function cmdAdaptiveReschedule(
   );
 
   if (classification.level === "plan") {
+    const forceFullRegen =
+      body.forceFullRegen === true || payload.forceFullRegen === true;
     return runPlanLevelReschedule({
       userId,
       goalId,
@@ -752,6 +754,7 @@ export async function cmdAdaptiveReschedule(
       actualPace,
       split,
       memory,
+      forceFullRegen,
     });
   }
   if (classification.level === "local") {
@@ -788,16 +791,49 @@ interface ReschedContext {
   actualPace: number;
   split: SplitT;
   memory: Awaited<ReturnType<typeof loadMemory>>;
+  /** When true, bypasses the L3 30-day rate limit. Set by manual
+   *  user-initiated full regen (request-escalation with level=3). */
+  forceFullRegen?: boolean;
 }
 interface ReschedContextWithClassification extends ReschedContext {
   classification: RescheduleClassifierOutput;
 }
+
+/** L3 rate limit: minimum days between full plan regenerations per
+ *  goal. Codifies the plan's "Reserved for rare cases" intent so a
+ *  bug or chat-intent loop can't burn tokens on repeated full regens. */
+const FULL_REGEN_COOLDOWN_DAYS = 30;
 
 async function runPlanLevelReschedule(
   ctx: ReschedContext,
 ): Promise<unknown> {
   const { userId, goalId, goal, today, actualPace, split, memory } = ctx;
   const { pastPlan, futurePlan, overdueTasks } = split;
+
+  // L3 rate-limit gate. Reads goals.last_full_regen_at (migration 0016)
+  // and rejects when the previous regen was less than the cooldown ago,
+  // unless `forceFullRegen` is set on the request (manual override).
+  try {
+    const lastAt = await repos.goals.getLastFullRegenAt(goalId);
+    if (lastAt) {
+      const elapsedDays =
+        (Date.now() - new Date(lastAt).getTime()) / 86_400_000;
+      if (elapsedDays < FULL_REGEN_COOLDOWN_DAYS && !ctx.forceFullRegen) {
+        const remaining = Math.ceil(FULL_REGEN_COOLDOWN_DAYS - elapsedDays);
+        console.warn(
+          `[adaptive-reschedule] L3 rate-limited for goal ${goalId} (${remaining}d remaining); falling back to local`,
+        );
+        // Fall back to the local (L2-shaped) path. Same context, no
+        // throw — keeps the user-visible behavior smooth while still
+        // protecting cost.
+        return runLocalLevelReschedule(ctx as ReschedContextWithClassification);
+      }
+    }
+  } catch (err) {
+    // Best-effort. If the gate read fails, fall through to the regen
+    // — better to occasionally re-run than to silently block.
+    console.warn(`[adaptive-reschedule] rate-limit check failed for ${goalId}:`, err);
+  }
 
   const futureTasks: Array<{ title: string; description: string; week: string; day: string }> = [];
   for (const yr of futurePlan.years) {
@@ -901,6 +937,13 @@ Please redistribute all tasks at my actual pace of ${actualPace} tasks/day.`,
       rescheduleBannerDismissed: true,
     } as typeof goal;
     await repos.goals.upsert(updatedGoal);
+    // L3 rate-limit stamp. Recorded only on a SUCCESSFUL full regen
+    // so a parse failure or empty AI response doesn't burn the quota.
+    try {
+      await repos.goals.markFullRegen(goalId);
+    } catch (err) {
+      console.warn(`[adaptive-reschedule] markFullRegen failed for ${goalId}:`, err);
+    }
     await repos.nudges.dismissByContext(goalId);
     planUpdated = true;
 
@@ -1631,6 +1674,282 @@ export async function cmdSubmitPriorityFeedback(
     reason,
   });
   return { ok: true };
+}
+
+// ── Manual escalation request ──────────────────────────────
+//
+// User-initiated route into the L1/L2/L3 handlers, bypassing the
+// classifier's automatic level decision. Used for explicit "redo
+// this milestone" / "rebuild from scratch" intents from chat or
+// (eventually) FE buttons.
+//
+// L3 still honors the 30-day rate limit unless `force=true` is
+// passed. L1 and L2 have no cooldown (cheap and milestone-scoped).
+//
+// No FE wiring yet — invokable via dev harness or chat intent today.
+// FE buttons ship in Phase F after notarization resolves.
+
+export async function cmdRequestEscalation(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const goalId = typeof body.goalId === "string" ? body.goalId : null;
+  const milestoneId = typeof body.milestoneId === "string" ? body.milestoneId : null;
+  const level = body.level;
+  const reason = (body.reason as string | undefined) ?? "manual";
+  const force = body.force === true;
+
+  if (level !== 1 && level !== 2 && level !== 3) {
+    throw new Error("command:request-escalation requires level=1|2|3");
+  }
+
+  if (level === 1) {
+    const { runL1DayScope } = await import("../../services/planAdjustmentL1");
+    const result = await runL1DayScope({ rationale: `manual: ${reason}` });
+    return { ok: true, level: 1, result };
+  }
+
+  if (level === 2) {
+    if (!goalId || !milestoneId) {
+      throw new Error("command:request-escalation level=2 requires goalId AND milestoneId");
+    }
+    const { runL2MilestoneScope } = await import("../../services/planAdjustmentL2");
+    const result = await runL2MilestoneScope({
+      goalId,
+      milestoneId,
+      rationale: `manual: ${reason}`,
+    });
+    return { ok: true, level: 2, result };
+  }
+
+  // level === 3
+  if (!goalId) {
+    throw new Error("command:request-escalation level=3 requires goalId");
+  }
+  // Pass `force` through cmdAdaptiveReschedule via scopeOverride="plan".
+  // forceFullRegen is read inside runPlanLevelReschedule's rate-limit gate.
+  const result = await cmdAdaptiveReschedule({
+    goalId,
+    scopeOverride: "plan",
+    forceFullRegen: force,
+  } as Record<string, unknown>);
+  return { ok: true, level: 3, result };
+}
+
+// ── Pending-action accept / reject ────────────────────────
+//
+// The user confirms (or rejects) an AI-proposed mutation. Accept
+// dispatches the underlying intent via the same handler that would
+// have run if the FE had auto-dispatched it. Reject just marks the
+// row rejected — no mutation, no chat termination. Subsequent chat
+// turns can read recently-rejected actions (via
+// pendingActionsRepo.listRecentRejectionsForSession) so the AI can
+// react conversationally.
+//
+// Per-intent-kind switch lives here rather than in pendingActionsRepo
+// so the repo stays a thin DB layer and the dispatcher imports are
+// available at command-routing time.
+
+export async function cmdAcceptPendingAction(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const actionId =
+    (body.actionId as string | undefined) ??
+    (body.id as string | undefined);
+  if (!actionId) {
+    throw new Error("command:accept-pending-action requires args.actionId");
+  }
+
+  const action = await repos.pendingActions.get(actionId);
+  if (!action) {
+    const { EntityNotFoundError } = await import("../../repositories/_context");
+    throw new EntityNotFoundError("pending_action", actionId);
+  }
+  if (action.status !== "pending") {
+    throw new Error(
+      `pending_action ${actionId} is ${action.status}, not pending`,
+    );
+  }
+
+  // Dispatch the underlying intent. Switch on intent_kind. The intent
+  // payload is exactly what the FE auto-dispatcher would have sent to
+  // the corresponding command. Add new kinds here as the AI's intent
+  // vocabulary grows.
+  const payload = action.intentPayload;
+  let dispatchResult: unknown;
+  switch (action.intentKind) {
+    case "manage-task": {
+      const action_ = (payload.action as string | undefined) ?? "";
+      const taskId = payload.taskId as string | undefined;
+      if (!taskId) throw new Error(`manage-task intent missing taskId`);
+      const tasksMod = await import("./tasks");
+      if (action_ === "complete") {
+        dispatchResult = await tasksMod.cmdToggleTask({ taskId });
+      } else if (action_ === "skip") {
+        dispatchResult = await tasksMod.cmdSkipTask({ taskId });
+      } else if (action_ === "delete") {
+        dispatchResult = await tasksMod.cmdDeleteTask({ taskId });
+      } else if (action_ === "reschedule") {
+        const targetDate =
+          (payload.rescheduleDate as string | undefined) ??
+          (payload.targetDate as string | undefined);
+        if (!targetDate) throw new Error("reschedule intent missing targetDate");
+        dispatchResult = await tasksMod.cmdRescheduleTask({
+          taskId,
+          targetDate,
+          force: true,
+        });
+      } else {
+        throw new Error(`unknown manage-task action: ${action_}`);
+      }
+      break;
+    }
+    case "manage-reminder": {
+      const action_ = (payload.action as string | undefined) ?? "";
+      const calendarMod = await import("./calendar");
+      if (action_ === "acknowledge") {
+        // The original intent identifies the reminder by `term` (a free
+        // text matcher). Without the FE's reminder-resolution helper,
+        // we can't reliably translate term → id here. For now: require
+        // the AI to include a resolved id, otherwise reject this kind.
+        const id = payload.id as string | undefined;
+        if (!id) {
+          throw new Error(
+            "manage-reminder accept requires resolved reminder id; AI must propose with id, not just term",
+          );
+        }
+        dispatchResult = await calendarMod.cmdAcknowledgeReminder({ id });
+      } else {
+        throw new Error(`unknown manage-reminder action: ${action_}`);
+      }
+      break;
+    }
+    case "create-task":
+    case "create": {
+      const tasksMod = await import("./tasks");
+      dispatchResult = await tasksMod.cmdCreateTask(payload);
+      break;
+    }
+    default:
+      throw new Error(
+        `cmdAcceptPendingAction: no dispatcher for intent kind "${action.intentKind}". Add a case here when introducing new intent vocabulary.`,
+      );
+  }
+
+  await repos.pendingActions.markAccepted(actionId);
+
+  // Dismiss the proactive nudge that was created alongside the pending
+  // action so it doesn't linger after acceptance.
+  try {
+    await repos.nudges.dismissByContext(`pending-action:${actionId}`);
+  } catch {
+    /* best-effort */
+  }
+
+  return { ok: true, actionId, dispatchResult };
+}
+
+export async function cmdRejectPendingAction(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const actionId =
+    (body.actionId as string | undefined) ??
+    (body.id as string | undefined);
+  if (!actionId) {
+    throw new Error("command:reject-pending-action requires args.actionId");
+  }
+  const reason =
+    typeof body.reason === "string" ? (body.reason as string) : undefined;
+  await repos.pendingActions.markRejected(actionId, reason);
+  // Dismiss the proactive nudge so the user isn't left with a stale
+  // proposal banner after they explicitly rejected it.
+  try {
+    await repos.nudges.dismissByContext(`pending-action:${actionId}`);
+  } catch {
+    /* best-effort */
+  }
+  return { ok: true, actionId, rejected: true };
+}
+
+// ── Plan-edit classify (preview) ─────────────────────────
+//
+// Read-only command. Takes a proposed plan, computes a diff against
+// the current persisted plan, returns the projected impact WITHOUT
+// applying the rewrite. Lets a future FE render a confirmation dialog
+// before the user commits to a destructive overhaul:
+//
+//   "This change will reset 12 future tasks. Continue?"
+//
+// Today, every plan rewrite that goes through `goalPlan.replacePlan`
+// already audits + emits a nudge after-the-fact. This command is the
+// before-the-fact equivalent — same diff math, no DB writes.
+//
+// No FE wiring yet (waiting on notarization). Invokable via dev
+// harness or chat intent in the meantime.
+
+export async function cmdPlanEditClassify(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const goalId = typeof body.goalId === "string" ? body.goalId : null;
+  const proposed = body.proposedPlan as Record<string, unknown> | undefined;
+  if (!goalId) {
+    throw new Error("command:plan-edit-classify requires goalId");
+  }
+  if (!proposed || typeof proposed !== "object") {
+    throw new Error(
+      "command:plan-edit-classify requires proposedPlan (GoalPlan shape)",
+    );
+  }
+
+  const goal = await repos.goals.get(goalId);
+  if (!goal) throw new Error(`goal ${goalId} not found`);
+
+  const { diffPlans } = await import("@starward/core");
+  const diff = diffPlans(goal.plan ?? null, proposed as unknown as import("@starward/core").GoalPlan);
+
+  // Project how many materialized daily_tasks would be cleared if the
+  // user committed this rewrite. Count daily_tasks currently linked to
+  // plan nodes that the new plan removes; that's exactly what
+  // pruneOrphanedPlanTasks would delete on apply.
+  let projectedDailyTasksAffected = 0;
+  try {
+    const existingDailyTasks = await repos.dailyTasks.listForDateRange(
+      new Date().toISOString().slice(0, 10),
+      // 90-day horizon catches everything materializePlanTasks could touch
+      // plus the rolling reschedule window.
+      new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+    );
+    const newTaskIds = new Set<string>();
+    if (proposed && Array.isArray((proposed as Record<string, unknown>).years)) {
+      for (const y of (proposed as Record<string, unknown>).years as Array<Record<string, unknown>>) {
+        for (const m of (y.months as Array<Record<string, unknown>>) ?? []) {
+          for (const w of (m.weeks as Array<Record<string, unknown>>) ?? []) {
+            for (const d of (w.days as Array<Record<string, unknown>>) ?? []) {
+              for (const t of (d.tasks as Array<Record<string, unknown>>) ?? []) {
+                if (typeof t.id === "string") newTaskIds.add(t.id);
+              }
+            }
+          }
+        }
+      }
+    }
+    projectedDailyTasksAffected = existingDailyTasks.filter(
+      (dt) =>
+        dt.goalId === goalId &&
+        dt.planNodeId !== null &&
+        !newTaskIds.has(dt.planNodeId),
+    ).length;
+  } catch (err) {
+    console.warn("[plan-edit-classify] projection scan failed:", err);
+  }
+
+  return {
+    ok: true,
+    diff,
+    projectedDailyTasksAffected,
+    recommendation: diff.isOverhaul
+      ? "Treated as an overhaul — applying will clear materialized future tasks and re-materialize from the new plan."
+      : "Small edit — applying will preserve most materialized tasks; only ones linked to removed plan nodes will be cleared.",
+  };
 }
 
 // ── Gap fillers (B-4) ──────────────────────────────────────

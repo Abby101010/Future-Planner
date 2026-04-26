@@ -130,11 +130,13 @@ export async function materializePlanTasks(
     }
   }
 
-  // Fire-and-forget light triage for each date that received new rows.
-  // Each call is one LLM round-trip max (annotator); they run in
-  // parallel and don't block the materialize result. The user's plan
-  // confirm/regenerate returns immediately; the rows reorder ~1-2s
-  // later via the triage's view:invalidate.
+  // Fire-and-forget downstream pipelines for each date that received new rows.
+  //   1. Light triage (priority annotation + cap demotion).
+  //   2. Duration estimator — pulls MAX_DEEP_MINUTES out of dormancy
+  //      for these rows. Without this, "0h 0m planned" stays on the
+  //      header and the time-budget check uses 30-min defaults that
+  //      hide real overload.
+  // Both are fire-and-forget; the materialize result returns immediately.
   if (count > 0) {
     const touchedDates = Array.from(countByDate.entries())
       .filter(([, n]) => n > 0)
@@ -142,9 +144,13 @@ export async function materializePlanTasks(
     if (touchedDates.length > 0) {
       try {
         const { fireLightTriage } = await import("./dailyTriageDispatch");
-        for (const d of touchedDates) fireLightTriage(d);
+        const { fireEstimateDurations } = await import("./dailyEstimateDispatch");
+        for (const d of touchedDates) {
+          fireLightTriage(d);
+          fireEstimateDurations(d);
+        }
       } catch (err) {
-        console.warn("[materialize] triage dispatch failed:", err);
+        console.warn("[materialize] dispatch failed:", err);
       }
     }
   }

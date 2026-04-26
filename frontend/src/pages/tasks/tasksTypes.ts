@@ -60,6 +60,22 @@ export interface UIProposal {
   reason?: string;
 }
 
+/** A task from a past day that the user hasn't decided what to do with.
+ *  Mirrors backend `PendingReschedule` (tasksView.ts:62) so that the
+ *  pendingReschedules array the backend already computes is finally
+ *  surfaced in the FE — previously the page read a `proposals` field
+ *  that no view populated. */
+export interface UIPendingReschedule {
+  taskId: string;
+  title: string;
+  originalDate: string;
+  daysOverdue: number;
+  agedOut: boolean;
+  goalTitle?: string;
+  suggestedDate: string;
+  suggestedDateLabel: string;
+}
+
 export interface UINudge {
   id: string;
   text: string;

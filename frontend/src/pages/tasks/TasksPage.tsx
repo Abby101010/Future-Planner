@@ -23,6 +23,7 @@ import type {
   UIReminder,
   UIPendingTask,
   UIProposal,
+  UIPendingReschedule,
   UINudge,
 } from "./tasksTypes";
 
@@ -54,6 +55,10 @@ interface TasksView {
   overdueReminders?: UIReminder[];
   pendingTasks?: UIPendingTask[];
   proposals?: UIProposal[];
+  /** Incomplete tasks from past days awaiting user decision.
+   *  Populated by backend tasksView.ts:891 (renamed from pendingReschedules
+   *  in the UI as plain "reschedules" — same data, finally surfaced). */
+  pendingReschedules?: UIPendingReschedule[];
   nudges?: UINudge[];
 }
 
@@ -116,6 +121,8 @@ export default function TasksPage() {
   ];
   const pending: UIPendingTask[] = tasksQ.data?.pendingTasks ?? dashQ.data?.pendingTasks ?? [];
   const proposals: UIProposal[] = tasksQ.data?.proposals ?? dashQ.data?.proposals ?? [];
+  const pendingReschedules: UIPendingReschedule[] =
+    tasksQ.data?.pendingReschedules ?? [];
   const nudges: UINudge[] = tasksQ.data?.nudges ?? dashQ.data?.nudges ?? [];
 
   function refetchAll() {
@@ -177,9 +184,9 @@ export default function TasksPage() {
       await run("command:delete-task", { taskId: id });
       refetchAll();
     })();
-  const rescheduleTask = (id: string, newDate: string) =>
+  const rescheduleTask = (id: string, targetDate: string) =>
     wrap(async () => {
-      await run("command:reschedule-task", { taskId: id, newDate });
+      await run("command:reschedule-task", { taskId: id, targetDate });
       refetchAll();
     })();
   const cantComplete = (id: string) =>
@@ -236,6 +243,27 @@ export default function TasksPage() {
   const dismissProposal = (id: string) =>
     wrap(async () => {
       await run("command:dismiss-reschedule", { proposalId: id });
+      refetchAll();
+    })();
+
+  // pendingReschedules (past-day incomplete tasks). Wires the long-
+  // dormant `pendingReschedules` payload to the existing reschedule
+  // commands. Backend handlers: cmdRescheduleTask (tasks.ts:852),
+  // cmdSnoozeReschedule (tasks.ts:957), cmdDismissReschedule
+  // (tasks.ts:988).
+  const acceptReschedule = (taskId: string, targetDate: string) =>
+    wrap(async () => {
+      await run("command:reschedule-task", { taskId, targetDate });
+      refetchAll();
+    })();
+  const snoozeReschedule = (taskId: string) =>
+    wrap(async () => {
+      await run("command:snooze-reschedule", { taskId });
+      refetchAll();
+    })();
+  const dismissReschedule = (taskId: string) =>
+    wrap(async () => {
+      await run("command:dismiss-reschedule", { taskId });
       refetchAll();
     })();
   const deferOverflow = wrap(async () => {
@@ -375,12 +403,16 @@ export default function TasksPage() {
             inline
             pending={pending}
             proposals={proposals}
+            reschedules={pendingReschedules}
             nudges={nudges}
             onConfirmPending={confirmPending}
             onRejectPending={rejectPending}
             onAcceptProposal={acceptProposal}
             onSnoozeProposal={snoozeProposal}
             onDismissProposal={dismissProposal}
+            onAcceptReschedule={acceptReschedule}
+            onSnoozeReschedule={snoozeReschedule}
+            onDismissReschedule={dismissReschedule}
             onDismissNudge={dismissNudge}
             onDeferOverflow={deferOverflow}
           />
@@ -390,12 +422,16 @@ export default function TasksPage() {
         <NotifStack
           pending={pending}
           proposals={proposals}
+          reschedules={pendingReschedules}
           nudges={nudges}
           onConfirmPending={confirmPending}
           onRejectPending={rejectPending}
           onAcceptProposal={acceptProposal}
           onSnoozeProposal={snoozeProposal}
           onDismissProposal={dismissProposal}
+          onAcceptReschedule={acceptReschedule}
+          onSnoozeReschedule={snoozeReschedule}
+          onDismissReschedule={dismissReschedule}
           onDismissNudge={dismissNudge}
           onDeferOverflow={deferOverflow}
         />
@@ -408,7 +444,12 @@ export default function TasksPage() {
           width: "100%",
           padding: "56px 32px 140px",
           paddingRight:
-            !narrow && pending.length + proposals.length + nudges.length > 0
+            !narrow &&
+            pending.length +
+              proposals.length +
+              pendingReschedules.length +
+              nudges.length >
+              0
               ? "calc(32px + 308px)"
               : 32,
           transition: "padding-right .25s ease",

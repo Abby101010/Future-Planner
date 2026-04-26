@@ -51,6 +51,10 @@ export {
   cmdHealAllGoalPlans,
   cmdSubmitPriorityFeedback,
   cmdProposeGapFillers,
+  cmdRequestEscalation,
+  cmdPlanEditClassify,
+  cmdAcceptPendingAction,
+  cmdRejectPendingAction,
 } from "./planning";
 
 export { cmdStartChatStream, cmdSendChatMessage, cmdClearHomeChat } from "./chat";

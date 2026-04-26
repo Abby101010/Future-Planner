@@ -419,7 +419,33 @@ aiRouter.post(
         }
       }
 
-      send("done", { reply, intent, intents, userMessageId, assistantMessageId });
+      // Cards-required gate. Default behavior: every AI-proposed
+      // intent goes to pending_actions and the SSE done payload omits
+      // them so the FE has nothing to auto-dispatch. Emergency opt-out
+      // via STARWARD_CHAT_AUTO_DISPATCH=1 — see services/pendingActions.
+      const { isAutoDispatchEnabled, intakeIntentsAsPendingActions } =
+        await import("../services/pendingActions");
+      let pendingActionIds: string[] = [];
+      let intentsForResponse: typeof intents = intents;
+      let intentForResponse: typeof intent = intent;
+      if (!isAutoDispatchEnabled() && intents.length > 0) {
+        try {
+          const intake = await intakeIntentsAsPendingActions(intents, null);
+          pendingActionIds = intake.pendingActionIds;
+        } catch (err) {
+          console.warn("[ai/home-chat/stream] pending-action intake failed:", err);
+        }
+        intentsForResponse = [];
+        intentForResponse = null;
+      }
+      send("done", {
+        reply,
+        intent: intentForResponse,
+        intents: intentsForResponse,
+        userMessageId,
+        assistantMessageId,
+        pendingActionIds,
+      });
     } catch (err) {
       send("error", {
         error: err instanceof Error ? err.message : String(err),
@@ -1088,16 +1114,45 @@ aiRouter.post(
         }
       }
 
+      // Cards-required gate (see services/pendingActions). Default
+      // behavior: AI-proposed intents land in pending_actions; the
+      // SSE done payload returns intents:[] so the FE has nothing to
+      // auto-dispatch. STARWARD_CHAT_AUTO_DISPATCH=1 is the emergency
+      // opt-out.
+      const { isAutoDispatchEnabled, intakeIntentsAsPendingActions } =
+        await import("../services/pendingActions");
+      let pendingActionIds: string[] = [];
+      let intentForResponse: typeof result.intent = result.intent;
+      let intentsForResponse: typeof result.intents = result.intents;
+      if (
+        !isAutoDispatchEnabled() &&
+        Array.isArray(result.intents) &&
+        result.intents.length > 0
+      ) {
+        try {
+          const intake = await intakeIntentsAsPendingActions(
+            result.intents as unknown[],
+            null,
+          );
+          pendingActionIds = intake.pendingActionIds;
+        } catch (err) {
+          console.warn("[ai/chat/stream] pending-action intake failed:", err);
+        }
+        intentsForResponse = [];
+        intentForResponse = null;
+      }
+
       send("done", {
         reply: isGoalPlanMode ? extractReplyFromText(result.reply) : result.reply,
-        intent: result.intent,
-        intents: result.intents,
+        intent: intentForResponse,
+        intents: intentsForResponse,
         planReady: result.planReady,
         plan: result.plan,
         planPatch: result.planPatch,
         replan: result.replan,
         userMessageId,
         assistantMessageId,
+        pendingActionIds,
       });
     } catch (err) {
       send("error", {

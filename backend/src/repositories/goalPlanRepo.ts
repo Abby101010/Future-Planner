@@ -870,18 +870,52 @@ function _getGlobalWeekIndex(plan: GoalPlan, targetWk: GoalPlanWeek | undefined)
  *  circular import at module load time (goalsRepo → goalPlanRepo is
  *  not a path today, but this keeps the graph safe). Same for the
  *  service imports. */
+/** Result of a `replacePlan` call. Existing void-return callers ignore
+ *  it (TypeScript permits dropping the return value). New callers can
+ *  use it to surface what changed — e.g. the chat handler emitting a
+ *  user-facing nudge after a large-overhaul plan rewrite. */
+export interface ReplacePlanResult {
+  diff: import("@starward/core").PlanDiff;
+  daily_tasks_pruned: number;
+  daily_tasks_materialized: number;
+}
+
 export async function replacePlan(
   goalId: string,
   plan: GoalPlan,
   startDate?: string,
   endDate?: string,
-): Promise<void> {
+): Promise<ReplacePlanResult> {
   normalizePlan(plan, startDate, endDate);
+
+  // Snapshot the previous plan BEFORE deleting so we can diff. If the
+  // goal had no prior plan, oldPlan is an empty shell and the diff
+  // reports everything-new as `added`.
+  const { diffPlans } = await import("@starward/core");
+  let oldPlan: GoalPlan = { milestones: [], years: [] };
+  try {
+    const oldNodes = await listForGoal(goalId);
+    if (oldNodes.length > 0) {
+      oldPlan = reconstructPlan(oldNodes);
+    }
+  } catch (err) {
+    // Diff is observability only — never block plan persistence on a
+    // diff-snapshot failure. Empty oldPlan = "treated as initial".
+    console.warn(
+      `[goalPlanRepo.replacePlan] old-plan snapshot failed for goal ${goalId}; treating as initial:`,
+      err,
+    );
+  }
+  const diff = diffPlans(oldPlan, plan);
+
   await deleteForGoal(goalId);
   const nodes = flattenPlan(goalId, plan);
   if (nodes.length > 0) {
     await upsertNodes(goalId, nodes);
   }
+
+  let daily_tasks_pruned = 0;
+  let daily_tasks_materialized = 0;
 
   // Auto-sync daily_tasks for confirmed plans. Skip for unconfirmed goals
   // (initial planning iterations) so we don't pollute the Tasks page
@@ -893,8 +927,8 @@ export async function replacePlan(
       const { pruneOrphanedPlanTasks, materializePlanTasks } = await import(
         "../services/planMaterialization"
       );
-      await pruneOrphanedPlanTasks(goalId);
-      await materializePlanTasks(goalId, plan);
+      daily_tasks_pruned = await pruneOrphanedPlanTasks(goalId);
+      daily_tasks_materialized = await materializePlanTasks(goalId, plan);
     }
   } catch (err) {
     // Materialization is a side-effect — never block plan persistence
@@ -904,6 +938,103 @@ export async function replacePlan(
       `[goalPlanRepo.replacePlan] post-write materialization failed for goal ${goalId}:`,
       err,
     );
+  }
+
+  // Audit log + overhaul detection. Fire-and-forget so audit failures
+  // never block plan persistence. Skip when the diff is a no-op
+  // (initial creation with empty old plan AND empty new plan).
+  if (diff.totalTaskChanges > 0 || diff.milestones.added + diff.milestones.removed + diff.milestones.modified > 0) {
+    void recordPlanReplacementAudit(goalId, diff, {
+      daily_tasks_pruned,
+      daily_tasks_materialized,
+    }).catch((err) => {
+      console.warn(
+        `[goalPlanRepo.replacePlan] audit insert failed for goal ${goalId}:`,
+        err,
+      );
+    });
+  }
+
+  return { diff, daily_tasks_pruned, daily_tasks_materialized };
+}
+
+/** Insert a plan_adjustments row (level=3 scope="plan") summarising the
+ *  diff + downstream cleanup counts. When the diff crosses the overhaul
+ *  threshold, also emit an `overhaul` nudge so the user sees what
+ *  happened to their materialized work. Idempotency on the nudge side
+ *  comes from the deterministic context key `plan-overhaul:${goalId}`
+ *  — a same-goal overhaul within the same session updates rather than
+ *  duplicates. */
+async function recordPlanReplacementAudit(
+  goalId: string,
+  diff: import("@starward/core").PlanDiff,
+  counts: { daily_tasks_pruned: number; daily_tasks_materialized: number },
+): Promise<void> {
+  const repos = await import("./index");
+  const { get: getGoal } = await import("./goalsRepo");
+  const goal = await getGoal(goalId);
+  const goalTitle = goal?.title ?? "(unknown goal)";
+
+  try {
+    await repos.planAdjustments.insert({
+      id: `plan-replace-${goalId}-${Date.now()}`,
+      goalId,
+      level: 3,
+      scope: "plan",
+      classifierInput: {
+        diff,
+        daily_tasks_pruned: counts.daily_tasks_pruned,
+        daily_tasks_materialized: counts.daily_tasks_materialized,
+      },
+      rationale: diff.isOverhaul
+        ? `overhaul: ${diff.totalTaskChanges} task changes (${diff.tasks.added}+/${diff.tasks.removed}-/${diff.tasks.modified}~) of ${Math.max(diff.tasks.totalOld, diff.tasks.totalNew)}`
+        : `plan replace: ${diff.totalTaskChanges} task changes`,
+      actions: [
+        {
+          kind: "plan-replaced",
+          goalId,
+          goalTitle,
+          milestonesAdded: diff.milestones.added,
+          milestonesRemoved: diff.milestones.removed,
+          milestonesModified: diff.milestones.modified,
+          tasksAdded: diff.tasks.added,
+          tasksRemoved: diff.tasks.removed,
+          tasksModified: diff.tasks.modified,
+          dailyTasksPruned: counts.daily_tasks_pruned,
+          dailyTasksMaterialized: counts.daily_tasks_materialized,
+        },
+      ],
+    });
+  } catch (err) {
+    console.warn(`[replacePlan audit] plan_adjustments insert failed:`, err);
+  }
+
+  // Overhaul nudge — only when crossing the threshold AND the goal is
+  // confirmed (unconfirmed goals are still in initial planning; the
+  // user is iterating, not overhauling). Body is human-readable so the
+  // existing NotifStack renders it usefully today; payload carries
+  // structured fields for a future FE that wants to render a richer
+  // card.
+  if (diff.isOverhaul && goal?.planConfirmed) {
+    try {
+      await repos.nudges.insert({
+        id: `plan-overhaul:${goalId}:${new Date().toISOString().split("T")[0]}`,
+        kind: "proactive",
+        title: `"${goalTitle}" was overhauled`,
+        body: `Plan rewrite: ${diff.tasks.added} added, ${diff.tasks.removed} removed, ${diff.tasks.modified} edited. ${counts.daily_tasks_pruned} stale daily task${counts.daily_tasks_pruned === 1 ? "" : "s"} were cleared and ${counts.daily_tasks_materialized} fresh one${counts.daily_tasks_materialized === 1 ? "" : "s"} materialized for the next 14 days.`,
+        priority: 70,
+        context: `plan-overhaul:${goalId}`,
+        extra: {
+          goalId,
+          goalTitle,
+          diff,
+          dailyTasksPruned: counts.daily_tasks_pruned,
+          dailyTasksMaterialized: counts.daily_tasks_materialized,
+        },
+      });
+    } catch (err) {
+      console.warn(`[replacePlan audit] overhaul nudge insert failed:`, err);
+    }
   }
 }
 

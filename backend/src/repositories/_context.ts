@@ -19,6 +19,34 @@ export class UnauthenticatedError extends Error {
   }
 }
 
+/**
+ * Thrown when a mutation targets an entity id that doesn't exist (or
+ * doesn't belong to the current user). Lets callers and the route
+ * layer surface the failure to the user instead of silently treating
+ * a no-op UPDATE/DELETE as success.
+ *
+ * This exists because the prior "log a warning and return void" pattern
+ * (remindersRepo.acknowledge/remove pre-2026-04-26) made the FE think
+ * a check-off succeeded when nothing had actually changed, leaving the
+ * row in place after refetch — producing the "I can't check off my
+ * reminders" symptom with no error message.
+ *
+ * Use only in repo mutations where a 0-row result indicates a real
+ * caller bug (wrong id, wrong user, or a race with delete). Do NOT
+ * use in idempotent sweeps (cleanupPastAcknowledged, markStaleAsSkipped),
+ * where a 0-row result is a normal "nothing to do" outcome.
+ */
+export class EntityNotFoundError extends Error {
+  public readonly status = 404;
+  constructor(
+    public readonly entity: string,
+    public readonly id: string,
+  ) {
+    super(`${entity} ${id} not found for current user`);
+    this.name = "EntityNotFoundError";
+  }
+}
+
 /** Pull the current request's userId. Throws UnauthenticatedError if missing. */
 export function requireUserId(): string {
   const userId = tryGetCurrentUserId();

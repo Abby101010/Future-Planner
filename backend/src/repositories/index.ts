@@ -26,5 +26,8 @@ export * as vacationMode from "./vacationModeRepo";
 export * as behaviorProfile from "./behaviorProfileRepo";
 export * as users from "./usersRepo";
 export * as roadmap from "./roadmapRepo";
+export * as llmCalls from "./llmCallsRepo";
+export * as planAdjustments from "./planAdjustmentsRepo";
+export * as pendingActions from "./pendingActionsRepo";
 
-export { UnauthenticatedError } from "./_context";
+export { UnauthenticatedError, EntityNotFoundError } from "./_context";

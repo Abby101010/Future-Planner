@@ -205,6 +205,31 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
     "view:dashboard",
     "view:tasks",
   ],
+  // Manual escalation can move daily tasks (L1), rewrite goal plan
+  // weeks (L2), or do a full plan regen (L3). Invalidate everything
+  // that surfaces plan/task state.
+  "command:request-escalation": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+    "view:planning",
+    "view:goal-plan",
+  ],
+  // Plan-edit classify is read-only — projects the impact of a plan
+  // rewrite without applying it. No state mutation, no invalidation.
+  "command:plan-edit-classify": [],
+  // Accepting a pending action runs the underlying mutation, which
+  // could touch any of these surfaces. Conservative invalidation.
+  "command:accept-pending-action": [
+    "view:dashboard",
+    "view:tasks",
+    "view:calendar",
+    "view:planning",
+    "view:goal-plan",
+  ],
+  // Rejecting only marks the row — clears the proactive nudge from
+  // tasks/dashboard surfaces but doesn't touch plan/calendar state.
+  "command:reject-pending-action": ["view:dashboard", "view:tasks"],
   // Image analysis is a pure read: the handler returns extracted todos
   // for the client to render confirmation UI. No DB state changes, so
   // no view needs refetching.

@@ -41,7 +41,19 @@ export interface RunStreamingHandlerArgs<T> {
    *  and the final Message object; returns the handler's structured
    *  result. */
   parseResult: (finalText: string, finalMessage: Anthropic.Message) => T;
+  /** Watchdog timeout in milliseconds. When the SDK call doesn't
+   *  resolve within this window, the wrapper aborts (throws
+   *  `chat_timeout`) so callers — including SSE chat routes — fail
+   *  fast instead of leaving the FE hanging on a never-resolving
+   *  stream. Default 120s; override per-call for handlers known to
+   *  legitimately take longer (e.g. multi-stage Opus reasoning). */
+  timeoutMs?: number;
 }
+
+/** Default watchdog. Long enough for an Opus call on a complex plan
+ *  to finish under normal conditions; short enough that a stuck call
+ *  doesn't leave the chat input frozen for the user. */
+const DEFAULT_STREAM_TIMEOUT_MS = 120_000;
 
 /**
  * Run an Anthropic call as a stream, forwarding token deltas to the
@@ -66,6 +78,7 @@ export async function runStreamingHandler<T>(
     forwardTextDeltas = true,
     createRequest,
     parseResult,
+    timeoutMs = DEFAULT_STREAM_TIMEOUT_MS,
   } = args;
 
   const streamId = randomUUID();
@@ -100,8 +113,28 @@ export async function runStreamingHandler<T>(
       });
     }
 
-    const finalMessage = await stream.finalMessage();
-    const finalText = await stream.finalText();
+    // Watchdog: race the SDK's finalMessage promise against a timeout.
+    // If the call hangs (server crash mid-stream, slow Opus reasoning,
+    // network drop without RST), this prevents the chat from freezing
+    // indefinitely on the FE side. The thrown error surfaces through
+    // the SSE error path so the FE's `finally` runs and clears
+    // `streaming` state.
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const handle = setTimeout(() => {
+        reject(
+          new Error(
+            `chat_timeout: ${handlerKind} did not complete within ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+      // unref so the timer doesn't keep the process alive on its own
+      handle.unref?.();
+    });
+    const finalMessage = await Promise.race([
+      stream.finalMessage(),
+      timeoutPromise,
+    ]);
+    const finalText = await Promise.race([stream.finalText(), timeoutPromise]);
 
     finishReason = finalMessage.stop_reason ?? "end";
     return parseResult(finalText, finalMessage);

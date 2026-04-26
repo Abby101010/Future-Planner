@@ -74,6 +74,15 @@ export interface PendingReschedule {
   suggestedDate: string;
   /** Human-friendly label like "Tomorrow" or "Wed, Apr 15". */
   suggestedDateLabel: string;
+  /** Days between originalDate and today. Lets the FE show "3 days ago"
+   *  without a second date computation. */
+  daysOverdue: number;
+  /** True when the task is more than 30 days overdue. UI may dim or
+   *  group these separately so they don't dominate the active list,
+   *  but they're still surfaced (not silently dropped). Tasks >90
+   *  days overdue are auto-skipped by markStaleAsSkipped and never
+   *  reach this list. */
+  agedOut: boolean;
 }
 
 /** A task recommended for deferral when today exceeds the cognitive budget.
@@ -140,6 +149,13 @@ export interface TasksView {
     totalTasks: number;
     maxTasks: number;
   };
+  /** AI-proposed mutations awaiting explicit user confirmation. The
+   *  chat handler writes here when STARWARD_CHAT_AUTO_DISPATCH is
+   *  unset (default). The FE renders these as Accept/Reject cards;
+   *  v0.1.32 readers also see them as `proactive` nudges in
+   *  recentNudges. See ARCHITECTURE_DAILY_PIPELINE.md → "chat is
+   *  conversational" invariant. */
+  pendingActions: import("../repositories/pendingActionsRepo").PendingAction[];
 }
 
 export interface OverloadedGoalSummary {
@@ -453,6 +469,21 @@ export async function resolveTasksView(): Promise<TasksView> {
     await repos.reminders.cleanupPastAcknowledged(today);
   } catch { /* best-effort */ }
 
+  // Stale-sweep: mark incomplete tasks >90 days overdue as skipped with
+  // reason "aged-out". Pairs with listPendingReschedule (which surfaces
+  // 1-90 day window) to honor the "no silent drops" contract — every
+  // incomplete past task is either visible as a reschedule candidate
+  // OR has a recorded skip reason. Best-effort so a sweep failure
+  // doesn't block the view.
+  try {
+    const swept = await repos.dailyTasks.markStaleAsSkipped(today);
+    if (swept > 0) {
+      console.log(`[tasksView] aged-out sweep: ${swept} task(s) marked skipped`);
+    }
+  } catch (err) {
+    console.warn("[tasksView] aged-out sweep failed:", err);
+  }
+
   // Group tasks by date for cheap hydration.
   const tasksByDate = new Map<string, DailyTaskRecord[]>();
   for (const t of tasksInRange) {
@@ -561,7 +592,7 @@ export async function resolveTasksView(): Promise<TasksView> {
   // Materialize overdue plan-tree tasks as daily_task rows so they
   // appear in the reschedule section. This is a one-time side effect
   // — subsequent loads find the rows already exist.
-  const materializedReschedules: Omit<PendingReschedule, "suggestedDate" | "suggestedDateLabel">[] = [];
+  const materializedReschedules: Omit<PendingReschedule, "suggestedDate" | "suggestedDateLabel" | "daysOverdue" | "agedOut">[] = [];
   for (const ot of pgResult.overduePlanTasks) {
     const origDate = new Date(`${today}T12:00:00`);
     origDate.setDate(origDate.getDate() - ot.daysBeforeToday);
@@ -764,10 +795,16 @@ export async function resolveTasksView(): Promise<TasksView> {
     return `${dayNames[d.getDay()]}, ${monthNames[d.getMonth()]} ${d.getDate()}`;
   }
 
+  const todayMs = new Date(today + "T00:00:00").getTime();
+  const daysBetween = (originalDate: string): number =>
+    Math.max(0, Math.floor((todayMs - new Date(originalDate + "T00:00:00").getTime()) / 86_400_000));
+  const AGED_OUT_THRESHOLD = 30;
+
   const pendingReschedules: PendingReschedule[] = [
     ...pendingRescheduleRecords.map((t) => {
       const cw = (t.payload.cognitiveWeight as number) ?? 3;
       const suggested = pickSuggestedDate(cw);
+      const overdue = daysBetween(t.date);
       return {
         taskId: t.id,
         title: t.title,
@@ -780,14 +817,21 @@ export async function resolveTasksView(): Promise<TasksView> {
         rescheduleCount: (t.payload.rescheduleCount as number) ?? 0,
         suggestedDate: suggested,
         suggestedDateLabel: formatSuggestedLabel(suggested),
+        daysOverdue: overdue,
+        agedOut: overdue > AGED_OUT_THRESHOLD,
       };
     }),
     // Append plan-tree tasks that were just materialized as daily_tasks.
-    ...materializedReschedules.map((mr) => ({
-      ...mr,
-      suggestedDate: pickSuggestedDate(mr.cognitiveWeight),
-      suggestedDateLabel: formatSuggestedLabel(pickSuggestedDate(mr.cognitiveWeight)),
-    })),
+    ...materializedReschedules.map((mr) => {
+      const overdue = daysBetween(mr.originalDate);
+      return {
+        ...mr,
+        suggestedDate: pickSuggestedDate(mr.cognitiveWeight),
+        suggestedDateLabel: formatSuggestedLabel(pickSuggestedDate(mr.cognitiveWeight)),
+        daysOverdue: overdue,
+        agedOut: overdue > AGED_OUT_THRESHOLD,
+      };
+    }),
   ];
 
   // Overload detection: when 5+ tasks are waiting to be rescheduled,
@@ -873,6 +917,17 @@ export async function resolveTasksView(): Promise<TasksView> {
     (g) => g.status !== "archived" && g.status !== "completed",
   );
 
+  // AI-proposed mutations awaiting confirmation. Best-effort — a fetch
+  // failure here doesn't block the rest of the view.
+  let pendingActions: Awaited<
+    ReturnType<typeof repos.pendingActions.listActive>
+  > = [];
+  try {
+    pendingActions = await repos.pendingActions.listActive();
+  } catch (err) {
+    console.warn("[tasksView] pendingActions fetch failed:", err);
+  }
+
   return {
     todayDate: today,
     todayLog: resolvedTodayLog,
@@ -899,5 +954,6 @@ export async function resolveTasksView(): Promise<TasksView> {
     pooledTaskCount,
     overflowRecommendations,
     todayBudget,
+    pendingActions,
   };
 }

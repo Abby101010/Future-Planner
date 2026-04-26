@@ -46,20 +46,26 @@ const NIGHTLY_REFLECTION_HOUR = Number(
 );
 const MORNING_NUDGE_HOUR = Number(process.env.MORNING_NUDGE_HOUR ?? 7);
 const ENERGY_PROFILE_HOUR = Number(process.env.ENERGY_PROFILE_HOUR ?? 3);
+/** Midnight (00:00 local) — runs the L0 rollover sweep so users who
+ *  haven't opened the app still get their day rolled forward. The
+ *  lazy resolver-fetch path stays as a backstop; this is the
+ *  proactive path. */
+const MIDNIGHT_ROLLOVER_HOUR = Number(process.env.MIDNIGHT_ROLLOVER_HOUR ?? 0);
 
 interface SchedulableUser {
   userId: string;
   tz: string;
 }
 
-/** "reflection" | "nudge" | "energy" -> userId -> last-fired YYYY-MM-DD (in that user's tz). */
+/** "reflection" | "nudge" | "energy" | "rollover" -> userId -> last-fired YYYY-MM-DD (in that user's tz). */
 const lastRan = new Map<
-  "reflection" | "nudge" | "energy",
+  "reflection" | "nudge" | "energy" | "rollover",
   Map<string, string>
 >();
 lastRan.set("reflection", new Map());
 lastRan.set("nudge", new Map());
 lastRan.set("energy", new Map());
+lastRan.set("rollover", new Map());
 
 async function listSchedulableUsers(): Promise<SchedulableUser[]> {
   try {
@@ -149,6 +155,30 @@ async function fireEnergyProfile(userId: string): Promise<boolean> {
   });
 }
 
+async function fireMidnightRollover(userId: string, tz: string): Promise<boolean> {
+  return runWithUserId(userId, async () => {
+    try {
+      const { runL0DayScope } = await import("../services/planAdjustmentL0");
+      const { hour: _h, date } = localHourAndDate(tz);
+      const result = await runL0DayScope({ date, force: true });
+      if (
+        result.counts.sweptAgedOut +
+          result.counts.movedTasks +
+          result.counts.leftAsPending >
+        0
+      ) {
+        console.log(
+          `[scheduler] rollover ${userId} ${date}: swept=${result.counts.sweptAgedOut} moved=${result.counts.movedTasks} pending=${result.counts.leftAsPending} validationFailed=${result.counts.validationFailures}`,
+        );
+      }
+      return true;
+    } catch (err) {
+      console.error(`[scheduler] rollover for ${userId} failed:`, err);
+      return false;
+    }
+  });
+}
+
 async function fireMorningNudge(userId: string): Promise<boolean> {
   return runWithUserId(userId, async () => {
     const today = new Date().toISOString().split("T")[0]!;
@@ -182,10 +212,12 @@ async function hourlyTick(): Promise<void> {
   const reflMap = lastRan.get("reflection")!;
   const nudgeMap = lastRan.get("nudge")!;
   const energyMap = lastRan.get("energy")!;
+  const rolloverMap = lastRan.get("rollover")!;
 
   let reflected = 0;
   let nudged = 0;
   let energyRuns = 0;
+  let rollovers = 0;
 
   for (const { userId, tz } of users) {
     const { hour, date } = localHourAndDate(tz);
@@ -197,6 +229,16 @@ async function hourlyTick(): Promise<void> {
         if (ran) reflected++;
       } catch (err) {
         console.error(`[scheduler] reflection for ${userId} failed:`, err);
+      }
+    }
+
+    if (hour === MIDNIGHT_ROLLOVER_HOUR && rolloverMap.get(userId) !== date) {
+      rolloverMap.set(userId, date);
+      try {
+        const ran = await fireMidnightRollover(userId, tz);
+        if (ran) rollovers++;
+      } catch (err) {
+        console.error(`[scheduler] rollover for ${userId} failed:`, err);
       }
     }
 
@@ -221,9 +263,9 @@ async function hourlyTick(): Promise<void> {
     }
   }
 
-  if (reflected > 0 || nudged > 0 || energyRuns > 0) {
+  if (reflected > 0 || nudged > 0 || energyRuns > 0 || rollovers > 0) {
     console.log(
-      `[scheduler] hourlyTick — reflected=${reflected} nudged=${nudged} energy=${energyRuns} users=${users.length}`,
+      `[scheduler] hourlyTick — reflected=${reflected} rollovers=${rollovers} nudged=${nudged} energy=${energyRuns} users=${users.length}`,
     );
   }
 }
@@ -251,7 +293,7 @@ export function startScheduler(): void {
   );
 
   console.log(
-    `[scheduler] started — hourly tick (UTC); per-user targets: reflection @ ${NIGHTLY_REFLECTION_HOUR}:00 local, nudges @ ${MORNING_NUDGE_HOUR}:00 local, energy-profile @ ${ENERGY_PROFILE_HOUR}:00 local`,
+    `[scheduler] started — hourly tick (UTC); per-user targets: rollover @ ${MIDNIGHT_ROLLOVER_HOUR}:00 local, reflection @ ${NIGHTLY_REFLECTION_HOUR}:00 local, nudges @ ${MORNING_NUDGE_HOUR}:00 local, energy-profile @ ${ENERGY_PROFILE_HOUR}:00 local`,
   );
 }
 

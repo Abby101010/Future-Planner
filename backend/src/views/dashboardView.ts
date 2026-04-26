@@ -55,6 +55,10 @@ export interface DashboardView {
   /** True when the user has not yet set a context for the current
    *  calendar month — DashboardPage uses this to show the month nudge. */
   needsMonthlyContext: boolean;
+  /** AI-proposed mutations awaiting explicit user confirmation. Same
+   *  shape and source as `view:tasks.pendingActions`. Surfaced on the
+   *  dashboard so the user sees AI proposals from any page. */
+  pendingActions: import("../repositories/pendingActionsRepo").PendingAction[];
 }
 
 export async function resolveDashboardView(): Promise<DashboardView> {
@@ -136,6 +140,16 @@ export async function resolveDashboardView(): Promise<DashboardView> {
   const currentMonthContext =
     monthlyContexts.find((c) => c.month === monthKey) ?? null;
 
+  // AI-proposed mutations awaiting confirmation. Best-effort.
+  let pendingActions: Awaited<
+    ReturnType<typeof repos.pendingActions.listActive>
+  > = [];
+  try {
+    pendingActions = await repos.pendingActions.listActive();
+  } catch (err) {
+    console.warn("[dashboardView] pendingActions fetch failed:", err);
+  }
+
   return {
     todayDate: today,
     greetingName,
@@ -150,5 +164,6 @@ export async function resolveDashboardView(): Promise<DashboardView> {
     vacationMode,
     currentMonthContext,
     needsMonthlyContext: currentMonthContext === null,
+    pendingActions,
   };
 }

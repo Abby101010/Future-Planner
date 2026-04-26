@@ -60,12 +60,32 @@ export async function cmdCreateTask(
     ?? (body.goalId ? "big_goal" : "user_created");
   const existing = await repos.dailyTasks.listForDate(date);
 
-  // Auto-bonus when the day is already at capacity. Caller can override
-  // by explicitly setting payload.priority — we only auto-tag when the
-  // caller didn't pre-specify a priority.
-  if (existing.length >= COGNITIVE_BUDGET.MAX_DAILY_TASKS && !payload.priority) {
-    payload.priority = "bonus";
-    payload.isBonus = true;
+  // Priority policy:
+  //
+  // 1. Caller-supplied priority always wins (gap-filler proposals,
+  //    AI-generated additions that intentionally request bonus, etc.).
+  //
+  // 2. User-created manual adds default to "must-do". A manual add is
+  //    a deliberate user statement of intent; the task should sit in
+  //    the active list. If today is already at capacity, triage's
+  //    must-do shielding will protect this new task and demote an
+  //    existing should-do to bonus instead. If today is already all
+  //    must-do, triage emits an `overwhelm` nudge with a swap
+  //    candidate (see services/dailyTriage.ts) so the user can choose
+  //    which task to demote.
+  //
+  // 3. Non-user paths (legacy plan-tree materialization, etc.) that
+  //    don't set a priority fall back to the prior auto-bonus rule:
+  //    when the day is at capacity and no priority was specified,
+  //    tag as bonus so the new row doesn't silently push past the
+  //    cap. This keeps existing automation behavior intact.
+  if (!payload.priority) {
+    if (source === "user_created") {
+      payload.priority = "must-do";
+    } else if (existing.length >= COGNITIVE_BUDGET.MAX_DAILY_TASKS) {
+      payload.priority = "bonus";
+      payload.isBonus = true;
+    }
   }
   // Dual-write: if payload supplies legacy HH:MM schedule, also populate ISO columns.
   const tz = timezoneStore.getStore() || "UTC";
@@ -86,11 +106,21 @@ export async function cmdCreateTask(
   });
   await repos.dailyLogs.ensureExists(date);
 
-  // Fire-and-forget light triage: annotate the new row + re-sort the
-  // day. Caller-perceived latency unchanged. See
-  // services/dailyTriage.ts for the contract.
-  const { fireLightTriage } = await import("../../services/dailyTriageDispatch");
-  fireLightTriage(date);
+  // Server-side success log so live diagnostics can confirm "the add
+  // WAS received and the row WAS inserted" — turns the next "did the
+  // add work?" question into a one-line `fly logs` answer.
+  console.info(
+    `[create-task] inserted id=${id} date=${date} source=${source} priority=${(payload.priority as string | undefined) ?? "default"}`,
+  );
+
+  // Dispatch the post-mutation pipeline. See JSDoc on
+  // services/dailyMutationPipeline.ts for the contract: every task
+  // mutation must call this so triage/estimator/etc stay consistent
+  // across handlers without each one remembering its own list.
+  const { fireDailyMutationPipeline } = await import(
+    "../../services/dailyMutationPipeline"
+  );
+  fireDailyMutationPipeline(date, "create");
 
   return { ok: true, taskId: id };
 }
@@ -145,6 +175,17 @@ export async function cmdToggleTask(
       } catch (err) {
         console.warn("[toggle-task] goal progress recalc failed:", err);
       }
+    }
+
+    // Always dispatch the post-mutation pipeline (triage + estimator)
+    // for the task's date, regardless of completed/uncompleted. Toggling
+    // changes which tasks count toward the active list, so the day
+    // needs to re-triage even when no rotation happens.
+    if (task) {
+      const { fireDailyMutationPipeline } = await import(
+        "../../services/dailyMutationPipeline"
+      );
+      fireDailyMutationPipeline(task.date, "toggle");
     }
 
     // Smart task rotation: any completion frees cognitive budget, so
@@ -271,6 +312,12 @@ export async function cmdSkipTask(
       dayOfWeek: new Date(task.date + "T00:00:00").getDay(),
     }).catch(() => {});
   }
+  // Dispatch post-mutation pipeline so the day re-triages with one
+  // less active task. Skipping → bonus tier promotion / cap relief.
+  const { fireDailyMutationPipeline } = await import(
+    "../../services/dailyMutationPipeline"
+  );
+  fireDailyMutationPipeline(task.date, "skip");
   return { ok: true, taskId, skipped: isSkipped };
 }
 
@@ -279,7 +326,15 @@ export async function cmdDeleteTask(
 ): Promise<unknown> {
   const taskId = body.taskId as string | undefined;
   if (!taskId) throw new Error("command:delete-task requires args.taskId");
+  // Look up the task BEFORE deleting so we know which date to re-triage.
+  const task = await repos.dailyTasks.get(taskId);
   await repos.dailyTasks.remove(taskId);
+  if (task?.date) {
+    const { fireDailyMutationPipeline } = await import(
+      "../../services/dailyMutationPipeline"
+    );
+    fireDailyMutationPipeline(task.date, "delete");
+  }
   return { ok: true, taskId };
 }
 
@@ -292,6 +347,12 @@ export async function cmdDeleteTasksForDate(
   }
   const existing = await repos.dailyTasks.listForDate(date);
   await repos.dailyTasks.removeForDate(date);
+  if (existing.length > 0) {
+    const { fireDailyMutationPipeline } = await import(
+      "../../services/dailyMutationPipeline"
+    );
+    fireDailyMutationPipeline(date, "delete");
+  }
   return { ok: true, date, deletedCount: existing.length };
 }
 
@@ -349,6 +410,18 @@ export async function cmdUpdateTask(
     }
   }
   await repos.dailyTasks.update(taskId, topPatch);
+  // Dispatch the pipeline. Cross-day update (date changed) re-triages
+  // both the source and target dates so neither is left stale.
+  const { fireDailyMutationPipeline } = await import(
+    "../../services/dailyMutationPipeline"
+  );
+  const datesToFire = new Set<string>();
+  const existingForDate = await repos.dailyTasks.get(taskId);
+  if (existingForDate?.date) datesToFire.add(existingForDate.date);
+  if (typeof patch.date === "string" && patch.date) datesToFire.add(patch.date);
+  if (datesToFire.size > 0) {
+    fireDailyMutationPipeline(Array.from(datesToFire), "update");
+  }
   return { ok: true, taskId };
 }
 
@@ -945,6 +1018,15 @@ export async function cmdRescheduleTask(
     tier: (pl.tier as string) ?? undefined,
     dayOfWeek: new Date(originalDate + "T00:00:00").getDay(),
   }).catch(() => {});
+
+  // Cross-day reschedule: dispatch the pipeline for BOTH dates so the
+  // source day re-triages with one less task and the target day
+  // re-triages with the new arrival. Estimator skips the moved task
+  // if it was already estimated.
+  const { fireDailyMutationPipeline } = await import(
+    "../../services/dailyMutationPipeline"
+  );
+  fireDailyMutationPipeline([originalDate, targetDate], "reschedule");
 
   return { ok: true, taskId, from: originalDate, to: targetDate };
 }

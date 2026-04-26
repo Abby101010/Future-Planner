@@ -315,5 +315,32 @@ export async function setPaceSnapshot(
   );
 }
 
+/** L3 rate-limit support — read the most recent successful full-plan
+ *  regeneration timestamp for a goal. Returns null if never regenerated.
+ *  Backed by the `last_full_regen_at` column added in migration 0016. */
+export async function getLastFullRegenAt(id: string): Promise<string | null> {
+  const userId = requireUserId();
+  const rows = await query<{ last_full_regen_at: string | null }>(
+    `select last_full_regen_at
+       from goals
+      where user_id = $1 and id = $2`,
+    [userId, id],
+  );
+  return rows.length > 0 ? rows[0].last_full_regen_at : null;
+}
+
+/** Stamp the L3 rate-limit timestamp. Called by runPlanLevelReschedule
+ *  after a successful full-plan regen. */
+export async function markFullRegen(id: string): Promise<void> {
+  const userId = requireUserId();
+  await query(
+    `update goals
+        set last_full_regen_at = now(),
+            updated_at = now()
+      where user_id = $1 and id = $2`,
+    [userId, id],
+  );
+}
+
 // `delete` is a reserved word, re-export `remove` under the expected name.
 export { remove as delete_ };

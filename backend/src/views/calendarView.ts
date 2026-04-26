@@ -3,9 +3,19 @@
  * Returns all tasks for a date range (the unified model — calendar events
  * are now stored as tasks). Also returns goals and vacation mode for the
  * calendar page sidebar.
+ *
+ * Past-day contract: rows where `date < today` AND `completed === false`
+ * are filtered out before returning. Past days show only what was
+ * actually completed; incomplete past tasks live on the Tasks page as
+ * reschedule candidates (see tasksView.ts `pendingReschedules`) until
+ * the user reschedules, drops, or they age out (>90 days, swept by
+ * `markStaleAsSkipped`). This keeps the calendar honest about what
+ * happened on each past day instead of perpetually displaying tasks
+ * that were never done.
  */
 
 import * as repos from "../repositories";
+import { getEffectiveDate } from "../dateUtils";
 import type {
   DailyTask,
   Goal,
@@ -77,6 +87,7 @@ function expandRecurring(
   tasks: DailyTask[],
   rangeStart: string,
   rangeEnd: string,
+  today: string,
 ): DailyTask[] {
   const result: DailyTask[] = [];
 
@@ -91,7 +102,6 @@ function expandRecurring(
       ? new Date(t.recurring.until + "T00:00:00")
       : end;
     const limit = until < end ? until : end;
-    const start = new Date(rangeStart + "T00:00:00");
 
     for (
       let d = new Date(origDate);
@@ -101,6 +111,13 @@ function expandRecurring(
       const dateStr = d.toISOString().split("T")[0];
       if (dateStr === t.date) continue; // skip original
       if (dateStr < rangeStart) continue;
+      // Honor the past-day contract at the top of this file: virtual
+      // recurring instances on past dates render as "uncompleted past
+      // tasks" (completed:false hardcoded at line below) which is
+      // exactly what the past-day filter is meant to hide. They were
+      // never real records, so dropping them prevents false duplicates
+      // alongside any real daily_tasks rows for those dates.
+      if (dateStr < today) continue;
 
       let match = false;
       if (t.recurring.frequency === "daily") {
@@ -171,17 +188,36 @@ export async function resolveCalendarView(
   // Build goalId→title map so TaskRow / side view can show "from <goal>".
   const goalsById = new Map<string, string>(goals.map((g) => [g.id, g.title]));
   const tasks = taskRecords.map((r) => flattenDailyTask(r, r.date, goalsById));
-  const expanded = expandRecurring(tasks, startDate, endDate);
+
+  // Past-day filter: hide incomplete rows on dates before today. See the
+  // contract at the top of this file. Skipped tasks (incl. aged-out)
+  // are also hidden — they have a recorded skipReason and don't belong
+  // on the visible calendar. Today and future days are unchanged.
+  const today = getEffectiveDate();
+  const visibleTasks = tasks.filter((t) => {
+    if (!t.date || t.date >= today) return true;
+    if (t.completed) return true;
+    if (t.skipped) return false;
+    return false;
+  });
+
+  const expanded = expandRecurring(visibleTasks, startDate, endDate, today);
 
   // Deduplicate: filter out goal plan tasks that already have a
-  // corresponding daily_tasks row (matched by planNodeId).
+  // corresponding daily_tasks row (matched by planNodeId). Also filter
+  // out plan-tree tasks scheduled for past days — same contract as the
+  // daily_tasks past-day filter above.
   const existingPlanNodeIds = new Set(
     taskRecords
       .map((r) => r.planNodeId)
       .filter(Boolean) as string[],
   );
   const goalPlanTasks = goalPlanTasksRaw.filter(
-    (t) => !existingPlanNodeIds.has(t.id),
+    (t) => {
+      if (existingPlanNodeIds.has(t.id)) return false;
+      if (t.date && t.date < today && !t.completed) return false;
+      return true;
+    },
   );
 
   const vacationMode: CalendarVacationMode = vacationState
@@ -194,6 +230,25 @@ export async function resolveCalendarView(
 
   const projectAllocation =
     viewMode === "project" ? computeProjectAllocation(expanded) : undefined;
+
+  // Defensive diagnostic: warn if same-date same-title duplicates slip
+  // through dedup. These shouldn't happen given the planNodeId dedup
+  // and the past-day filter, but the warn gives us live signal if they
+  // ever do (e.g., orphaned daily_tasks from a plan rewrite path that
+  // didn't prune, or a future surface that bypasses the resolver's
+  // contract). Keep the warn cheap — just count, don't iterate twice.
+  if (process.env.NODE_ENV !== "production") {
+    const seen = new Map<string, number>();
+    for (const t of expanded) {
+      const key = `${t.date}|${t.title}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of seen) {
+      if (count > 1) {
+        console.warn(`[calendarView] duplicate task in expanded set: ${key} (×${count})`);
+      }
+    }
+  }
 
   // Per-date counts for the month grid. Keys are ISO YYYY-MM-DD, matching
   // both daily_tasks.log_date and reminders.date column shapes.

@@ -34,6 +34,11 @@
  *     on cmdRefreshDailyPlan where their full-pipeline cost is
  *     justified.
  *   - Does NOT auto-merge overdue tasks. Separate scoped follow-up.
+ *   - Does NOT demote must-do tasks. When the cap is unreachable
+ *     because too many tasks are flagged must-do, the loop exits
+ *     with `demoted < toDemote` AND an `overwhelm` nudge is emitted
+ *     (id = `triage-overflow-${date}`) so the failure is visible to
+ *     the user instead of silently leaving the active list over-cap.
  *
  * Failure-tolerant by design: any error logs and returns.
  *
@@ -59,6 +64,24 @@ const TIER_RANK: Record<string, number> = {
 
 function tierRank(tier: string | undefined): number {
   return tier && TIER_RANK[tier] !== undefined ? TIER_RANK[tier] : 2.5;
+}
+
+/** Pick the best demotion candidate from an over-cap active list.
+ *  Input must already be sorted by (tier asc, cognitiveCost desc) per
+ *  the lightTriage Step-2 ordering — this walks from the tail.
+ *
+ *  1st choice: lowest-tier should-do — demoting it doesn't lose a must-do.
+ *  Fallback:   lowest-tier must-do — the user has to reconsider their
+ *              must-do set; the nudge body softens the suggestion.
+ *  Returns null only when activeForCap is empty (shouldn't happen
+ *  given the call site, but guard anyway). */
+function pickSwapCandidate(activeForCap: DailyTaskRecord[]): DailyTaskRecord | null {
+  for (let i = activeForCap.length - 1; i >= 0; i--) {
+    const t = activeForCap[i];
+    const pl = t.payload as Record<string, unknown>;
+    if (pl?.priority === "should-do") return t;
+  }
+  return activeForCap[activeForCap.length - 1] ?? null;
 }
 
 function isAnnotated(t: DailyTaskRecord): boolean {
@@ -211,6 +234,7 @@ export async function lightTriage(
   const capSource = monthly ? "monthly" : "default";
 
   let demoted = 0;
+  let undemoted = 0;
   const activeForCap = sorted.filter((t) => {
     if (t.completed) return false;
     const pl = t.payload as Record<string, unknown>;
@@ -247,6 +271,76 @@ export async function lightTriage(
         console.warn(`[triage] demote ${t.id} failed:`, err);
       }
     }
+    // If the loop exhausted candidates without reaching the cap, the
+    // remaining tail is all must-do — protected from demotion. Surface
+    // the overflow as an `overwhelm` nudge so the user can see the
+    // active list is still over-cap and decide what to do (lower a
+    // must-do, reschedule, or accept the load). Without this, the
+    // function returned demoted=0 and the caller had no signal that
+    // the cap was exceeded.
+    undemoted = toDemote;
+    if (undemoted > 0) {
+      console.warn(
+        `[triage] could not demote ${undemoted} task(s); all remaining candidates are must-do (cap=${cap}, active=${activeForCap.length})`,
+      );
+      // Compute a swap candidate so the nudge can suggest a SPECIFIC
+      // task to demote, not just "you're over cap." Mirrors the
+      // swapSuggestion shape returned by cmdAcceptTaskProposal
+      // (planning.ts:1473) and cmdRescheduleTask (tasks.ts:898) so
+      // any FE swap-card component can render all three uniformly.
+      //
+      // activeForCap is already sorted by (tier asc, cost desc), so
+      // walking from the tail finds the lowest-priority candidate:
+      //   1st choice — last should-do (demoting it doesn't lose a must-do)
+      //   fallback   — last must-do (the user has to reconsider their
+      //                must-do set; nudge body softens the ask)
+      const swapCandidate = pickSwapCandidate(activeForCap);
+      const swapPriority = swapCandidate
+        ? ((swapCandidate.payload as Record<string, unknown>)?.priority as string | undefined) ?? "should-do"
+        : null;
+      const suggestionText = swapCandidate
+        ? swapPriority === "must-do"
+          ? `Every active task is must-do — to fit, you'd need to demote "${swapCandidate.title}" or reschedule one.`
+          : `Move "${swapCandidate.title}" to bonus to make room?`
+        : "Lower a priority, reschedule, or accept the heavier day.";
+      try {
+        await repos.nudges.insert({
+          id: `triage-overflow-${date}`,
+          kind: "overwhelm",
+          title: "Too many must-do tasks today",
+          body: `${undemoted} task${undemoted === 1 ? " is" : "s are"} above today's cap of ${cap} but flagged must-do. ${suggestionText}`,
+          priority: 80,
+          context: `triage-overflow:${date}`,
+          extra: {
+            date,
+            cap,
+            activeCount: activeForCap.length,
+            undemoted,
+            swapCandidate: swapCandidate
+              ? {
+                  taskId: swapCandidate.id,
+                  title: swapCandidate.title,
+                  currentPriority:
+                    ((swapCandidate.payload as Record<string, unknown>)?.priority as string | undefined) ?? "should-do",
+                  cognitiveCost: swapCandidate.cognitiveCost ?? null,
+                  tier: swapCandidate.tier ?? null,
+                }
+              : null,
+          },
+        });
+      } catch (err) {
+        console.warn("[triage] overflow nudge insert failed:", err);
+      }
+    } else {
+      // Cap was reachable this pass — clear any stale overflow nudge
+      // from a prior triage so it doesn't linger after the user fixed
+      // their priorities.
+      try {
+        await repos.nudges.dismissByContext(`triage-overflow:${date}`);
+      } catch {
+        /* best-effort */
+      }
+    }
   }
 
   // Stamp the daily log so subsequent reads can debounce. Best-effort
@@ -272,7 +366,7 @@ export async function lightTriage(
   }
 
   console.log(
-    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted} cap=${cap} source=${capSource}`,
+    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted} undemoted=${undemoted} cap=${cap} source=${capSource}`,
   );
 
   return {

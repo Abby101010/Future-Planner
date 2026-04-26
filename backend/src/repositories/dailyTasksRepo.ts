@@ -352,8 +352,20 @@ export async function toggleCompleted(id: string): Promise<boolean | null> {
 
 /** Find incomplete, un-skipped tasks from dates before `today` that
  *  haven't been snoozed past a future reminder time. These are
- *  candidates for the reschedule confirmation card. Limited to the
- *  last 14 days to avoid surfacing ancient tasks. */
+ *  candidates for the reschedule confirmation card.
+ *
+ *  Window: 1–90 days overdue. Resolver derives an `agedOut` flag for
+ *  rows >30 days overdue so the UI can style them differently. Tasks
+ *  >90 days overdue are NOT returned here — they should have been
+ *  swept by `markStaleAsSkipped` (called from tasksView resolver) and
+ *  recorded with `payload.skippedReason = "aged-out"` so they're
+ *  accounted for in the DB but no longer dominate the active surface.
+ *
+ *  Contract: no incomplete past task should ever be silently dropped
+ *  from the user's awareness. Either it surfaces here as a reschedule
+ *  candidate, or it's been deliberately marked skipped (with a
+ *  reason) by the stale-sweep. The prior 14-day silent cutoff broke
+ *  this contract — restored 2026-04. */
 export async function listPendingReschedule(
   today: string,
 ): Promise<DailyTaskRecord[]> {
@@ -362,7 +374,7 @@ export async function listPendingReschedule(
     `select * from daily_tasks
       where user_id = $1
         and log_date < $2
-        and log_date >= ($2::date - interval '14 days')
+        and log_date >= ($2::date - interval '90 days')
         and completed = false
       order by log_date desc, order_index asc`,
     [userId, today],
@@ -378,6 +390,32 @@ export async function listPendingReschedule(
       if (typeof pl.rescheduleSnoozeUntil === "string" && pl.rescheduleSnoozeUntil > today) return false;
       return true;
     });
+}
+
+/** Mark incomplete tasks older than 90 days as skipped with a recorded
+ *  reason. Returns the number of rows affected. Pairs with
+ *  `listPendingReschedule` to honor the "no silent drops" contract:
+ *  these tasks are still in the DB (queryable for history / undo) but
+ *  no longer surface on the active reschedule list. Idempotent — rows
+ *  already marked skipped are untouched. */
+export async function markStaleAsSkipped(today: string): Promise<number> {
+  const userId = requireUserId();
+  const result = await query<{ id: string }>(
+    `update daily_tasks
+        set payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object(
+              'skipped', true,
+              'skippedReason', 'aged-out',
+              'skippedAt', now()::text
+            ),
+            updated_at = now()
+      where user_id = $1
+        and log_date < ($2::date - interval '90 days')
+        and completed = false
+        and (payload->>'skipped' is null or payload->>'skipped' <> 'true')
+      returning id`,
+    [userId, today],
+  );
+  return result.length;
 }
 
 /** Find a daily_task linked to a specific plan node ID. Returns the

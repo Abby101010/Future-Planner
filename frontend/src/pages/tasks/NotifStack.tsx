@@ -8,7 +8,12 @@
 import type { ReactNode } from "react";
 import Button from "../../components/primitives/Button";
 import Icon, { type IconName } from "../../components/primitives/Icon";
-import type { UIPendingTask, UIProposal, UINudge } from "./tasksTypes";
+import type {
+  UIPendingTask,
+  UIProposal,
+  UIPendingReschedule,
+  UINudge,
+} from "./tasksTypes";
 
 type Tone = "gold" | "navy" | "mist";
 
@@ -112,6 +117,7 @@ function NotifCard({
 export interface NotifStackProps {
   pending: UIPendingTask[];
   proposals: UIProposal[];
+  reschedules: UIPendingReschedule[];
   nudges: UINudge[];
   inline?: boolean;
   onConfirmPending: (id: string) => void;
@@ -119,6 +125,9 @@ export interface NotifStackProps {
   onAcceptProposal: (id: string) => void;
   onSnoozeProposal: (id: string) => void;
   onDismissProposal: (id: string) => void;
+  onAcceptReschedule: (taskId: string, targetDate: string) => void;
+  onSnoozeReschedule: (taskId: string) => void;
+  onDismissReschedule: (taskId: string) => void;
   onDeferOverflow: () => void;
   onDismissNudge: (id: string) => void;
 }
@@ -126,6 +135,7 @@ export interface NotifStackProps {
 export default function NotifStack({
   pending,
   proposals,
+  reschedules,
   nudges,
   inline = false,
   onConfirmPending,
@@ -133,10 +143,14 @@ export default function NotifStack({
   onAcceptProposal,
   onSnoozeProposal,
   onDismissProposal,
+  onAcceptReschedule,
+  onSnoozeReschedule,
+  onDismissReschedule,
   onDeferOverflow,
   onDismissNudge,
 }: NotifStackProps) {
-  const total = pending.length + proposals.length + nudges.length;
+  const total =
+    pending.length + proposals.length + reschedules.length + nudges.length;
   if (total === 0) return null;
 
   const containerStyle: React.CSSProperties = inline
@@ -233,6 +247,62 @@ export default function NotifStack({
           </Button>
         </NotifCard>
       ))}
+      {reschedules.map((r) => {
+        const overdueLabel =
+          r.daysOverdue === 1
+            ? "1 day overdue"
+            : `${r.daysOverdue} days overdue`;
+        const body = (
+          <>
+            <span>{overdueLabel}</span>
+            {r.agedOut && (
+              <span style={{ color: "var(--fg-faint)" }}> · aged</span>
+            )}
+            {r.goalTitle && (
+              <span style={{ color: "var(--fg-mute)" }}> · from {r.goalTitle}</span>
+            )}
+          </>
+        );
+        return (
+          <NotifCard
+            key={`rs-${r.taskId}`}
+            testId={`tasks-reschedule-${r.taskId}`}
+            kind="Reschedule"
+            title={r.title}
+            tone="navy"
+            body={body}
+            onDismiss={() => onDismissReschedule(r.taskId)}
+          >
+            <Button
+              size="xs"
+              tone="primary"
+              onClick={() => onAcceptReschedule(r.taskId, r.suggestedDate)}
+              data-api="POST /commands/reschedule-task"
+              data-testid={`tasks-reschedule-accept-${r.taskId}`}
+            >
+              Move to {r.suggestedDateLabel}
+            </Button>
+            <Button
+              size="xs"
+              tone="ghost"
+              onClick={() => onSnoozeReschedule(r.taskId)}
+              data-api="POST /commands/snooze-reschedule"
+              data-testid={`tasks-reschedule-snooze-${r.taskId}`}
+            >
+              Snooze 1 day
+            </Button>
+            <Button
+              size="xs"
+              tone="ghost"
+              onClick={() => onDismissReschedule(r.taskId)}
+              data-api="POST /commands/dismiss-reschedule"
+              data-testid={`tasks-reschedule-drop-${r.taskId}`}
+            >
+              Drop
+            </Button>
+          </NotifCard>
+        );
+      })}
       {nudges.map((n) => (
         <NotifCard
           key={n.id}

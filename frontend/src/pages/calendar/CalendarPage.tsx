@@ -665,8 +665,8 @@ function WeekView({ data, onChange }: { data: CalendarView; onChange: () => void
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const today = new Date();
 
-  async function onDropCrossDay(taskId: string, newDate: string) {
-    await run("command:reschedule-task", { taskId, newDate });
+  async function onDropCrossDay(taskId: string, targetDate: string) {
+    await run("command:reschedule-task", { taskId, targetDate });
     onChange();
   }
 

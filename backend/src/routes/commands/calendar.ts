@@ -125,11 +125,22 @@ export async function cmdDeleteRemindersBatch(
     );
   }
   let deletedCount = 0;
+  const missingIds: string[] = [];
   for (const id of ids) {
-    if (typeof id === "string" && id) {
+    if (typeof id !== "string" || !id) continue;
+    try {
       await repos.reminders.remove(id);
       deletedCount++;
+    } catch (err) {
+      // EntityNotFoundError on a single id is non-fatal in batch:
+      // the user clicked "Clear all" and wants the rest deleted.
+      // We still report the missing ids so the FE can decide whether
+      // to surface them. Other errors propagate normally.
+      const isMissing =
+        err instanceof Error && err.name === "EntityNotFoundError";
+      if (!isMissing) throw err;
+      missingIds.push(id);
     }
   }
-  return { ok: true, deletedCount };
+  return { ok: true, deletedCount, missingIds };
 }

@@ -74,6 +74,10 @@ import {
   cmdPauseGoal,
   cmdResumeGoal,
   cmdProposeGapFillers,
+  cmdRequestEscalation,
+  cmdPlanEditClassify,
+  cmdAcceptPendingAction,
+  cmdRejectPendingAction,
   cmdAnalyzeImage,
   cmdUpdateGoalNotes,
   cmdEditGoalTitle,
@@ -284,6 +288,18 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:propose-gap-fillers":
         result = await cmdProposeGapFillers(body);
         break;
+      case "command:request-escalation":
+        result = await cmdRequestEscalation(body);
+        break;
+      case "command:plan-edit-classify":
+        result = await cmdPlanEditClassify(body);
+        break;
+      case "command:accept-pending-action":
+        result = await cmdAcceptPendingAction(body);
+        break;
+      case "command:reject-pending-action":
+        result = await cmdRejectPendingAction(body);
+        break;
       case "command:analyze-image":
         result = await cmdAnalyzeImage(body);
         break;
@@ -350,8 +366,17 @@ commandsRouter.post("/:kind", async (req, res) => {
     res.json(envelope(kind, result));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // Honor a `status` field on typed errors (UnauthenticatedError →
+    // 401, EntityNotFoundError → 404). Falls back to 500 for plain
+    // Errors so legacy throws keep their existing wire shape.
+    const errStatus = err instanceof Error
+      ? (err as unknown as { status?: unknown }).status
+      : undefined;
+    const status = typeof errStatus === "number" ? errStatus : 500;
+    const code =
+      status === 404 ? "not_found" : status === 401 ? "unauthenticated" : "command_failed";
     // Intentionally do NOT fire view:invalidate on failure.
-    res.status(500).json(envelopeError(kind, "command_failed", message));
+    res.status(status).json(envelopeError(kind, code, message));
   }
 });
 
