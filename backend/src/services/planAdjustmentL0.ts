@@ -25,10 +25,18 @@
 import * as repos from "../repositories";
 import { runBudgetCheck } from "../agents/gatekeeper";
 import { getEffectiveDate } from "../dateUtils";
+import { resolveDependenciesForDay } from "./dependencyResolution";
 import type { AdjustmentScope } from "@starward/core";
+import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
 
 export interface L0Action {
-  kind: "swept-aged-out" | "moved-task" | "left-as-pending" | "validation-failed";
+  kind:
+    | "swept-aged-out"
+    | "moved-task"
+    | "left-as-pending"
+    | "validation-failed"
+    | "dep-swap"
+    | "dep-push-out";
   taskId?: string;
   fromDate?: string;
   toDate?: string;
@@ -47,6 +55,12 @@ export interface L0Result {
     movedTasks: number;
     leftAsPending: number;
     validationFailures: number;
+    /** Tasks pulled forward to unblock dependents on the target date. */
+    depSwaps: number;
+    /** Tasks pushed out because their dep is scheduled later. */
+    depPushOuts: number;
+    /** Cycles detected in the dep graph (logged, treated as runnable). */
+    depCycles: number;
   };
 }
 
@@ -76,6 +90,9 @@ export async function runL0DayScope(args: {
       movedTasks: 0,
       leftAsPending: 0,
       validationFailures: 0,
+      depSwaps: 0,
+      depPushOuts: 0,
+      depCycles: 0,
     },
   };
 
@@ -117,6 +134,32 @@ export async function runL0DayScope(args: {
   } catch (err) {
     console.warn("[L0] listPendingReschedule failed:", err);
     pending = [];
+  }
+
+  // Step 3a — dependency-aware swap pass. For each goal with both
+  // overdue prereqs in the pending pool AND tasks scheduled for the
+  // target date, swap blocked dependents for their prereqs. Per-goal
+  // scoping; cross-goal deps are not modeled (resolveDependenciesForDay).
+  // Runs BEFORE the auto-move sweep so the dep swaps land on the
+  // ideal dates rather than fighting the lightest-day picker.
+  try {
+    const depSwapResult = await runDependencySwapPass(date, pending);
+    result.counts.depSwaps = depSwapResult.swaps;
+    result.counts.depPushOuts = depSwapResult.pushOuts;
+    result.counts.depCycles = depSwapResult.cycles;
+    result.actions.push(...depSwapResult.actions);
+    // Refresh pending list: tasks pulled forward by the swap pass
+    // are no longer overdue and shouldn't be considered by the
+    // standard auto-move below.
+    if (depSwapResult.swaps > 0) {
+      try {
+        pending = await repos.dailyTasks.listPendingReschedule(date);
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch (err) {
+    console.warn("[L0] dependency swap pass failed:", err);
   }
 
   const todayMs = new Date(date + "T00:00:00").getTime();
@@ -241,8 +284,179 @@ async function pickLightestUpcomingDay(
 function rationaleFor(r: L0Result): string {
   const parts: string[] = [];
   if (r.counts.sweptAgedOut > 0) parts.push(`swept ${r.counts.sweptAgedOut} aged-out`);
+  if (r.counts.depSwaps > 0) parts.push(`${r.counts.depSwaps} dep swap(s)`);
+  if (r.counts.depPushOuts > 0) parts.push(`${r.counts.depPushOuts} dep push-out(s)`);
   if (r.counts.movedTasks > 0) parts.push(`moved ${r.counts.movedTasks} task(s)`);
   if (r.counts.leftAsPending > 0) parts.push(`left ${r.counts.leftAsPending} as pending`);
   if (r.counts.validationFailures > 0) parts.push(`${r.counts.validationFailures} validation failure(s) → escalate`);
   return parts.length > 0 ? parts.join("; ") : "no-op";
+}
+
+/** For each goal with overdue prereqs AND tasks scheduled for `date`,
+ *  pull the prereq forward and push the dependent out. Per-goal
+ *  scoping (`resolveDependenciesForDay`); cross-goal deps not modeled.
+ *  Returns counts + audit actions. */
+async function runDependencySwapPass(
+  date: string,
+  pending: DailyTaskRecord[],
+): Promise<{
+  swaps: number;
+  pushOuts: number;
+  cycles: number;
+  actions: L0Action[];
+}> {
+  const actions: L0Action[] = [];
+  let swaps = 0;
+  let pushOuts = 0;
+  let cycles = 0;
+
+  // The pending list is already overdue tasks. Group by goal_id so
+  // each goal's resolution is independent.
+  const pendingByGoal = new Map<string, DailyTaskRecord[]>();
+  for (const t of pending) {
+    if (!t.goalId) continue; // pool tasks have no plan-tree deps
+    const arr = pendingByGoal.get(t.goalId) ?? [];
+    arr.push(t);
+    pendingByGoal.set(t.goalId, arr);
+  }
+
+  // Tasks scheduled for the target date — these are the swap-out
+  // candidates. We only consider goal-attached scheduled tasks since
+  // pool tasks can't have plan-tree deps.
+  let targetTasks: DailyTaskRecord[] = [];
+  try {
+    targetTasks = await repos.dailyTasks.listForDate(date);
+  } catch {
+    return { swaps, pushOuts, cycles, actions };
+  }
+  const scheduledByGoal = new Map<string, DailyTaskRecord[]>();
+  for (const t of targetTasks) {
+    if (!t.goalId) continue;
+    if (t.completed) continue;
+    if ((t.payload as Record<string, unknown>)?.skipped) continue;
+    const arr = scheduledByGoal.get(t.goalId) ?? [];
+    arr.push(t);
+    scheduledByGoal.set(t.goalId, arr);
+  }
+
+  // Need a `completed` set across ALL daily_tasks the user has ever
+  // finished — deps may reference a task that was completed weeks
+  // ago. Pull a wide window; this is a small DB hit.
+  let completedSet = new Set<string>();
+  try {
+    const recent = await repos.dailyTasks.listForDateRange(
+      offsetDate(date, -90),
+      offsetDate(date, 0),
+    );
+    for (const r of recent) {
+      if (r.completed) {
+        if (r.planNodeId) completedSet.add(r.planNodeId);
+        completedSet.add(r.id);
+      }
+    }
+  } catch {
+    /* best-effort; missing completedSet just means more "in pending pool" matches */
+  }
+
+  for (const [goalId, scheduled] of scheduledByGoal) {
+    const pendingForGoal = pendingByGoal.get(goalId) ?? [];
+    const res = resolveDependenciesForDay(scheduled, completedSet, pendingForGoal);
+    cycles += res.cyclesDetected;
+
+    // Apply swaps. For each pair, pull `prereq` to `date` and push
+    // `dependent` to the next available date. Use the existing
+    // pickLightestUpcomingDay primitive for the push-out target.
+    for (const { dependent, prereq } of res.swap) {
+      try {
+        // Pull prereq forward.
+        await repos.dailyTasks.update(prereq.id, {
+          date,
+          payload: {
+            rescheduledFrom: prereq.date,
+            rescheduledByL0At: new Date().toISOString(),
+            rescheduleReason: "dep-pull-forward",
+          },
+        });
+        if (prereq.planNodeId) {
+          try {
+            await repos.goalPlan.moveTaskToDate(prereq.planNodeId, goalId, date);
+          } catch (err) {
+            console.warn(`[L0:dep] plan node sync failed for ${prereq.id}:`, err);
+          }
+        }
+
+        // Push dependent out. Pick the next lightest day after `date`.
+        const pushTarget = await pickLightestUpcomingDay(date, 7);
+        if (pushTarget) {
+          await repos.dailyTasks.update(dependent.id, {
+            date: pushTarget,
+            payload: {
+              rescheduledFrom: dependent.date,
+              rescheduledByL0At: new Date().toISOString(),
+              rescheduleReason: "dep-push-out",
+            },
+          });
+          if (dependent.planNodeId) {
+            try {
+              await repos.goalPlan.moveTaskToDate(dependent.planNodeId, goalId, pushTarget);
+            } catch (err) {
+              console.warn(`[L0:dep] plan node sync failed for ${dependent.id}:`, err);
+            }
+          }
+          actions.push({
+            kind: "dep-swap",
+            taskId: dependent.id,
+            fromDate: dependent.date,
+            toDate: pushTarget,
+            reason: `swapped with prereq ${prereq.id}`,
+          });
+        }
+        swaps++;
+      } catch (err) {
+        console.warn(`[L0:dep] swap failed for ${dependent.id} ↔ ${prereq.id}:`, err);
+      }
+    }
+
+    // Apply push-outs (deps scheduled in the future, so dependent
+    // can't run on `date`). Just push the dependent past today.
+    for (const t of res.pushOut) {
+      try {
+        const target = await pickLightestUpcomingDay(date, 7);
+        if (!target) continue;
+        await repos.dailyTasks.update(t.id, {
+          date: target,
+          payload: {
+            rescheduledFrom: t.date,
+            rescheduledByL0At: new Date().toISOString(),
+            rescheduleReason: "dep-push-out-future-prereq",
+          },
+        });
+        if (t.planNodeId) {
+          try {
+            await repos.goalPlan.moveTaskToDate(t.planNodeId, goalId, target);
+          } catch {
+            /* best-effort */
+          }
+        }
+        actions.push({
+          kind: "dep-push-out",
+          taskId: t.id,
+          fromDate: t.date,
+          toDate: target,
+          reason: "prereq scheduled later",
+        });
+        pushOuts++;
+      } catch (err) {
+        console.warn(`[L0:dep] push-out failed for ${t.id}:`, err);
+      }
+    }
+  }
+
+  return { swaps, pushOuts, cycles, actions };
+}
+
+function offsetDate(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
 }
