@@ -270,12 +270,35 @@ export default function TasksPage() {
   // — preserves the BE's load-balancing in tasksView.ts:pickSuggestedDate.
   // No bulk command exists by design; one BE write path means future
   // changes to reschedule semantics only edit one handler.
+  //
+  // force: true is REQUIRED here — `pickSuggestedDate` returns the
+  // single lightest day for many tasks at once, so without `force` the
+  // BE budget check (cmdRescheduleTask:944-980) rejects every task
+  // after the first 1-2 with `budgetExceeded`, breaking the loop.
+  // Bulk-confirm is by definition the user explicitly opting into the
+  // move; the existing lightTriage demote pass still caps the active
+  // list, so over-budget days don't actually overload the user.
+  //
+  // try/catch per iteration: a single bad id (e.g. task deleted on
+  // another device mid-loop) shouldn't kill the whole batch.
   const confirmAllReschedules = wrap(async () => {
+    let failures = 0;
     for (const r of pendingReschedules) {
-      await run("command:reschedule-task", {
-        taskId: r.taskId,
-        targetDate: r.suggestedDate,
-      });
+      try {
+        await run("command:reschedule-task", {
+          taskId: r.taskId,
+          targetDate: r.suggestedDate,
+          force: true,
+        });
+      } catch (err) {
+        failures++;
+        console.warn("[bulk-reschedule] failed for", r.taskId, err);
+      }
+    }
+    if (failures > 0) {
+      setCmdError(
+        `${failures} of ${pendingReschedules.length} reschedules failed; the rest moved.`,
+      );
     }
     refetchAll();
   });
