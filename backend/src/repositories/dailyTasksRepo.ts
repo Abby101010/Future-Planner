@@ -43,6 +43,12 @@ export interface DailyTaskRecord {
   cognitiveLoad: string | null;
   cognitiveCost: number | null;
   tier: string | null;
+  // ── Migration 0018 — task dependencies ──
+  /** Plan-tree task IDs (within the SAME goal) that must be completed
+   *  before this task is "doable". Mirrored from
+   *  goal_plan_nodes.depends_on at materialization. Read by
+   *  services/dependencyResolution.ts. */
+  dependsOn: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +73,7 @@ interface DailyTaskRow {
   cognitive_load: string | null;
   cognitive_cost: number | null;
   tier: string | null;
+  depends_on: unknown;
   created_at: string;
   updated_at: string;
 }
@@ -91,9 +98,28 @@ function rowToTask(r: DailyTaskRow): DailyTaskRecord {
     cognitiveLoad: r.cognitive_load,
     cognitiveCost: r.cognitive_cost,
     tier: r.tier,
+    dependsOn: parseDependsOn(r.depends_on),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+/** depends_on is JSONB. pg returns either an already-parsed array or a
+ *  string (driver dependent). Coerce to string[] | null defensively. */
+function parseDependsOn(raw: unknown): string[] | null {
+  if (raw == null) return null;
+  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string");
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((x): x is string => typeof x === "string")
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /** Compose an ISO timestamptz from a YYYY-MM-DD date, a HH:MM time-of-day,
@@ -190,6 +216,10 @@ export interface InsertDailyTaskInput {
   cognitiveLoad?: string | null;
   cognitiveCost?: number | null;
   tier?: string | null;
+  /** Plan-tree task IDs (within the same goal) that must be completed
+   *  before this task is "doable". Mirrored from
+   *  goal_plan_nodes.depends_on at materialization. */
+  dependsOn?: string[] | null;
 }
 
 export async function insert(task: InsertDailyTaskInput): Promise<void> {
@@ -203,12 +233,12 @@ export async function insert(task: InsertDailyTaskInput): Promise<void> {
        completed, completed_at, order_index, source, payload,
        scheduled_start_time, scheduled_end_time,
        estimated_duration_minutes, time_block_status, project_tag,
-       cognitive_load, cognitive_cost, tier,
+       cognitive_load, cognitive_cost, tier, depends_on,
        updated_at
      ) values (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb,
        $12, $13, $14, $15, $16,
-       $17, $18, $19,
+       $17, $18, $19, $20::jsonb,
        now()
      )`,
     [
@@ -231,6 +261,7 @@ export async function insert(task: InsertDailyTaskInput): Promise<void> {
       task.cognitiveLoad ?? null,
       task.cognitiveCost ?? null,
       task.tier ?? null,
+      task.dependsOn != null ? JSON.stringify(task.dependsOn) : null,
     ],
   );
 }
@@ -252,6 +283,7 @@ export interface UpdateDailyTaskPatch {
   cognitiveLoad?: string | null;
   cognitiveCost?: number | null;
   tier?: string | null;
+  dependsOn?: string[] | null;
 }
 
 /** Reads the row, merges the patch in memory, and writes it back. This
@@ -266,6 +298,8 @@ export async function update(
   const mergedPayload = patch.payload
     ? { ...existing.payload, ...patch.payload }
     : existing.payload;
+  const nextDependsOn =
+    patch.dependsOn !== undefined ? patch.dependsOn : existing.dependsOn;
   await query(
     `update daily_tasks set
        title = $3,
@@ -284,6 +318,7 @@ export async function update(
        cognitive_load = $16,
        cognitive_cost = $17,
        tier = $18,
+       depends_on = $19::jsonb,
        updated_at = now()
      where user_id = $1 and id = $2`,
     [
@@ -307,6 +342,7 @@ export async function update(
       patch.cognitiveLoad !== undefined ? patch.cognitiveLoad : existing.cognitiveLoad,
       patch.cognitiveCost !== undefined ? patch.cognitiveCost : existing.cognitiveCost,
       patch.tier !== undefined ? patch.tier : existing.tier,
+      nextDependsOn != null ? JSON.stringify(nextDependsOn) : null,
     ],
   );
 }

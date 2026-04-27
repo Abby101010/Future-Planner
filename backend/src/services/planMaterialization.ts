@@ -122,6 +122,12 @@ export async function materializePlanTasks(
           category: task.category ?? "planning",
           source: "plan-materialized",
         },
+        // Carry the plan-tree dependsOn list onto the daily_tasks row so
+        // dependency resolution doesn't have to JOIN through the plan
+        // tree at runtime. The plan tree's task IDs match the
+        // planNodeId, so dependsOn refs are still valid post-materialize.
+        // Migration 0018_task_dependencies.sql.
+        dependsOn: Array.isArray(task.dependsOn) ? task.dependsOn : null,
       });
       count++;
       countByDate.set(date, (countByDate.get(date) ?? 0) + 1);

@@ -401,6 +401,13 @@ export interface DailyTask {
   /** Value tiering — horizon this task serves. Scheduler uses tier to pick
    *  which tasks to defer to the pending pool when over budget. */
   tier?: "lifetime" | "quarter" | "week" | "day" | null;
+  /** Plan-tree task IDs (within the SAME goal) that must be `completed`
+   *  before this task is "doable". Empty/missing = no dependencies.
+   *  Cross-goal deps are not modeled — resolveDependenciesForDay
+   *  scopes per-goal and the daily plan merges per-goal results.
+   *  Source: backend/migrations/0018_task_dependencies.sql, mirrored
+   *  from `goal_plan_nodes.depends_on` at materialization time. */
+  dependsOn?: string[];
 }
 
 export interface HeatmapEntry {
@@ -821,6 +828,14 @@ export interface GoalPlanTask {
   /** Methodology task-type enum (Phase E). Defaults to "other" in
    *  readers when missing. */
   taskType?: GoalPlanTaskType;
+  /** Other plan-tree task IDs (within the SAME goal) that must be
+   *  `completed` before this task is unblocked. Emitted by the AI
+   *  plan generator when a real prerequisite chain exists; validated
+   *  by normalizePlan to reject cycles, cross-goal refs, and unknown
+   *  ids. Empty/missing = no dependencies. Materialized down to
+   *  `daily_tasks.depends_on` so the runtime resolver doesn't have
+   *  to JOIN through the plan tree. */
+  dependsOn?: string[];
 }
 
 /** A goal plan task projected onto a calendar date range. */
