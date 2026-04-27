@@ -1436,16 +1436,28 @@ export async function cmdGenerateBonusTask(
     preserveExisting: true,
   });
 
-  // Pick the first task as the bonus suggestion
-  const bonus = result.tasks?.[0];
+  // Pick the first NEW task as the bonus suggestion. Filtering against
+  // existing IDs is required because we run the generator with
+  // preserveExisting=true, which tells the AI to KEEP existing task IDs
+  // in its response (so it knows what's already on the day). Without
+  // this filter, result.tasks[0] is often a row that's already in
+  // daily_tasks → the INSERT below collides on daily_tasks_pkey.
+  const existing = await repos.dailyTasks.listForDate(today);
+  const existingIds = new Set(existing.map((t) => t.id));
+  const bonus = result.tasks?.find((t) => t.id && !existingIds.has(t.id));
   if (!bonus) {
     return { ok: true, bonus: null };
   }
 
-  // Insert as an appended bonus task
-  const existing = await repos.dailyTasks.listForDate(today);
+  // Always mint a fresh UUID for the inserted row. NEVER trust an
+  // AI-supplied id as a primary key — even when filtered against
+  // existing IDs above, the AI's id may be a hallucinated string,
+  // a stale id from a previous response in chat history, or in a
+  // future failure mode collide with another row. A fresh UUID is
+  // structurally collision-free.
+  const newId = crypto.randomUUID();
   await repos.dailyTasks.insert({
-    id: bonus.id ?? crypto.randomUUID(),
+    id: newId,
     date: today,
     title: bonus.title,
     completed: false,
@@ -1468,7 +1480,7 @@ export async function cmdGenerateBonusTask(
   return {
     ok: true,
     bonus: {
-      id: bonus.id,
+      id: newId,
       title: bonus.title,
       description: bonus.description,
       durationMinutes: bonus.durationMinutes,
