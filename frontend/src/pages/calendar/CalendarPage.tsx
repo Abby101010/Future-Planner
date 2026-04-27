@@ -850,8 +850,55 @@ function DayView({
   anchor: string;
   onChange: () => void;
 }) {
-  const tasks = data.tasks.filter((t) => t.date === anchor);
+  const { run } = useCommand();
+  const tasksForDate = data.tasks.filter((t) => t.date === anchor);
+  // SPLIT: hour grid renders only tasks with non-null scheduledStartIso.
+  // Tasks without it appear in the Unscheduled lane above. Don't add a
+  // `?? new Date()` fallback in DayBlock — it produces invisible blocks
+  // at wall-clock-now and hides the empty state. Mirrors Google
+  // Calendar's "All-day" / Things 3's "Today" lane pattern. The day
+  // summary's "Blocked: N · Unscheduled: M" makes the divergence
+  // explicit instead of conflating both under "Scheduled".
+  const blockedTasks = tasksForDate.filter((t) => Boolean(t.scheduledStartIso));
+  const unscheduledTasks = tasksForDate.filter((t) => !t.scheduledStartIso);
   const reminders = data.reminders.filter((r) => r.date === anchor);
+
+  // Compute total time from blocked tasks only (consistent with
+  // "First/Last block" which already requires a real time).
+  const totalBlockedMinutes = blockedTasks.reduce(
+    (a, t) => a + (t.estimatedDurationMinutes ?? 0),
+    0,
+  );
+
+  // Grid drop handler: chip dragged from the unscheduled lane.
+  // dataTransfer carries the taskId; we compute the hour from the
+  // drop Y offset within the grid (snap to 15-min increments).
+  function onGridDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData("text/x-starward-task-id");
+    if (!taskId) return;
+    const task = unscheduledTasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const minutesFromMidnight = Math.max(
+      0,
+      Math.min(24 * 60 - 15, Math.round(((y / PX_PER_HOUR) * 60) / 15) * 15),
+    );
+    // Construct the ISO at the user's local-day midnight + minutes.
+    // anchor is YYYY-MM-DD; build a Date in local time for that day.
+    const [yyyy, mm, dd] = anchor.split("-").map(Number);
+    const start = new Date(yyyy, (mm ?? 1) - 1, dd ?? 1, 0, 0, 0, 0);
+    start.setMinutes(start.getMinutes() + minutesFromMidnight);
+    const durationMin = task.estimatedDurationMinutes ?? 30;
+    void run("command:set-task-time-block", {
+      taskId: task.id,
+      timeBlock: {
+        scheduledStartIso: start.toISOString(),
+        estimatedDurationMinutes: durationMin,
+      },
+    }).then(onChange);
+  }
 
   return (
     <div
@@ -905,8 +952,59 @@ function DayView({
           </div>
         )}
 
+        {unscheduledTasks.length > 0 && (
+          <div
+            data-testid="calendar-day-unscheduled-lane"
+            style={{
+              marginBottom: 12,
+              padding: 10,
+              border: "1px dashed var(--border)",
+              background: "var(--bg-elev)",
+              borderRadius: "var(--r-md)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.12em",
+                color: "var(--fg-faint)",
+                textTransform: "uppercase",
+                fontWeight: 600,
+                marginBottom: 8,
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+              }}
+            >
+              <span>Unscheduled · {unscheduledTasks.length}</span>
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.06em",
+                  textTransform: "none",
+                  color: "var(--fg-faint)",
+                  fontWeight: 400,
+                }}
+              >
+                drag a chip onto the grid to schedule
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {unscheduledTasks.map((t) => (
+                <UnscheduledChip key={t.id} task={t} />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div
           data-testid="calendar-day-grid"
+          onDragOver={(e) => {
+            // Required so the drop event fires.
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={onGridDrop}
           style={{
             position: "relative",
             border: "1px solid var(--border)",
@@ -947,7 +1045,7 @@ function DayView({
             </div>
           ))}
 
-          {tasks.map((t) => (
+          {blockedTasks.map((t) => (
             <DayBlock key={t.id} task={t} onChange={onChange} />
           ))}
         </div>
@@ -974,18 +1072,23 @@ function DayView({
         >
           Day summary
         </div>
-        <Metric label="Scheduled" value={String(tasks.length)} />
+        <Metric label="Blocked" value={String(blockedTasks.length)} />
+        <Metric label="Unscheduled" value={String(unscheduledTasks.length)} />
         <Metric
           label="Total time"
-          value={`${Math.round((tasks.reduce((a, t) => a + (t.estimatedDurationMinutes ?? 0), 0) / 60) * 10) / 10}h`}
+          value={`${Math.round((totalBlockedMinutes / 60) * 10) / 10}h`}
         />
         <Metric
           label="First block"
-          value={tasks[0] ? fmtHM(tasks[0].scheduledStartIso) : "—"}
+          value={blockedTasks[0] ? fmtHM(blockedTasks[0].scheduledStartIso) : "—"}
         />
         <Metric
           label="Last block"
-          value={tasks.length > 0 ? fmtHM(tasks[tasks.length - 1].scheduledStartIso) : "—"}
+          value={
+            blockedTasks.length > 0
+              ? fmtHM(blockedTasks[blockedTasks.length - 1].scheduledStartIso)
+              : "—"
+          }
         />
         <div
           style={{
@@ -1029,9 +1132,69 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Draggable chip rendered in the Day view's Unscheduled lane.
+ *  Drag onto an hour slot in the grid → DayView.onGridDrop fires
+ *  command:set-task-time-block with the snapped time. Uses HTML5
+ *  native drag (lighter than re-implementing mouse-tracking like
+ *  DayBlock's move/resize). */
+function UnscheduledChip({ task }: { task: DailyTask }) {
+  const durationMin = task.estimatedDurationMinutes ?? 30;
+  return (
+    <div
+      data-testid={`calendar-unscheduled-${task.id}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/x-starward-task-id", task.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      title={`${task.title} · ${durationMin}m`}
+      style={{
+        background: "var(--bg-soft)",
+        border: "1px solid var(--border)",
+        borderLeft: "3px solid var(--accent)",
+        borderRadius: 3,
+        padding: "4px 8px",
+        fontSize: 11,
+        color: "var(--fg)",
+        cursor: "grab",
+        userSelect: "none",
+        display: "inline-flex",
+        alignItems: "baseline",
+        gap: 6,
+        maxWidth: "100%",
+      }}
+    >
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          maxWidth: 220,
+        }}
+      >
+        {task.title}
+      </span>
+      <span
+        style={{
+          fontSize: 9,
+          fontFamily: "var(--font-mono)",
+          color: "var(--fg-faint)",
+          flexShrink: 0,
+        }}
+      >
+        {durationMin}m
+      </span>
+    </div>
+  );
+}
+
 function DayBlock({ task, onChange }: { task: DailyTask; onChange: () => void }) {
   const { run } = useCommand();
-  const start = task.scheduledStartIso ? new Date(task.scheduledStartIso) : new Date();
+  // Caller (DayView) only passes tasks with non-null scheduledStartIso.
+  // Don't add a `?? new Date()` fallback here — that produced invisible
+  // blocks at wall-clock-now and hid the empty state. Tasks without a
+  // time block belong in the Unscheduled lane above the grid.
+  const start = new Date(task.scheduledStartIso!);
   const top = (start.getHours() + start.getMinutes() / 60) * PX_PER_HOUR;
   const durationMin = task.estimatedDurationMinutes ?? 30;
   const height = (durationMin / 60) * PX_PER_HOUR;
