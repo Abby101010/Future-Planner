@@ -5,7 +5,7 @@
  * button wires to the contract endpoint for the corresponding bucket.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Button from "../../components/primitives/Button";
 import Icon, { type IconName } from "../../components/primitives/Icon";
 import type {
@@ -128,8 +128,106 @@ export interface NotifStackProps {
   onAcceptReschedule: (taskId: string, targetDate: string) => void;
   onSnoozeReschedule: (taskId: string) => void;
   onDismissReschedule: (taskId: string) => void;
+  /** Bulk-confirm all pending reschedules. Each task moves to its OWN
+   *  suggestedDate (preserved per-task), not a shared bulk target. */
+  onConfirmAllReschedules: () => void;
+  /** Open chat seeded with the overdue list so the user can override
+   *  individual items via natural language (manage-task intents). */
+  onChatAboutReschedules: () => void;
   onDeferOverflow: () => void;
   onDismissNudge: (id: string) => void;
+}
+
+/** Single consolidated card replacing N individual reschedule cards.
+ *  Each task moves to ITS OWN suggestedDate (preserved by the per-task
+ *  command:reschedule-task call in TasksPage), not a shared bulk
+ *  target — that preserves the BE's load-balancing in
+ *  pickSuggestedDate. Don't "simplify" to a single bulk targetDate or
+ *  the lightest-day signal is lost.  */
+function BulkRescheduleCard({
+  reschedules,
+  onConfirmAll,
+  onReviewIndividually,
+  onChat,
+}: {
+  reschedules: UIPendingReschedule[];
+  onConfirmAll: () => void;
+  onReviewIndividually: () => void;
+  onChat: () => void;
+}) {
+  const dateCounts = reschedules.reduce<Record<string, { label: string; count: number }>>(
+    (acc, r) => {
+      const k = r.suggestedDate;
+      if (!acc[k]) acc[k] = { label: r.suggestedDateLabel, count: 0 };
+      acc[k].count++;
+      return acc;
+    },
+    {},
+  );
+  const distinctDates = Object.keys(dateCounts);
+  const headline =
+    distinctDates.length === 1
+      ? `Move ${reschedules.length} items to ${dateCounts[distinctDates[0]].label}`
+      : `Move ${reschedules.length} items to their suggested dates`;
+
+  // Up to 5 sample titles for the body — keeps the card scannable.
+  const sample = reschedules.slice(0, 5).map((r) => r.title);
+  const remaining = reschedules.length - sample.length;
+
+  return (
+    <NotifCard
+      testId="tasks-reschedule-bulk"
+      kind={`Bulk reschedule (${reschedules.length})`}
+      tone="navy"
+      title={headline}
+      body={
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {sample.map((t, i) => (
+            <span
+              key={i}
+              style={{
+                color: "var(--fg-mute)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              · {t}
+            </span>
+          ))}
+          {remaining > 0 && (
+            <span style={{ color: "var(--fg-faint)" }}>+ {remaining} more…</span>
+          )}
+        </div>
+      }
+    >
+      <Button
+        size="xs"
+        tone="primary"
+        onClick={onConfirmAll}
+        data-api="POST /commands/reschedule-task (loop)"
+        data-testid="tasks-reschedule-bulk-confirm"
+      >
+        Confirm all
+      </Button>
+      <Button
+        size="xs"
+        tone="ghost"
+        onClick={onReviewIndividually}
+        data-testid="tasks-reschedule-bulk-review"
+      >
+        Review individually
+      </Button>
+      <Button
+        size="xs"
+        tone="ghost"
+        onClick={onChat}
+        data-testid="tasks-reschedule-bulk-chat"
+      >
+        Discuss in chat
+      </Button>
+    </NotifCard>
+  );
 }
 
 export default function NotifStack({
@@ -146,9 +244,22 @@ export default function NotifStack({
   onAcceptReschedule,
   onSnoozeReschedule,
   onDismissReschedule,
+  onConfirmAllReschedules,
+  onChatAboutReschedules,
   onDeferOverflow,
   onDismissNudge,
 }: NotifStackProps) {
+  // Reschedule presentation: when there are 2+ overdue tasks queued
+  // for reschedule, render a single bulk-confirm card by default.
+  // Click "Review individually" to fall through to the per-card path
+  // (which is also what happens when count === 1).
+  const [reviewMode, setReviewMode] = useState(false);
+  // Auto-reset reviewMode once the queue empties so the next cohort
+  // of overdue tasks lands back on the bulk card.
+  useEffect(() => {
+    if (reschedules.length === 0 && reviewMode) setReviewMode(false);
+  }, [reschedules.length, reviewMode]);
+  const showBulk = reschedules.length >= 2 && !reviewMode;
   const total =
     pending.length + proposals.length + reschedules.length + nudges.length;
   if (total === 0) return null;
@@ -247,7 +358,15 @@ export default function NotifStack({
           </Button>
         </NotifCard>
       ))}
-      {reschedules.map((r) => {
+      {showBulk && (
+        <BulkRescheduleCard
+          reschedules={reschedules}
+          onConfirmAll={onConfirmAllReschedules}
+          onReviewIndividually={() => setReviewMode(true)}
+          onChat={onChatAboutReschedules}
+        />
+      )}
+      {!showBulk && reschedules.map((r) => {
         const overdueLabel =
           r.daysOverdue === 1
             ? "1 day overdue"

@@ -266,6 +266,27 @@ export default function TasksPage() {
       await run("command:dismiss-reschedule", { taskId });
       refetchAll();
     })();
+  // Loop the per-task command. Each task moves to ITS OWN suggestedDate
+  // — preserves the BE's load-balancing in tasksView.ts:pickSuggestedDate.
+  // No bulk command exists by design; one BE write path means future
+  // changes to reschedule semantics only edit one handler.
+  const confirmAllReschedules = wrap(async () => {
+    for (const r of pendingReschedules) {
+      await run("command:reschedule-task", {
+        taskId: r.taskId,
+        targetDate: r.suggestedDate,
+      });
+    }
+    refetchAll();
+  });
+  function chatAboutReschedules() {
+    const list = pendingReschedules.map((r) => `- ${r.title}`).join("\n");
+    setPendingChatMessage(
+      `I have ${pendingReschedules.length} overdue tasks. Help me decide ` +
+        `what to keep, drop, or reschedule individually:\n${list}`,
+    );
+    setChatOpen(true);
+  }
   const deferOverflow = wrap(async () => {
     await run("command:defer-overflow", {
       taskIds: tasks.filter((t) => !(t.done ?? t.completed)).map((t) => t.id),
@@ -423,6 +444,8 @@ export default function TasksPage() {
             onAcceptReschedule={acceptReschedule}
             onSnoozeReschedule={snoozeReschedule}
             onDismissReschedule={dismissReschedule}
+            onConfirmAllReschedules={confirmAllReschedules}
+            onChatAboutReschedules={chatAboutReschedules}
             onDismissNudge={dismissNudge}
             onDeferOverflow={deferOverflow}
           />
@@ -442,6 +465,8 @@ export default function TasksPage() {
           onAcceptReschedule={acceptReschedule}
           onSnoozeReschedule={snoozeReschedule}
           onDismissReschedule={dismissReschedule}
+          onConfirmAllReschedules={confirmAllReschedules}
+          onChatAboutReschedules={chatAboutReschedules}
           onDismissNudge={dismissNudge}
           onDeferOverflow={deferOverflow}
         />
