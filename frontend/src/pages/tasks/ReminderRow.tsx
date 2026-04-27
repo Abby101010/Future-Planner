@@ -84,7 +84,10 @@ export default function ReminderRow({ reminder: r, onAck, onDelete, onEdit }: Re
         display: "grid",
         gridTemplateColumns: "22px 1fr auto",
         gap: 14,
-        alignItems: "center",
+        // start-align so when the title wraps to multiple lines the
+        // ack/edit/delete controls stay pinned to the top of the row
+        // instead of vertically centering against tall content.
+        alignItems: "start",
         padding: "14px 0",
         borderBottom: "1px solid var(--border-soft)",
       }}
@@ -110,17 +113,26 @@ export default function ReminderRow({ reminder: r, onAck, onDelete, onEdit }: Re
         }}
       />
       {!editing && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            minWidth: 0,
+            flexWrap: "wrap",
+          }}
+        >
           <span
             style={{
               fontSize: "var(--t-md)",
               color: "var(--user-color)",
               fontWeight: 500,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              // Wrap long titles to multiple lines instead of clipping
+              // with an ellipsis. wordBreak handles the case where a
+              // single token (URL, long word) is wider than the row.
+              wordBreak: "break-word",
               minWidth: 0,
-              flex: "0 1 auto",
+              flex: "1 1 auto",
             }}
           >
             {r.title}
