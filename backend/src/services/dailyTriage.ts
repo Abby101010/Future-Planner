@@ -246,7 +246,16 @@ export async function lightTriage(
   if (activeForCap.length > cap) {
     const isProtected = (t: DailyTaskRecord): boolean => {
       const pl = t.payload as Record<string, unknown>;
-      return pl.priority === "must-do";
+      // must-do priority is protected from auto-demotion (existing rule).
+      if (pl.priority === "must-do") return true;
+      // userPromoted: true is set by cmdGenerateBonusTask when the user
+      // explicitly clicks the "Bonus task" button to pull a task from
+      // the bonus tier back into the active list. Triage must NOT
+      // re-demote it on the next pass — otherwise the button would
+      // immediately self-undo and the user couldn't ever exceed the
+      // cap. This is the deliberate user-override path.
+      if (pl.userPromoted) return true;
+      return false;
     };
     // The TAIL (lowest tier + lowest cost) of `activeForCap` is the
     // demotion candidate set. We've already sorted by (tier asc, cost

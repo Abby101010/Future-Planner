@@ -1388,12 +1388,100 @@ export async function cmdAdjustAllOverloadedPlans(
  * Generate a single lightweight bonus task when the user has completed
  * all tasks for the day. Appended to the existing list — never replaces.
  */
+/**
+ * "Bonus task" button. Pulls one more task into TODAY's active list.
+ *
+ * The cognitive-budget cap demotes excess tasks (the plan generates N,
+ * but lightTriage demotes excess to bonus tier so the active list lands
+ * at the user's daily cap — see services/dailyTriage.ts). This handler
+ * is the user's explicit "I want to take on one more" override.
+ *
+ * Algorithm (cheap path first; AI is fallback):
+ *
+ *   1. Find existing bonus-tier tasks for today (priority=="bonus" OR
+ *      isBonus). These were demoted by triage from real plan tasks; the
+ *      user has already paid the AI cost to generate them.
+ *   2. Pick the highest-priority one (sort by demotedFrom: must-do >
+ *      should-do > nice; tiebreak by cognitiveCost desc).
+ *   3. PROMOTE it: clear isBonus, restore priority from demotedFrom,
+ *      stamp userPromoted: true so triage's protection rule
+ *      (services/dailyTriage.ts:isProtected) skips it on subsequent
+ *      passes (otherwise it'd loop: promote → demote → promote …).
+ *   4. If no bonus tasks exist, fall back to AI-generation as a NEW
+ *      active task (also userPromoted to survive triage).
+ *
+ * Returns the same shape as before: { ok, bonus: { id, title, ... } }.
+ * The FE refetches view:tasks; the promoted (or generated) task now
+ * appears in the active list.
+ */
 export async function cmdGenerateBonusTask(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const today = (body.date as string) || getEffectiveDate();
-  const rangeStart = getEffectiveDaysAgo(90);
 
+  // Cheap path: promote an already-demoted task. demotedFrom rank
+  // mirrors the standard priority ordering used by triage (must-do
+  // first, then should-do, then anything else).
+  const existing = await repos.dailyTasks.listForDate(today);
+  const demotedCandidates = existing
+    .filter((t) => {
+      if (t.completed) return false;
+      const pl = t.payload as Record<string, unknown>;
+      if (pl.skipped) return false;
+      return pl.priority === "bonus" || Boolean(pl.isBonus);
+    })
+    .map((t) => {
+      const pl = t.payload as Record<string, unknown>;
+      const demotedFrom = (pl.demotedFrom as string | undefined) ?? "should-do";
+      const demotedFromRank =
+        demotedFrom === "must-do" ? 0 : demotedFrom === "should-do" ? 1 : 2;
+      const cost = (t.cognitiveCost as number | null) ?? 0;
+      return { task: t, demotedFromRank, cost };
+    })
+    .sort((a, b) => {
+      if (a.demotedFromRank !== b.demotedFromRank) {
+        return a.demotedFromRank - b.demotedFromRank;
+      }
+      return b.cost - a.cost;
+    });
+
+  if (demotedCandidates.length > 0) {
+    const { task } = demotedCandidates[0];
+    const pl = task.payload as Record<string, unknown>;
+    const restoredPriority = (pl.demotedFrom as string | undefined) ?? "should-do";
+    await repos.dailyTasks.update(task.id, {
+      payload: {
+        priority: restoredPriority,
+        isBonus: false,
+        userPromoted: true,
+        userPromotedAt: new Date().toISOString(),
+        // Drop demoted-from / demoted-at since this task is no longer
+        // demoted. Setting to undefined removes them from the merged
+        // payload via dailyTasksRepo.update's spread.
+        demotedFrom: undefined,
+        demotedAt: undefined,
+      },
+    });
+    return {
+      ok: true,
+      bonus: {
+        id: task.id,
+        title: task.title,
+        description: (pl.description as string | undefined) ?? "",
+        durationMinutes:
+          task.estimatedDurationMinutes ??
+          (pl.durationMinutes as number | undefined) ??
+          30,
+        cognitiveWeight: (pl.cognitiveWeight as number | undefined) ?? 3,
+        category: (pl.category as string | undefined),
+        promotedFrom: "bonus",
+      },
+    };
+  }
+
+  // Fallback: no demoted tasks to promote. AI-generate a new one and
+  // insert it as ACTIVE (not bonus) so it shows in the FE.
+  const rangeStart = getEffectiveDaysAgo(90);
   const [goals, logs, tasks, heatmapData, activeReminders] =
     await Promise.all([
       repos.goals.list(),
@@ -1425,7 +1513,6 @@ export async function cmdGenerateBonusTask(
     })
     .slice(0, 14);
 
-  // Generate with preserveExisting so AI knows what's already done
   const result = await generateAndPersistDailyTasks({
     date: today,
     goals,
@@ -1436,25 +1523,18 @@ export async function cmdGenerateBonusTask(
     preserveExisting: true,
   });
 
-  // Pick the first NEW task as the bonus suggestion. Filtering against
-  // existing IDs is required because we run the generator with
-  // preserveExisting=true, which tells the AI to KEEP existing task IDs
-  // in its response (so it knows what's already on the day). Without
-  // this filter, result.tasks[0] is often a row that's already in
-  // daily_tasks → the INSERT below collides on daily_tasks_pkey.
-  const existing = await repos.dailyTasks.listForDate(today);
+  // Filter out tasks whose IDs already exist (preserveExisting=true
+  // tells the AI to keep existing IDs in its output as context).
   const existingIds = new Set(existing.map((t) => t.id));
   const bonus = result.tasks?.find((t) => t.id && !existingIds.has(t.id));
   if (!bonus) {
     return { ok: true, bonus: null };
   }
 
-  // Always mint a fresh UUID for the inserted row. NEVER trust an
-  // AI-supplied id as a primary key — even when filtered against
-  // existing IDs above, the AI's id may be a hallucinated string,
-  // a stale id from a previous response in chat history, or in a
-  // future failure mode collide with another row. A fresh UUID is
-  // structurally collision-free.
+  // Mint a fresh UUID — never trust AI-supplied ids as primary keys.
+  // Insert as ACTIVE (priority from AI's suggestion, not "bonus") +
+  // userPromoted: true so the next triage pass doesn't immediately
+  // demote it.
   const newId = crypto.randomUUID();
   await repos.dailyTasks.insert({
     id: newId,
@@ -1470,10 +1550,11 @@ export async function cmdGenerateBonusTask(
       durationMinutes: bonus.durationMinutes,
       cognitiveWeight: bonus.cognitiveWeight ?? 2,
       whyToday: bonus.whyToday,
-      priority: "bonus",
+      priority: "should-do",
       category: bonus.category,
       source: "ai-generated",
-      isBonus: true,
+      userPromoted: true,
+      userPromotedAt: new Date().toISOString(),
     },
   });
 
@@ -1486,6 +1567,7 @@ export async function cmdGenerateBonusTask(
       durationMinutes: bonus.durationMinutes,
       cognitiveWeight: bonus.cognitiveWeight,
       category: bonus.category,
+      promotedFrom: "ai-generated",
     },
   };
 }
