@@ -88,7 +88,8 @@ OUTPUT FORMAT - valid JSON, NO markdown fences:
                       "duration_minutes": 30,
                       "category": "learning",
                       "why_today": "...",
-                      "priority": "must-do"
+                      "priority": "must-do",
+                      "depends_on": []
                     }
                   ]
                 }
@@ -100,6 +101,32 @@ OUTPUT FORMAT - valid JSON, NO markdown fences:
     }
   ]
 }
+
+DEPENDENCIES (depends_on):
+- Each task can declare prerequisites within its OWN goal's plan.
+- Format: array of "<date>:<task_index>" refs, where date is the day
+  the prerequisite is on and task_index is its 0-based position in
+  that day's tasks array. Example: a task on 2026-04-09 that
+  requires the 2nd task from 2026-04-07 emits
+  depends_on: ["2026-04-07:1"].
+- Default to [] (empty). Only flag REAL prerequisites — task B
+  literally cannot start until task A is complete.
+  GOOD examples:
+    - "Buy paint" -> "Paint walls" (need supplies before doing the job)
+    - "Set up dev environment" -> "Build first feature"
+    - "Research target companies" -> "Tailor resume per company"
+  BAD examples (do NOT use depends_on for these):
+    - "Read chapter 1" -> "Read chapter 2" (sequential preference,
+      not a hard prerequisite)
+    - "Workout day 1" -> "Workout day 2" (ordered routine, not
+      blocking)
+- Cross-GOAL dependencies are NOT allowed. Refs only point to tasks
+  in this same goal's plan.
+- Forward refs (task on Mon depending on Tue) are invalid. Refs must
+  point backward in time or to the same day.
+- When in doubt, leave depends_on empty. The system handles ordered
+  routines via task order_index; depends_on is for HARD blocking
+  prerequisites only.
 
 PRIORITY & FREQUENCY RULES (based on goal importance — provided in context):
 - critical importance: Tasks default to "must-do". Schedule tasks DAILY. Each task 45-60 min.
