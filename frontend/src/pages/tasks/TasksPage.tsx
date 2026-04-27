@@ -288,6 +288,16 @@ export default function TasksPage() {
       await run("command:delete-reminder", { id });
       refetchAll();
     })();
+  // Edit-reminder uses the same upsert path as create. The BE keys the
+  // upsert on `id`, so passing the existing id flips create→update at
+  // the SQL layer (backend/src/routes/commands/calendar.ts:cmdUpsertReminder).
+  // There is intentionally NO separate update-reminder command — keeping
+  // a single write path prevents create + update from drifting.
+  const editReminder = (patch: { id: string } & Partial<UIReminder>) =>
+    wrap(async () => {
+      await run("command:upsert-reminder", patch);
+      refetchAll();
+    })();
   // Reminder creation flows through <AddReminderLine /> rendered inside
   // the Reminders section. The component owns the input + submit and
   // calls command:upsert-reminder with real values; the prior bare
@@ -524,7 +534,13 @@ export default function TasksPage() {
             />
           )}
           {reminders.map((r) => (
-            <ReminderRow key={r.id} reminder={r} onAck={ackReminder} onDelete={delReminder} />
+            <ReminderRow
+              key={r.id}
+              reminder={r}
+              onAck={ackReminder}
+              onDelete={delReminder}
+              onEdit={editReminder}
+            />
           ))}
           {reminders.length === 0 && (
             <div

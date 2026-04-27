@@ -40,6 +40,11 @@ export interface UIReminder {
   id: string;
   title: string;
   date?: string;
+  /** ISO datetime (e.g. "2026-04-27T09:00:00"). Mirrors
+   *  `Reminder.reminderTime` on the BE Reminder shape. Surfaced here so
+   *  the inline editor in ReminderRow can preserve the original
+   *  time-of-day across edits instead of resetting to 09:00 each save. */
+  reminderTime?: string;
   /** Repeat cadence. Sourced from `Reminder.repeat` server-side; the
    *  manual add UI exposes the same enum. */
   repeat?: UIReminderRepeat;
