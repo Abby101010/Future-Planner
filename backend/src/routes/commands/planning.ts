@@ -1389,39 +1389,37 @@ export async function cmdAdjustAllOverloadedPlans(
  * all tasks for the day. Appended to the existing list — never replaces.
  */
 /**
- * "Bonus task" button. Pulls one more task into TODAY's active list.
+ * "Bonus task" button. Promotes one task that today's daily planner
+ * coordinator already generated for today but that lightTriage demoted
+ * to the bonus tier (because it was over the cognitive-budget cap).
  *
- * The cognitive-budget cap demotes excess tasks (the plan generates N,
- * but lightTriage demotes excess to bonus tier so the active list lands
- * at the user's daily cap — see services/dailyTriage.ts). This handler
- * is the user's explicit "I want to take on one more" override.
+ * IMPORTANT: this handler MUST NOT create new tasks. Earlier versions
+ * had an AI-generation fallback when the bonus pool was empty, which
+ * caused duplicate task rows when users clicked repeatedly (each click
+ * generated a new AI suggestion that often had the same title). The
+ * user's design intent is unambiguous: the bonus button only surfaces
+ * tasks the planner already chose for today; if nothing is left in the
+ * bonus pool, return `bonus: null` and let the FE show a "caught up"
+ * notice.
  *
- * Algorithm (cheap path first; AI is fallback):
- *
+ * Algorithm:
  *   1. Find existing bonus-tier tasks for today (priority=="bonus" OR
- *      isBonus). These were demoted by triage from real plan tasks; the
- *      user has already paid the AI cost to generate them.
+ *      isBonus). These were demoted by triage from real plan tasks the
+ *      coordinator generated for today.
  *   2. Pick the highest-priority one (sort by demotedFrom: must-do >
  *      should-do > nice; tiebreak by cognitiveCost desc).
  *   3. PROMOTE it: clear isBonus, restore priority from demotedFrom,
  *      stamp userPromoted: true so triage's protection rule
  *      (services/dailyTriage.ts:isProtected) skips it on subsequent
  *      passes (otherwise it'd loop: promote → demote → promote …).
- *   4. If no bonus tasks exist, fall back to AI-generation as a NEW
- *      active task (also userPromoted to survive triage).
- *
- * Returns the same shape as before: { ok, bonus: { id, title, ... } }.
- * The FE refetches view:tasks; the promoted (or generated) task now
- * appears in the active list.
+ *   4. If the bonus pool is empty, return { bonus: null }. NEVER fall
+ *      through to AI generation — that creates duplicate tasks.
  */
 export async function cmdGenerateBonusTask(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   const today = (body.date as string) || getEffectiveDate();
 
-  // Cheap path: promote an already-demoted task. demotedFrom rank
-  // mirrors the standard priority ordering used by triage (must-do
-  // first, then should-do, then anything else).
   const existing = await repos.dailyTasks.listForDate(today);
   const demotedCandidates = existing
     .filter((t) => {
@@ -1445,129 +1443,42 @@ export async function cmdGenerateBonusTask(
       return b.cost - a.cost;
     });
 
-  if (demotedCandidates.length > 0) {
-    const { task } = demotedCandidates[0];
-    const pl = task.payload as Record<string, unknown>;
-    const restoredPriority = (pl.demotedFrom as string | undefined) ?? "should-do";
-    await repos.dailyTasks.update(task.id, {
-      payload: {
-        priority: restoredPriority,
-        isBonus: false,
-        userPromoted: true,
-        userPromotedAt: new Date().toISOString(),
-        // Drop demoted-from / demoted-at since this task is no longer
-        // demoted. Setting to undefined removes them from the merged
-        // payload via dailyTasksRepo.update's spread.
-        demotedFrom: undefined,
-        demotedAt: undefined,
-      },
-    });
-    return {
-      ok: true,
-      bonus: {
-        id: task.id,
-        title: task.title,
-        description: (pl.description as string | undefined) ?? "",
-        durationMinutes:
-          task.estimatedDurationMinutes ??
-          (pl.durationMinutes as number | undefined) ??
-          30,
-        cognitiveWeight: (pl.cognitiveWeight as number | undefined) ?? 3,
-        category: (pl.category as string | undefined),
-        promotedFrom: "bonus",
-      },
-    };
-  }
-
-  // Fallback: no demoted tasks to promote. AI-generate a new one and
-  // insert it as ACTIVE (not bonus) so it shows in the FE.
-  const rangeStart = getEffectiveDaysAgo(90);
-  const [goals, logs, tasks, heatmapData, activeReminders] =
-    await Promise.all([
-      repos.goals.list(),
-      repos.dailyLogs.list(rangeStart, today),
-      repos.dailyTasks.listForDateRange(rangeStart, today),
-      repos.heatmap.listRange(rangeStart, today),
-      repos.reminders.listActive(),
-    ]);
-
-  const tasksByDate = new Map<string, typeof tasks>();
-  for (const t of tasks) {
-    const arr = tasksByDate.get(t.date) ?? [];
-    arr.push(t);
-    tasksByDate.set(t.date, arr);
-  }
-  const pastLogs = logs
-    .filter((l) => l.date !== today)
-    .map((l) => {
-      const dayTasks = tasksByDate.get(l.date) ?? [];
-      return {
-        date: l.date,
-        tasks: dayTasks.map((dt) => ({
-          id: dt.id,
-          title: dt.title,
-          completed: dt.completed,
-          skipped: false,
-        })),
-      };
-    })
-    .slice(0, 14);
-
-  const result = await generateAndPersistDailyTasks({
-    date: today,
-    goals,
-    pastLogs: pastLogs as any,
-    heatmapData,
-    activeReminders,
-    dryRun: true,
-    preserveExisting: true,
-  });
-
-  // Filter out tasks whose IDs already exist (preserveExisting=true
-  // tells the AI to keep existing IDs in its output as context).
-  const existingIds = new Set(existing.map((t) => t.id));
-  const bonus = result.tasks?.find((t) => t.id && !existingIds.has(t.id));
-  if (!bonus) {
+  // Bonus pool empty → caught up. The FE renders this as an "all
+  // caught up" banner. Do not generate AI suggestions here — that
+  // creates duplicate rows on repeated clicks.
+  if (demotedCandidates.length === 0) {
     return { ok: true, bonus: null };
   }
 
-  // Mint a fresh UUID — never trust AI-supplied ids as primary keys.
-  // Insert as ACTIVE (priority from AI's suggestion, not "bonus") +
-  // userPromoted: true so the next triage pass doesn't immediately
-  // demote it.
-  const newId = crypto.randomUUID();
-  await repos.dailyTasks.insert({
-    id: newId,
-    date: today,
-    title: bonus.title,
-    completed: false,
-    orderIndex: existing.length,
-    goalId: bonus.goalId ?? null,
-    planNodeId: bonus.planNodeId ?? null,
-    source: bonus.goalId ? "big_goal" : "user_created",
+  const { task } = demotedCandidates[0];
+  const pl = task.payload as Record<string, unknown>;
+  const restoredPriority = (pl.demotedFrom as string | undefined) ?? "should-do";
+  await repos.dailyTasks.update(task.id, {
     payload: {
-      description: bonus.description,
-      durationMinutes: bonus.durationMinutes,
-      cognitiveWeight: bonus.cognitiveWeight ?? 2,
-      whyToday: bonus.whyToday,
-      priority: "should-do",
-      category: bonus.category,
-      source: "ai-generated",
+      priority: restoredPriority,
+      isBonus: false,
       userPromoted: true,
       userPromotedAt: new Date().toISOString(),
+      // Drop demoted-from / demoted-at since this task is no longer
+      // demoted. Setting to undefined removes them from the merged
+      // payload via dailyTasksRepo.update's spread.
+      demotedFrom: undefined,
+      demotedAt: undefined,
     },
   });
-
   return {
     ok: true,
     bonus: {
-      id: newId,
-      title: bonus.title,
-      description: bonus.description,
-      durationMinutes: bonus.durationMinutes,
-      cognitiveWeight: bonus.cognitiveWeight,
-      category: bonus.category,
-      promotedFrom: "ai-generated",
+      id: task.id,
+      title: task.title,
+      description: (pl.description as string | undefined) ?? "",
+      durationMinutes:
+        task.estimatedDurationMinutes ??
+        (pl.durationMinutes as number | undefined) ??
+        30,
+      cognitiveWeight: (pl.cognitiveWeight as number | undefined) ?? 3,
+      category: (pl.category as string | undefined),
+      promotedFrom: "bonus",
     },
   };
 }

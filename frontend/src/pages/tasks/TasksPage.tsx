@@ -97,6 +97,15 @@ export default function TasksPage() {
     () => typeof window !== "undefined" && window.innerWidth < 1200,
   );
   const [cmdError, setCmdError] = useState<string | null>(null);
+  /** Transient feedback for the Bonus task button. Auto-clears after
+   *  ~4s. We surface "added X" on success and "all caught up" when the
+   *  BE returns bonus=null (the demoted bonus pool is empty — the
+   *  daily planner coordinator has nothing else queued for today). */
+  const [bonusNotice, setBonusNotice] = useState<{
+    tone: "success" | "info";
+    title: string;
+    body: string;
+  } | null>(null);
 
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth < 1200);
@@ -150,9 +159,34 @@ export default function TasksPage() {
     await run("command:trim-today", {});
     refetchAll();
   });
+  // BE contract: returns { bonus: { id, title, ... } } when a demoted
+  // bonus task was promoted to active, or { bonus: null } when the
+  // bonus pool is empty for today. The BE intentionally never creates
+  // new tasks here — see backend/src/routes/commands/planning.ts:cmdGenerateBonusTask.
+  // If you ever extend this handler, KEEP inspecting the result —
+  // dropping it silently means the user can't tell whether anything
+  // happened, which is what the previous version did.
   const bonusTask = wrap(async () => {
-    await run("command:generate-bonus-task", {});
+    const res = (await run("command:generate-bonus-task", {})) as
+      | { bonus: { title?: string } | null }
+      | undefined;
     refetchAll();
+    if (res?.bonus) {
+      setBonusNotice({
+        tone: "success",
+        title: "Bonus added",
+        body: res.bonus.title
+          ? `Added: ${res.bonus.title}`
+          : "Added one more task to today.",
+      });
+    } else {
+      setBonusNotice({
+        tone: "info",
+        title: "All caught up",
+        body: "No more tasks to add for today — the daily planner has surfaced everything it queued.",
+      });
+    }
+    setTimeout(() => setBonusNotice(null), 4000);
   });
   const gapFillers = wrap(async () => {
     await run("command:propose-gap-fillers", {});
@@ -448,6 +482,14 @@ export default function TasksPage() {
           }}
         >
           {cmdError}
+        </div>
+      )}
+      {bonusNotice && (
+        <div
+          data-testid="tasks-bonus-notice"
+          style={{ maxWidth: 780, margin: "8px auto 0", padding: "0 32px" }}
+        >
+          <Banner tone={bonusNotice.tone} title={bonusNotice.title} body={bonusNotice.body} />
         </div>
       )}
 
