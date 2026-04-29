@@ -93,10 +93,10 @@
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "identity": null,
+      "identity": "Hanyang Zhuo (9A9AU2A7N6)",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": false
+      "notarize": true
     },
     "dmg": {
       "contents": [
