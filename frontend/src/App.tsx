@@ -20,6 +20,7 @@ import FloatingChat from "./components/chrome/FloatingChat";
 import ChatFab from "./components/chrome/ChatFab";
 import JobStatusDock from "./components/chrome/JobStatusDock";
 import WsIndicator from "./components/chrome/WsIndicator";
+import UpdateBadge from "./components/chrome/UpdateBadge";
 import SettingsDialog from "./components/settings/SettingsDialog";
 
 // Pages
@@ -124,6 +125,7 @@ function AppShell() {
         <ChatFab />
         <JobStatusDock />
         <WsIndicator />
+        <UpdateBadge />
       </div>
     </I18nProvider>
   );

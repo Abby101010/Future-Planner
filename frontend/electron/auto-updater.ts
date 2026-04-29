@@ -1,44 +1,50 @@
 /* ──────────────────────────────────────────────────────────
-   Starward — Auto-Updater (notify-only mode)
+   Starward — Auto-Updater (silent mode)
 
-   Because the macOS .dmg is not code-signed (no Apple
-   Developer cert), Squirrel.Mac refuses to silently apply
-   updates. So instead of attempting auto-install, we use
-   electron-updater purely to *detect* new versions on
-   GitHub Releases, then prompt the user to download the
-   new .dmg in their browser. One click instead of zero
-   clicks, but no manual version-hunting.
+   The .dmg is now signed with Developer ID Application:
+   Hanyang Zhuo (9A9AU2A7N6) and notarized, so Squirrel.Mac
+   accepts updates from GitHub Releases without prompting
+   the user to drag a new dmg manually. This is the same
+   model Discord, Slack, and most Electron apps use:
 
-   Flow:
-   1. App starts → checks GitHub Releases (after 10s delay)
-   2. If a newer version is published → native dialog
-   3. User clicks "Download" → opens the Releases page in
-      their browser; they drag the new .dmg over the old one
-   4. User clicks "Later" → dialog dismisses, asks again
-      next launch
+   1. App starts → 10s later, queries GitHub Releases.
+   2. New version found → downloads in background, no dialog.
+   3. User quits the app → updater swaps the .app bundle.
+   4. Next launch → user is on the new version. Zero clicks.
 
-   When/if you get an Apple Developer cert, swap this back
-   to autoDownload + quitAndInstall and the app will update
-   silently like a normal Mac app.
+   On error (network blip, signature mismatch, etc.) we just
+   log and try again next launch — never bother the user
+   with update plumbing.
+
+   The brief notify-only era (v0.1.31 and earlier, before the
+   Developer ID cert + notarization landed) is documented in
+   git history: see commit history of this file.
    ────────────────────────────────────────────────────────── */
 
 import { autoUpdater } from "electron-updater";
-import { BrowserWindow, dialog, shell } from "electron";
-
-const RELEASES_URL =
-  "https://github.com/Abby101010/Future-Planner/releases/latest";
+import { BrowserWindow } from "electron";
 
 /** Initialize the auto-updater. Call once from app.whenReady(). */
-export function initAutoUpdater(_mainWindow: BrowserWindow | null): void {
+export function initAutoUpdater(mainWindow: BrowserWindow | null): void {
   // Don't check for updates in development
   if (process.env.VITE_DEV_SERVER_URL) {
     console.log("[Updater] Skipping update check in development mode");
     return;
   }
 
-  // Notify-only: do NOT auto-download (would fail on unsigned macOS build)
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  // Silent mode: download in background, install on app quit.
+  // Squirrel.Mac verifies the new build's signature matches the
+  // installed app's identity before applying — for that to succeed,
+  // the new release on GitHub must be signed with the SAME
+  // Developer ID Application cert (Hanyang Zhuo, team 9A9AU2A7N6)
+  // and notarized. The release pipeline (electron-builder
+  // electron:build:mac → notarytool submit → stapler staple → gh
+  // release upload) preserves this. If you ever publish a build
+  // signed with a different cert, Squirrel will reject the update
+  // silently — the user stays on their current version (no harm,
+  // no data loss).
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
 
   // ── Events ──────────────────────────────────────────────
 
@@ -47,27 +53,35 @@ export function initAutoUpdater(_mainWindow: BrowserWindow | null): void {
   });
 
   autoUpdater.on("update-available", (info) => {
-    console.log(`[Updater] Update available: v${info.version}`);
+    console.log(`[Updater] Update available: v${info.version}; downloading in background`);
+  });
 
-    // Native dialog asking the user to grab the new .dmg
-    dialog
-      .showMessageBox({
-        type: "info",
-        title: "Update Available",
-        message: `Starward v${info.version} is available.`,
-        detail:
-          "Click Download to open the releases page, then drag the new .dmg over your installed app.",
-        buttons: ["Download", "Later"],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      .then(({ response }) => {
-        if (response === 0) {
-          shell.openExternal(RELEASES_URL).catch((err) => {
-            console.warn("[Updater] Failed to open releases page:", err);
-          });
-        }
+  autoUpdater.on("download-progress", (p) => {
+    // Throttled by electron-updater itself; this just logs progress.
+    console.log(`[Updater] Downloading update: ${Math.round(p.percent)}%`);
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.log(
+      `[Updater] Update v${info.version} downloaded; will install on next quit.`,
+    );
+    // Notify the renderer so it can show a dismissible badge with
+    // version + concise release notes. The update STILL installs
+    // automatically on app quit; the badge is purely informational
+    // ("here's what's new in the version that'll apply when you
+    // restart"). User clicks the X → badge hides for this session.
+    // electron-updater puts release notes in info.releaseNotes;
+    // it can be a string or an array of {version, note} entries
+    // depending on the publish provider — pass through as-is and let
+    // the renderer normalize.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("update:downloaded", {
+        version: info.version,
+        releaseNotes: info.releaseNotes ?? null,
+        releaseName: info.releaseName ?? null,
+        releaseDate: info.releaseDate ?? null,
       });
+    }
   });
 
   autoUpdater.on("update-not-available", () => {

@@ -14,6 +14,29 @@ contextBridge.exposeInMainWorld("electronNotifications", {
     ipcRenderer.invoke("notification:show", title, body),
 });
 
+/* ── Auto-updater bridge ──
+ * Lets the renderer subscribe to update-downloaded events so it
+ * can show a dismissible "what's new" badge. The update itself
+ * still applies automatically on app quit (Discord-style); the
+ * badge is informational. See electron/auto-updater.ts. */
+contextBridge.exposeInMainWorld("electronUpdater", {
+  onDownloaded: (
+    callback: (info: {
+      version: string;
+      releaseNotes: string | { version: string; note?: string }[] | null;
+      releaseName: string | null;
+      releaseDate: string | null;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      info: Parameters<typeof callback>[0],
+    ) => callback(info);
+    ipcRenderer.on("update:downloaded", handler);
+    return () => ipcRenderer.removeListener("update:downloaded", handler);
+  },
+});
+
 contextBridge.exposeInMainWorld("electronAuth", {
   /** Open a URL in the system browser (used for OAuth). */
   openExternal: (url: string) => ipcRenderer.invoke("auth:open-external", url),
