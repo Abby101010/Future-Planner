@@ -13,6 +13,8 @@
 
 import type { WebSocket } from "ws";
 import type { Envelope } from "@starward/core";
+import { DEV_LOG_ENABLED } from "../services/devLog";
+import { emitOperation } from "../services/devLog/instrument";
 
 const PING_INTERVAL_MS = 30_000;
 const DEAD_AFTER_MS = 60_000;
@@ -101,6 +103,20 @@ export class ConnectionRegistry {
     for (const ws of bucket) {
       this.sendRaw(ws, payload);
     }
+    if (DEV_LOG_ENABLED) {
+      emitOperation({
+        type: "ws.send",
+        actor: "ws",
+        summary: `emit ${envelope.kind} → ${bucket.size} socket(s)`,
+        details: {
+          kind: envelope.kind,
+          streamId: envelope.streamId,
+          recipients: bucket.size,
+          data: envelope.data,
+        },
+        userId,
+      });
+    }
   }
 
   /**
@@ -109,10 +125,20 @@ export class ConnectionRegistry {
    */
   broadcastToAll(envelope: Envelope<unknown>): void {
     const payload = JSON.stringify(envelope);
+    let total = 0;
     for (const bucket of this.byUser.values()) {
       for (const ws of bucket) {
         this.sendRaw(ws, payload);
+        total++;
       }
+    }
+    if (DEV_LOG_ENABLED) {
+      emitOperation({
+        type: "ws.send",
+        actor: "ws",
+        summary: `broadcast ${envelope.kind} → ${total} socket(s)`,
+        details: { kind: envelope.kind, recipients: total, data: envelope.data },
+      });
     }
   }
 

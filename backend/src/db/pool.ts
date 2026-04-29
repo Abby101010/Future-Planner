@@ -6,6 +6,8 @@
 
 import { Pool, types } from "pg";
 import type pg from "pg";
+import { DEV_LOG_ENABLED } from "../services/devLog";
+import { emitOperation } from "../services/devLog/instrument";
 
 // By default, node-postgres converts `date` columns (OID 1082) to JS Date
 // objects in UTC midnight. That object serializes to
@@ -46,11 +48,59 @@ export async function closePool(): Promise<void> {
   }
 }
 
-// Convenience: parameterized query with typed result rows
+// Convenience: parameterized query with typed result rows.
+// In dev-log mode, every query emits a single entry (parentId taken
+// from the surrounding instrument() scope via ALS).
 export async function query<T = unknown>(
   text: string,
   params: unknown[] = [],
 ): Promise<T[]> {
-  const result = await getPool().query(text, params as never);
-  return result.rows as T[];
+  if (!DEV_LOG_ENABLED) {
+    const result = await getPool().query(text, params as never);
+    return result.rows as T[];
+  }
+  const t0 = Date.now();
+  try {
+    const result = await getPool().query(text, params as never);
+    const durationMs = Date.now() - t0;
+    emitOperation({
+      type: "db",
+      actor: "db",
+      summary: dbSummary(text, result.rowCount, durationMs),
+      details: {
+        sql: oneLine(text),
+        params,
+        rowCount: result.rowCount,
+      },
+      durationMs,
+      status: "ok",
+    });
+    return result.rows as T[];
+  } catch (err) {
+    const durationMs = Date.now() - t0;
+    const message = err instanceof Error ? err.message : String(err);
+    emitOperation({
+      type: "db",
+      actor: "db",
+      summary: `${verbOf(text)} ✗ ${message}`,
+      details: { sql: oneLine(text), params, error: message },
+      durationMs,
+      status: "error",
+    });
+    throw err;
+  }
+}
+
+function oneLine(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim();
+}
+
+function verbOf(sql: string): string {
+  return oneLine(sql).match(/^(SELECT|INSERT|UPDATE|DELETE|WITH)/i)?.[0]?.toUpperCase() ?? "QUERY";
+}
+
+function dbSummary(sql: string, rowCount: number | null, durationMs: number): string {
+  const head = oneLine(sql);
+  const headTrunc = head.length > 80 ? head.slice(0, 80) + "…" : head;
+  return `${verbOf(sql)} (${rowCount ?? "?"} rows, ${durationMs}ms): ${headTrunc}`;
 }

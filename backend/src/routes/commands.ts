@@ -17,7 +17,8 @@ import { Router } from "express";
 import { envelope, envelopeError } from "@starward/core";
 import type { CommandKind, QueryKind } from "@starward/core";
 import { insertJob } from "../job-db";
-import { getCurrentUserId } from "../middleware/requestContext";
+import { getCorrelationId, getCurrentUserId } from "../middleware/requestContext";
+import { instrument } from "../services/devLog/instrument";
 
 import {
   invalidate,
@@ -118,9 +119,19 @@ commandsRouter.post("/:kind", async (req, res) => {
   const rawBody = (req.body ?? {}) as Record<string, unknown>;
   const body =
     (rawBody.args as Record<string, unknown> | undefined) ?? rawBody;
+  const cid = getCorrelationId();
   try {
-    let result: unknown;
-    switch (kind) {
+    const dispatchResult = await instrument(
+      {
+        type: "command",
+        actor: "backend",
+        startSummary: `handle ${kind}`,
+        startDetails: { args: body },
+        endSummary: (_r, ms) => `${kind} ✓ (${ms}ms)`,
+      },
+      async () => {
+        let result: unknown;
+        switch (kind) {
       case "command:create-goal":
         result = await cmdCreateGoal(body);
         break;
@@ -337,22 +348,22 @@ commandsRouter.post("/:kind", async (req, res) => {
       case "command:commit-first-task":
         result = await cmdCommitFirstTask(body);
         break;
-      default: {
-        // Unknown slug: the URL didn't match any known command. 404 with
-        // a standardized error envelope so the client can distinguish
-        // this from a runtime handler failure.
-        res
-          .status(404)
-          .json(
-            envelopeError(
-              kind,
-              "unknown_command",
+          default: {
+            // Unknown slug: the URL didn't match any known command. Throw a
+            // typed error so the outer handler renders a 404 envelopeError
+            // with the right code; instrument() also records the failure.
+            const e = new Error(
               `Unknown command kind: ${kind}`,
-            ),
-          );
-        return;
-      }
-    }
+            ) as Error & { status?: number; code?: string };
+            e.status = 404;
+            e.code = "unknown_command";
+            throw e;
+          }
+        }
+        return result;
+      },
+    );
+
     // Success: fire the view invalidation WS event THEN respond.
     // If invalidation throws we still want the caller to see the write
     // succeeded, so we swallow the error (logging it) — losing an
@@ -360,14 +371,14 @@ commandsRouter.post("/:kind", async (req, res) => {
     // Handlers may return `_invalidateExtra` to dynamically add views
     // that depend on runtime target (e.g. goal-plan vs. home chat).
     try {
-      const resultObj = result && typeof result === "object" ? result as Record<string, unknown> : {};
+      const resultObj = dispatchResult && typeof dispatchResult === "object" ? dispatchResult as Record<string, unknown> : {};
       const extra = (resultObj._invalidateExtra ?? []) as QueryKind[];
       const scope = resultObj._scope as { date?: string; entityId?: string; entityType?: string } | undefined;
       invalidate(kind, extra, scope);
     } catch (err) {
       console.warn("[commands] view invalidation failed:", err);
     }
-    res.json(envelope(kind, result));
+    res.json(envelope(kind, dispatchResult, undefined, cid));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // Honor a `status` field on typed errors (UnauthenticatedError →
@@ -377,10 +388,14 @@ commandsRouter.post("/:kind", async (req, res) => {
       ? (err as unknown as { status?: unknown }).status
       : undefined;
     const status = typeof errStatus === "number" ? errStatus : 500;
-    const code =
-      status === 404 ? "not_found" : status === 401 ? "unauthenticated" : "command_failed";
+    const errCode = err instanceof Error
+      ? (err as unknown as { code?: unknown }).code
+      : undefined;
+    const code = typeof errCode === "string"
+      ? errCode
+      : status === 404 ? "not_found" : status === 401 ? "unauthenticated" : "command_failed";
     // Intentionally do NOT fire view:invalidate on failure.
-    res.status(status).json(envelopeError(kind, code, message));
+    res.status(status).json(envelopeError(kind, code, message, undefined, cid));
   }
 });
 

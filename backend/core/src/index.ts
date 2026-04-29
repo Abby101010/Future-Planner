@@ -23,3 +23,4 @@ export * from "./domain/planDiff.js";
 // Server code imports them from "@starward/core/handlers". Never re-export
 // them here — the desktop renderer consumes this barrel through a Vite alias.
 export * from "./protocol/index.js";
+export * from "./devLog/index.js";

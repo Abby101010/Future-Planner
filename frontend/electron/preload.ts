@@ -37,6 +37,15 @@ contextBridge.exposeInMainWorld("electronUpdater", {
   },
 });
 
+/* ── Dev-log bridge ──
+ * Renderer ships dev-log entries here; the Electron main process
+ * writes them to <repoRoot>/dev-logs/frontend-session-{ISO}.jsonl.
+ * Bridge is always exposed; the main-process side no-ops when the
+ * writer wasn't initialized (packaged build / env flag unset). */
+contextBridge.exposeInMainWorld("electronDevLog", {
+  append: (entry: unknown) => ipcRenderer.invoke("dev-log:append", entry),
+});
+
 contextBridge.exposeInMainWorld("electronAuth", {
   /** Open a URL in the system browser (used for OAuth). */
   openExternal: (url: string) => ipcRenderer.invoke("auth:open-external", url),

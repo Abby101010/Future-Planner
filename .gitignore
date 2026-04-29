@@ -33,3 +33,6 @@ pnpm-debug.log*
 
 # Backup files
 *.bak
+
+# Dev-mode action logs
+dev-logs/

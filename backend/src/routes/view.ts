@@ -18,6 +18,8 @@ import { Router } from "express";
 import { envelope, envelopeError } from "@starward/core";
 import type { QueryKind } from "@starward/core";
 import { viewResolvers } from "../views";
+import { getCorrelationId } from "../middleware/requestContext";
+import { instrument } from "../services/devLog/instrument";
 
 const viewRouter = Router();
 
@@ -53,20 +55,30 @@ function coerceQueryArgs(q: unknown): Record<string, unknown> {
 viewRouter.get("/:kind", async (req, res) => {
   const slug = req.params.kind;
   const kind = `view:${slug}` as QueryKind;
+  const cid = getCorrelationId();
   const resolver = (viewResolvers as Record<string, typeof viewResolvers[QueryKind] | undefined>)[kind];
   if (!resolver) {
     res
       .status(404)
-      .json(envelopeError(kind, "unknown_view", `Unknown view kind: ${kind}`));
+      .json(envelopeError(kind, "unknown_view", `Unknown view kind: ${kind}`, undefined, cid));
     return;
   }
   try {
     const args = coerceQueryArgs(req.query);
-    const data = await resolver(args);
-    res.json(envelope(kind, data));
+    const data = await instrument(
+      {
+        type: "query",
+        actor: "backend",
+        startSummary: `resolve ${kind}`,
+        startDetails: { args },
+        endSummary: (_r, ms) => `${kind} ✓ (${ms}ms)`,
+      },
+      () => resolver(args),
+    );
+    res.json(envelope(kind, data, undefined, cid));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json(envelopeError(kind, "view_failed", message));
+    res.status(500).json(envelopeError(kind, "view_failed", message, undefined, cid));
   }
 });
 

@@ -17,9 +17,11 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type Anthropic from "@anthropic-ai/sdk";
-import { llmCostCents, isModelPriced } from "@starward/core";
+import { llmCostCents, isModelPriced, type DevLogActor } from "@starward/core";
 import * as repos from "../repositories";
 import { tryGetCurrentUserId } from "../middleware/requestContext";
+import { DEV_LOG_ENABLED } from "./devLog";
+import { emitOperation } from "./devLog/instrument";
 
 interface LlmCallContext {
   /** Coarse-grained label for which agent/handler made the call. */
@@ -28,6 +30,15 @@ interface LlmCallContext {
   trigger?: string;
   /** Free-form metadata to land in payload jsonb. */
   extra?: Record<string, unknown>;
+  /** Sub-agent or handler that initiated the call. Surfaces in dev-log
+   *  as `actor: "agent:<id>"` so the trace is grouped per agent. */
+  agentId?: string;
+  /** RAG chunks retrieved for this call. Each entry: chunk id + the
+   *  first ~200 chars of its body. Surfaces in dev-log details. */
+  ragChunks?: Array<{ id: string; text?: string; source?: string }>;
+  /** Free-form router decision — e.g. why the coordinator picked this
+   *  agent. Surfaces in dev-log details for debuggability. */
+  routerReason?: string;
 }
 
 const ctxStore = new AsyncLocalStorage<LlmCallContext>();
@@ -111,6 +122,104 @@ function cryptoRandomId(): string {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Pull the textual content out of a `messages.create` response. */
+function extractResponseText(response: MessageLikeResponse): string {
+  const content = (response as { content?: unknown }).content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((c) => c && typeof c === "object" && (c as Record<string, unknown>).type === "text")
+    .map((c) => (c as Record<string, unknown>).text)
+    .filter((t): t is string => typeof t === "string")
+    .join("\n");
+}
+
+/** Pull the user-side message text out of the `messages` array passed
+ *  to the SDK. Returns the most recent user turn for the dev-log. */
+function extractUserMessage(params: Record<string, unknown>): string {
+  const messages = params.messages;
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as Record<string, unknown> | undefined;
+    if (!m) continue;
+    if (m.role !== "user") continue;
+    if (typeof m.content === "string") return m.content;
+    if (Array.isArray(m.content)) {
+      const text = m.content
+        .filter(
+          (c) =>
+            c && typeof c === "object" && (c as Record<string, unknown>).type === "text",
+        )
+        .map((c) => (c as Record<string, unknown>).text)
+        .filter((t): t is string => typeof t === "string")
+        .join("\n");
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+/** Emit a dev-log entry for one completed Claude call. Best-effort —
+ *  any throw is swallowed so the user-facing AI path is never affected. */
+function emitDevLogForLlmCall(
+  args: unknown[],
+  response: MessageLikeResponse,
+  durationMs: number,
+  fallbackKind: string,
+): void {
+  if (!DEV_LOG_ENABLED) return;
+  try {
+    const params = (args[0] ?? {}) as Record<string, unknown>;
+    const ctx = ctxStore.getStore();
+    const usage = response.usage ?? {};
+    const model =
+      response.model ??
+      (typeof params.model === "string" ? params.model : "unknown");
+    const systemPrompt =
+      typeof params.system === "string"
+        ? params.system
+        : Array.isArray(params.system)
+          ? JSON.stringify(params.system)
+          : "";
+    const userMessage = extractUserMessage(params);
+    const responseText = extractResponseText(response);
+    const inputTokens = usage.input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    const kind = ctx?.kind ?? fallbackKind;
+    const agentLabel: DevLogActor = ctx?.agentId
+      ? (`agent:${ctx.agentId}` as DevLogActor)
+      : "ai";
+
+    emitOperation({
+      type: "ai",
+      actor: agentLabel,
+      summary: `ai ${kind} model=${model} in=${inputTokens} out=${outputTokens} (${durationMs}ms)`,
+      details: {
+        kind,
+        trigger: ctx?.trigger,
+        agentId: ctx?.agentId,
+        model,
+        tokens: {
+          input: inputTokens,
+          output: outputTokens,
+          cacheCreate: usage.cache_creation_input_tokens ?? 0,
+          cacheRead: usage.cache_read_input_tokens ?? 0,
+        },
+        systemPrompt,
+        userMessage,
+        response: responseText,
+        ragChunks: ctx?.ragChunks,
+        routerReason: ctx?.routerReason,
+        responseId: response.id,
+      },
+      durationMs,
+      status: "ok",
+    });
+  } catch (err) {
+    // Never let logging break the user-facing AI path.
+    console.warn("[dev-log] llm emit failed:", err);
+  }
+}
+
 /** Wrap an Anthropic client so every messages.create / messages.stream
  *  completion is logged via logMessageResponse. The wrapped client is
  *  shape-compatible with the original — callers see no behavior change.
@@ -132,8 +241,10 @@ export function wrapClientWithLogging(
         return async function (...args: unknown[]) {
           const t0 = Date.now();
           const response = await (orig as (...a: unknown[]) => Promise<MessageLikeResponse>).apply(target, args);
-          // Fire-and-forget; never await for the response path
-          void logMessageResponse(response, Date.now() - t0, "messages.create");
+          const durationMs = Date.now() - t0;
+          // Fire-and-forget; never await on the user-facing path.
+          void logMessageResponse(response, durationMs, "messages.create");
+          emitDevLogForLlmCall(args, response, durationMs, "messages.create");
           return response;
         };
       }
@@ -148,7 +259,11 @@ export function wrapClientWithLogging(
           // synchronous return path stays unchanged.
           if (typeof stream.finalMessage === "function") {
             stream.finalMessage()
-              .then((final) => logMessageResponse(final, Date.now() - t0, "messages.stream"))
+              .then((final) => {
+                const durationMs = Date.now() - t0;
+                void logMessageResponse(final, durationMs, "messages.stream");
+                emitDevLogForLlmCall(args, final, durationMs, "messages.stream");
+              })
               .catch(() => { /* stream errored or was cancelled — skip */ });
           }
           return stream;

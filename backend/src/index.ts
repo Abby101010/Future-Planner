@@ -13,6 +13,7 @@ import http from "node:http";
 import express from "express";
 import cors from "cors";
 import { authMiddleware } from "./middleware/auth";
+import { correlationIdMiddleware } from "./middleware/correlationId";
 import { errorHandler } from "./middleware/errorHandler";
 import { timezoneStore } from "./dateUtils";
 import { entitiesRouter } from "./routes/entities";
@@ -33,6 +34,7 @@ import { startJobWorker, stopJobWorker } from "./job-worker";
 import { startBullWorker, closeBullQueue } from "./jobs/queue";
 import { registerAllJobHandlers } from "./jobs/handlers";
 import { startScheduler, stopScheduler } from "./scheduler";
+import { initDevLog, shutdownDevLog } from "./services/devLog";
 
 const DEBUG = process.env.DEBUG === "1" || process.env.LOG_LEVEL === "debug";
 
@@ -48,6 +50,10 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "25mb" })); // chat payloads can carry base64 images
 app.use(express.urlencoded({ extended: true }));
+
+// Correlation-ID context for the rest of the request — must run before any
+// middleware that might emit dev-log entries.
+app.use(correlationIdMiddleware);
 
 if (DEBUG) {
   app.use((req, res, next) => {
@@ -134,6 +140,7 @@ const server = http.createServer(app);
 attachWebSocketServer(server);
 
 async function start() {
+  await initDevLog();
   try {
     await runMigrations();
   } catch (err) {
@@ -160,6 +167,7 @@ async function shutdown(signal: string) {
   stopJobWorker();
   stopScheduler();
   await closeBullQueue().catch(() => {});
+  await shutdownDevLog().catch(() => {});
   server.close(async () => {
     await closePool();
     process.exit(0);

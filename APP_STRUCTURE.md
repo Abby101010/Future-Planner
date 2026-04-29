@@ -11,7 +11,7 @@ Starward is a personal planning assistant that:
 4. Adapts to missed tasks, overloaded plans, and pace drift through **specialized AI agents**.
 5. Syncs across devices via a single Postgres-backed cloud API.
 
-Entry screen: `packages/desktop/src/App.tsx` — gates on Supabase auth, then routes between welcome / onboarding / tasks / calendar / goal-plan / roadmap / news / settings.
+Entry screen: `frontend/src/App.tsx` — gates on Supabase auth, then routes between welcome / onboarding / tasks / calendar / goal-plan / roadmap / news / settings.
 
 ---
 
@@ -20,12 +20,12 @@ Entry screen: `packages/desktop/src/App.tsx` — gates on Supabase auth, then ro
 | Layer | Technology |
 |-------|-----------|
 | Renderer | React 18 + TypeScript + Vite + Zustand (UI-only state) |
-| Desktop shell | Electron 33 (`packages/desktop/electron/`) |
+| Desktop shell | Electron 33 (`frontend/electron/`) |
 | Cloud API | Node 22 + Express 5 + TypeScript on Fly.io |
 | Database | Supabase Postgres; every row is `user_id`-scoped |
 | AI | Anthropic Claude (Sonnet 4.6 / Haiku 4.5) via `@anthropic-ai/sdk`, server-side only |
 | Real-time | WebSocket (`/ws`) for view invalidation; SSE for AI token streams |
-| Auth | Supabase JWT (bearer token) — middleware at `packages/server/src/middleware/auth.ts` |
+| Auth | Supabase JWT (bearer token) — middleware at `backend/src/middleware/auth.ts` |
 | Packaging | electron-builder (macOS arm64 dmg/zip, Windows nsis, Linux AppImage) |
 | Auto-update | electron-updater → GitHub Releases |
 
@@ -33,14 +33,14 @@ Entry screen: `packages/desktop/src/App.tsx` — gates on Supabase auth, then ro
 
 ## Monorepo Layout
 
-npm workspaces; three packages under `packages/`:
+npm workspaces; three packages — `backend`, `backend/core`, and `frontend`:
 
 ```
 Future-Planner/
-├── packages/
+├── backend/
 │   ├── core/          # Shared wire types, protocol kinds, domain logic, AI prompts
-│   ├── server/        # Express API, Postgres, AI orchestration, WebSocket bus
-│   └── desktop/       # Electron main + React renderer
+│   └── src/           # Express API, Postgres, AI orchestration, WebSocket bus
+├── frontend/          # Electron main + React renderer
 ├── ARCHITECTURE_UPGRADES.md # Additive AI layers (RAG, critique, queue, scheduler, tools)
 ├── FLOW_DIAGRAMS.md         # End-to-end feature flows
 ├── SYSTEM_SPEC.md           # System behaviour spec
@@ -50,6 +50,8 @@ Future-Planner/
 └── package.json       # Workspaces + top-level typecheck script
 ```
 
+> The reorganization to a flat `packages/` layout (`packages/core`, `packages/server`, `packages/desktop`) is the target prescribed by `REFACTORING_PLAN.md` Phase 12 and is not yet applied. Paths below reflect the **current** layout.
+
 Root scripts (`package.json`):
 - `npm run typecheck` — build all three packages
 - `npm run dev:server` / `dev:desktop`
@@ -57,7 +59,7 @@ Root scripts (`package.json`):
 
 ---
 
-## `packages/core` — Shared Contracts
+## `backend/core` — Shared Contracts
 
 The only package both server and desktop import. Pure TypeScript; no runtime side effects for the renderer.
 
@@ -98,11 +100,11 @@ Every client/server exchange is one of three kinds, wrapped in an `Envelope<T>`:
 | Command | `command:toggle-task`, `command:adaptive-reschedule` | `POST /commands/…` |
 | Event | `view:invalidate`, `ai:token-delta`, `reminder:triggered` | WebSocket / SSE |
 
-Complete list: `packages/core/src/protocol/kinds.ts`.
+Complete list: `backend/core/src/protocol/kinds.ts`.
 
 ---
 
-## `packages/server` — Cloud API
+## `backend` — Cloud API
 
 Express app on Fly.io. Mirrors an IPC-style dispatcher over HTTP + WebSocket.
 
@@ -193,7 +195,7 @@ server/src/
 
 ### Migrations
 
-Numbered SQL files in `packages/server/migrations/`:
+Numbered SQL files in `backend/migrations/`:
 
 - `0000` schema_migrations bootstrap
 - `0001` legacy init
@@ -205,15 +207,15 @@ Numbered SQL files in `packages/server/migrations/`:
 - `0007` unify tasks + calendar
 - `0008` add task source
 
-Runner: `packages/server/src/db/migrate.ts` — executes at startup.
+Runner: `backend/src/db/migrate.ts` — executes at startup.
 
 ### Deployment
 
-`Dockerfile` + `fly.toml` at repo root → `fly deploy` from `packages/server/`. App name: `starward-api`. Secrets: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `DEV_USER_ID`.
+`Dockerfile` + `fly.toml` at repo root → `fly deploy` from repo root. Current Fly app name: `northstar-api` (rename to `starward-api` is the target per `MIGRATION.md`, not yet deployed). Secrets: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `DEV_USER_ID`.
 
 ---
 
-## `packages/desktop` — Electron + React
+## `frontend` — Electron + React
 
 ```
 desktop/
@@ -285,7 +287,7 @@ desktop/
 - **Only** `services/auth.ts` reads the token.
 - Zustand holds **UI state only** — server data belongs in the view cache.
 
-Cloud URL and Supabase keys are baked at build time via `VITE_CLOUD_API_URL` + `VITE_SUPABASE_*` (see `packages/desktop/package.json` scripts).
+Cloud URL and Supabase keys are baked at build time via `VITE_CLOUD_API_URL` + `VITE_SUPABASE_*`, loaded from `frontend/.env.development` (vite dev) and `frontend/.env.production` (vite build).
 
 ---
 
@@ -312,7 +314,7 @@ Cloud URL and Supabase keys are baked at build time via `VITE_CLOUD_API_URL` + `
 
 ## Data Model Highlights
 
-Core domain types live in `packages/core/src/types/index.ts`:
+Core domain types live in `backend/core/src/types/index.ts`:
 
 - `UserProfile` — identity + `UserSettings` (theme, language, model overrides) + `weeklyAvailability: TimeBlock[]`.
 - `Goal` — `goalType: "big" | "everyday" | "repeating"`, `scope: "small" | "big"`, hierarchical `plan: GoalPlan` or flat `flatPlan: GoalPlanSection[]`.
@@ -345,4 +347,4 @@ Phase 2 = swap `auth.ts` for real JWT verification + login page. No schema migra
 - `SYSTEM_SPEC.md` — system behaviour spec.
 - `REFACTORING_PLAN.md` — in-flight refactor proposal.
 - `refactor/PHASE_1_REPORT.md`, `refactor/PHASE_2_DESIGN.md` — refactor progress.
-- Per-folder `README.md` files in `packages/*/src/**` — each states the one architectural rule for that folder.
+- Per-folder `README.md` files in `backend/**/src/**` and `frontend/src/**` — each states the one architectural rule for that folder.

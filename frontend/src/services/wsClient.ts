@@ -110,6 +110,15 @@ class WsClient {
   private lastFrameAt = 0;
   private intentionallyClosed = false;
   private tokenAtConnect: string | null = null;
+  /** Optional dev-only hook called once per parsed inbound envelope.
+   *  Set via setFrameLogHook() — see devLog.ts. Avoids a hard import
+   *  of devLog from this module (which would create a cycle). */
+  private frameLogHook: ((envelope: Envelope<unknown>) => void) | null = null;
+
+  /** Register a non-listener hook fired for every inbound envelope. */
+  setFrameLogHook(hook: ((envelope: Envelope<unknown>) => void) | null): void {
+    this.frameLogHook = hook;
+  }
 
   isConnected(): boolean {
     return this.socket?.readyState === WebSocket.OPEN;
@@ -168,6 +177,16 @@ class WsClient {
       if (parsed.v !== PROTOCOL_VERSION) {
         log.warn("protocol version mismatch, dropping frame", parsed.v);
         return;
+      }
+      // Dev-log hook (renderer-side ws.recv entries). Fired before
+      // dispatch so even unregistered kinds are recorded. Throws are
+      // swallowed so logging never breaks the dispatch path.
+      if (this.frameLogHook) {
+        try {
+          this.frameLogHook(parsed);
+        } catch (err) {
+          log.warn("frame log hook threw", (err as Error).message);
+        }
       }
       // Silently ignore server-side pong/health frames that carry no
       // registered event kind.
@@ -251,6 +270,31 @@ class WsClient {
     this.disconnect();
     this.intentionallyClosed = false;
     this.connect();
+  }
+
+  /** Send an envelope upstream. Returns true when the frame was handed
+   *  off to the socket, false when the socket isn't open (caller may
+   *  buffer and retry). Used today for `dev:action` log shipping; the
+   *  ping heartbeat goes through its own send path inside startHeartbeat. */
+  send(payload: { kind: string; data?: unknown; correlationId?: string; streamId?: string }): boolean {
+    const sock = this.socket;
+    if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+    try {
+      sock.send(
+        JSON.stringify({
+          v: PROTOCOL_VERSION,
+          kind: payload.kind,
+          data: payload.data,
+          ts: new Date().toISOString(),
+          ...(payload.correlationId ? { correlationId: payload.correlationId } : {}),
+          ...(payload.streamId ? { streamId: payload.streamId } : {}),
+        }),
+      );
+      return true;
+    } catch (err) {
+      log.warn("send failed", (err as Error).message);
+      return false;
+    }
   }
 
   private scheduleReconnect(): void {

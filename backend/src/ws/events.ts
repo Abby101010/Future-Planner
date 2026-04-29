@@ -15,7 +15,15 @@
 
 import { envelope } from "@starward/core";
 import type { QueryKind, UserSegment } from "@starward/core";
+import { getCorrelationId } from "../middleware/requestContext";
 import { connectionRegistry } from "./connections";
+
+/** Read the current ALS correlationId, or undefined when there isn't one
+ *  (e.g. emitting from a job worker outside any HTTP request scope). */
+function currentCid(): string | undefined {
+  const c = getCorrelationId();
+  return c.length > 0 ? c : undefined;
+}
 
 /** Payload for `ai:stream-start`. */
 export interface AiStreamStartPayload {
@@ -68,7 +76,7 @@ export function emitAiStreamStart(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("ai:stream-start", payload, payload.streamId),
+    envelope("ai:stream-start", payload, payload.streamId, currentCid()),
   );
 }
 
@@ -78,7 +86,7 @@ export function emitAiTokenDelta(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("ai:token-delta", payload, payload.streamId),
+    envelope("ai:token-delta", payload, payload.streamId, currentCid()),
   );
 }
 
@@ -88,7 +96,7 @@ export function emitAiStreamEnd(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("ai:stream-end", payload, payload.streamId),
+    envelope("ai:stream-end", payload, payload.streamId, currentCid()),
   );
 }
 
@@ -98,7 +106,7 @@ export function emitAgentProgress(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("agent:progress", payload),
+    envelope("agent:progress", payload, undefined, currentCid()),
   );
 }
 
@@ -108,7 +116,7 @@ export function emitViewInvalidate(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("view:invalidate", payload),
+    envelope("view:invalidate", payload, undefined, currentCid()),
   );
 }
 
@@ -118,7 +126,7 @@ export function emitReminderTriggered(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("reminder:triggered", payload),
+    envelope("reminder:triggered", payload, undefined, currentCid()),
   );
 }
 
@@ -142,7 +150,7 @@ export function emitJobComplete(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("job:complete", payload),
+    envelope("job:complete", payload, undefined, currentCid()),
   );
 }
 
@@ -152,7 +160,7 @@ export function emitJobFailed(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("job:failed", payload),
+    envelope("job:failed", payload, undefined, currentCid()),
   );
 }
 
@@ -170,7 +178,7 @@ export function emitEntityPatch(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("entity:patch", payload),
+    envelope("entity:patch", payload, undefined, currentCid()),
   );
 }
 
@@ -207,7 +215,7 @@ export function emitAgentCritique(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("agent:critique", payload),
+    envelope("agent:critique", payload, undefined, currentCid()),
   );
 }
 
@@ -234,6 +242,6 @@ export function emitAgentBudgetComputed(
 ): void {
   connectionRegistry.broadcastToUser(
     userId,
-    envelope("agent:budget-computed", payload),
+    envelope("agent:budget-computed", payload, undefined, currentCid()),
   );
 }

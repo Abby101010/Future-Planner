@@ -16,6 +16,13 @@ import { app, BrowserWindow, Notification, session, shell, ipcMain } from "elect
 import path from "node:path";
 import fs from "node:fs";
 import { initAutoUpdater } from "./auto-updater";
+import {
+  DEV_LOG_ENABLED as DEV_LOG_MAIN_ENABLED,
+  appendDevLogMain,
+  initDevLogMain,
+  shutdownDevLogMain,
+} from "./dev-log-writer";
+import type { DevLogEntryInput } from "../../backend/core/src/devLog/index";
 
 // Load .env file in development
 const envPath = path.join(__dirname, "../.env");
@@ -133,9 +140,17 @@ ipcMain.handle("notification:show", (_event, title: string, body: string) => {
   }
 });
 
-// IPC: let the renderer open URLs in the system browser (for OAuth)
+// IPC: let the renderer open URLs in the system browser (for OAuth).
+// Restrict to http/https — a compromised renderer could otherwise hand
+// shell.openExternal a file:// or custom-scheme URL.
 ipcMain.handle("auth:open-external", (_event, url: string) => {
-  shell.openExternal(url);
+  try {
+    const { protocol } = new URL(url);
+    if (protocol !== "https:" && protocol !== "http:") return;
+    shell.openExternal(url);
+  } catch {
+    // ignore malformed URLs
+  }
 });
 
 // IPC: open an in-app OAuth popup — stays inside the Electron app instead of
@@ -155,6 +170,7 @@ ipcMain.handle(
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
+          sandbox: true,
         },
       });
 
@@ -206,6 +222,32 @@ app.whenReady().then(async () => {
     },
   );
 
+  // Initialize the dev-log writer (gated on !packaged + env var).
+  // Must precede the renderer load so the IPC handler is registered
+  // before the first `electronDevLog.append` call lands.
+  await initDevLogMain();
+
   createWindow();
   initAutoUpdater(mainWindow);
+});
+
+// IPC: renderer ships dev-log entries here. Fire-and-forget — the
+// renderer doesn't await the result; we still return a Promise so the
+// invoke()/handle() pairing works.
+ipcMain.handle("dev-log:append", (_event, entry: DevLogEntryInput) => {
+  if (!DEV_LOG_MAIN_ENABLED) return;
+  appendDevLogMain(entry);
+});
+
+// Best-effort flush + close of the writer on quit so the file isn't
+// truncated mid-line. before-quit fires before windows close.
+app.on("before-quit", async (event) => {
+  if (!DEV_LOG_MAIN_ENABLED) return;
+  event.preventDefault();
+  try {
+    await shutdownDevLogMain();
+  } catch {
+    /* ignore */
+  }
+  app.exit(0);
 });

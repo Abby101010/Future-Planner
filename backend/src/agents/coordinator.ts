@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import { emitAgentProgress } from "../ws";
 import { getCurrentUserId } from "../middleware/requestContext";
+import { instrument } from "../services/devLog/instrument";
 import type {
   TaskState,
   TaskStateInput,
@@ -41,8 +42,21 @@ function isRetryable(kind: AgentErrorKind): boolean {
   return kind === "timeout" || kind === "rate_limit" || kind === "api_error";
 }
 
-const RETRY_DELAY_MS = 2000;
-const MAX_RETRIES = 1;
+// Retry policy. We use exponential backoff with jitter for transient
+// failures (rate limits, timeouts, 5xx). Rate limits get a higher floor
+// because most LLM providers need several seconds before a token bucket
+// refills, so retrying earlier just burns the same error.
+const MAX_RETRIES = 2;
+const BASE_DELAY_MS = 1500;
+const MAX_DELAY_MS = 8000;
+const RATE_LIMIT_FLOOR_MS = 5000;
+
+function retryDelayMs(attempt: number, kind: AgentErrorKind): number {
+  const exp = Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
+  const floored = kind === "rate_limit" ? Math.max(exp, RATE_LIMIT_FLOOR_MS) : exp;
+  const jitter = 0.8 + Math.random() * 0.4; // ±20%
+  return Math.round(floored * jitter);
+}
 
 // ── Agent runner dispatch ──────────────────────────────────
 
@@ -54,6 +68,27 @@ type AgentResults = {
 };
 
 async function runAgent(
+  agentId: SubAgentId,
+  input: TaskStateInput,
+  results: AgentResults,
+): Promise<void> {
+  return instrument(
+    {
+      type: "agent",
+      actor: `agent:${agentId}`,
+      startSummary: `run agent ${agentId}`,
+      startDetails: {
+        agentId,
+        goalCount: input.goals?.length ?? 0,
+        requestType: (input as { requestType?: string }).requestType,
+      },
+      endSummary: (_r, ms) => `agent:${agentId} ✓ (${ms}ms)`,
+    },
+    () => runAgentInner(agentId, input, results),
+  );
+}
+
+async function runAgentInner(
   agentId: SubAgentId,
   input: TaskStateInput,
   results: AgentResults,
@@ -138,12 +173,13 @@ async function runAgentWithRetry(
       recordAgentFallback(agentId, kind).catch(() => {});
 
       if (isRetryable(kind) && attempt < MAX_RETRIES) {
+        const delayMs = retryDelayMs(attempt, kind);
         emitAgentProgress(userId, {
           agentId,
           phase: "retrying",
-          message: `${agentId} failed (${kind}), retrying in ${RETRY_DELAY_MS / 1000}s...`,
+          message: `${agentId} failed (${kind}), retrying in ${(delayMs / 1000).toFixed(1)}s...`,
         });
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
       throw err;

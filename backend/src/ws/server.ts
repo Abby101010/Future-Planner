@@ -24,6 +24,10 @@ import { WebSocketServer } from "ws";
 import { validateBearerToken, extractBearerToken } from "../middleware/auth";
 import { connectionRegistry } from "./connections";
 import { envelope } from "@starward/core";
+import { DEV_LOG_ENABLED, emitDevLog } from "../services/devLog";
+import { emitOperation } from "../services/devLog/instrument";
+import { runWithRequestContext, runWithUserId } from "../middleware/requestContext";
+import type { DevLogEntryInput } from "@starward/core";
 
 const WS_PATH = "/ws";
 
@@ -93,24 +97,62 @@ export function attachWebSocketServer(httpServer: http.Server): void {
               return;
             }
             if (!text) return;
-            let parsed: { kind?: unknown } | null = null;
+            let parsed: { kind?: unknown; correlationId?: unknown } | null = null;
             try {
-              parsed = JSON.parse(text) as { kind?: unknown };
+              parsed = JSON.parse(text) as { kind?: unknown; correlationId?: unknown };
             } catch {
               return;
             }
-            if (!parsed || parsed.kind !== "ping") return;
-            if (ws.readyState !== 1) return;
-            try {
-              ws.send(
-                JSON.stringify(
-                  envelope("pong" as never, {
-                    ts: new Date().toISOString(),
-                  }),
-                ),
+            // Heartbeat — never logged.
+            if (parsed && parsed.kind === "ping") {
+              if (ws.readyState !== 1) return;
+              try {
+                ws.send(
+                  JSON.stringify(
+                    envelope("pong" as never, {
+                      ts: new Date().toISOString(),
+                    }),
+                  ),
+                );
+              } catch {
+                /* ignore — next tick will clean up */
+              }
+              return;
+            }
+            // Frontend dev-log shipping. The renderer wraps a full
+            // DevLogEntryInput in a `dev:action` envelope; we extract
+            // the payload and emit it directly so it lands in the
+            // session file with its original type/actor/summary —
+            // not as a generic ws.recv wrapper around the envelope.
+            if (
+              DEV_LOG_ENABLED &&
+              parsed &&
+              parsed.kind === "dev:action" &&
+              (parsed as { data?: unknown }).data &&
+              typeof (parsed as { data?: unknown }).data === "object"
+            ) {
+              const entry = (parsed as { data: DevLogEntryInput }).data;
+              emitDevLog({ ...entry, userId: auth.userId });
+              return;
+            }
+            // Any other unknown frame — log it as a generic ws.recv so
+            // we don't lose visibility on misbehaving clients.
+            if (DEV_LOG_ENABLED && parsed && typeof parsed.kind === "string") {
+              const cid =
+                typeof parsed.correlationId === "string" && parsed.correlationId.length > 0
+                  ? parsed.correlationId
+                  : "ws-recv";
+              runWithUserId(auth.userId, () =>
+                runWithRequestContext({ correlationId: cid }, () => {
+                  emitOperation({
+                    type: "ws.recv",
+                    actor: "ws",
+                    summary: `recv ${parsed?.kind} from user ${auth.userId.slice(0, 8)}`,
+                    details: { envelope: parsed },
+                    userId: auth.userId,
+                  });
+                }),
               );
-            } catch {
-              /* ignore — next tick will clean up */
             }
           });
           wss.emit("connection", ws, req);

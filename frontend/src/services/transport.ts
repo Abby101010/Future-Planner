@@ -14,6 +14,13 @@ import type { Envelope, QueryKind, CommandKind } from "@starward/core";
 import { PROTOCOL_VERSION } from "@starward/core";
 import { getAuthToken } from "./auth";
 import { createLogger } from "../utils/logger";
+import {
+  DEV_LOG_ENABLED,
+  currentCorrelationId,
+  emit,
+  rootAction,
+  withParent,
+} from "./devLog";
 
 const log = createLogger("transport");
 
@@ -61,6 +68,30 @@ export async function fetchEnvelope<T>(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = Date.now();
 
+  // Reuse the current root correlation ID if there is one (set by a
+  // recent click / submit / nav). When called directly without an
+  // upstream user action (programmatic effect, polling), mint one so
+  // the server still correlates this request to a chain.
+  const cid = DEV_LOG_ENABLED
+    ? currentCorrelationId() || rootAction()
+    : "";
+  const isCommand = method === "POST" && path.startsWith("/commands/");
+  const isQuery = method === "GET" && path.startsWith("/view/");
+  const opType = isCommand ? "command" : isQuery ? "query" : "command";
+  const slug = (() => {
+    const m = path.match(/^\/(commands|view)\/([^?]+)/);
+    return m ? `${m[1] === "commands" ? "command" : "view"}:${m[2]}` : path;
+  })();
+  const startLogId = DEV_LOG_ENABLED
+    ? emit({
+        type: opType,
+        actor: "frontend",
+        summary: `${method} ${slug}`,
+        details: { method, path, body },
+        status: "pending",
+      })
+    : "";
+
   try {
     const res = await fetch(url, {
       method,
@@ -68,6 +99,7 @@ export async function fetchEnvelope<T>(
         "Content-Type": "application/json",
         Authorization: `Bearer ${await getAuthToken()}`,
         "X-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...(cid ? { "X-Correlation-Id": cid } : {}),
       },
       body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
       signal: controller.signal,
@@ -83,6 +115,18 @@ export async function fetchEnvelope<T>(
         /* ignore */
       }
       log.error(`${method} ${path} HTTP ${res.status} (${elapsed}ms)`, text.slice(0, 200));
+      if (DEV_LOG_ENABLED) {
+        withParent(startLogId, () =>
+          emit({
+            type: opType,
+            actor: "frontend",
+            summary: `${method} ${slug} ✗ HTTP ${res.status} (${elapsed}ms)`,
+            details: { status: res.status, body: text.slice(0, 500) },
+            durationMs: elapsed,
+            status: "error",
+          }),
+        );
+      }
       throw new Error(
         `${method} ${path} failed: HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ""}`,
       );
@@ -96,13 +140,49 @@ export async function fetchEnvelope<T>(
 
     if (!parsed.ok) {
       const err = parsed.error ?? { code: "unknown", message: "command failed" };
+      if (DEV_LOG_ENABLED) {
+        withParent(startLogId, () =>
+          emit({
+            type: opType,
+            actor: "frontend",
+            summary: `${method} ${slug} ✗ ${err.code} (${elapsed}ms)`,
+            details: { error: err, parsed },
+            durationMs: elapsed,
+            status: "error",
+          }),
+        );
+      }
       throw new Error(`${parsed.kind}: ${err.code} — ${err.message}`);
     }
 
     log.debug(`${method} ${path} ← ok (${elapsed}ms)`);
+    if (DEV_LOG_ENABLED) {
+      withParent(startLogId, () =>
+        emit({
+          type: opType,
+          actor: "frontend",
+          summary: `${method} ${slug} ✓ (${elapsed}ms)`,
+          details: { resultKind: parsed.kind, hasData: parsed.data !== undefined },
+          durationMs: elapsed,
+          status: "ok",
+        }),
+      );
+    }
     return parsed.data as T;
   } catch (err) {
     if ((err as { name?: string }).name === "AbortError") {
+      if (DEV_LOG_ENABLED) {
+        withParent(startLogId, () =>
+          emit({
+            type: opType,
+            actor: "frontend",
+            summary: `${method} ${slug} ✗ timeout after ${timeoutMs}ms`,
+            details: { timeoutMs },
+            durationMs: Date.now() - started,
+            status: "error",
+          }),
+        );
+      }
       throw new Error(`${method} ${path} timed out after ${timeoutMs}ms`);
     }
     throw err;
@@ -202,18 +282,51 @@ export async function postSseStream<TDone = unknown>(
   handlers: SseStreamHandlers<TDone>,
 ): Promise<void> {
   const url = `${baseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+  // Reuse / mint a correlation ID so chat SSE calls thread back to the
+  // user click that started them. Add it as a request header so the
+  // backend (when running locally with dev-log) attaches its own
+  // entries to the same chain.
+  const cid = DEV_LOG_ENABLED
+    ? currentCorrelationId() || rootAction()
+    : "";
+  const sseStartLogId = DEV_LOG_ENABLED
+    ? emit({
+        type: "command",
+        actor: "frontend",
+        summary: `SSE POST ${path}`,
+        details: { path, body },
+        status: "pending",
+      })
+    : "";
+  const sseStartedAt = Date.now();
+  let deltaChunks = 0;
+  let deltaChars = 0;
+
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
       Authorization: `Bearer ${await getAuthToken()}`,
+      ...(cid ? { "X-Correlation-Id": cid } : {}),
     },
     body: JSON.stringify(body ?? {}),
   });
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
+    if (DEV_LOG_ENABLED) {
+      withParent(sseStartLogId, () =>
+        emit({
+          type: "command",
+          actor: "frontend",
+          summary: `SSE POST ${path} ✗ HTTP ${res.status}`,
+          details: { status: res.status, body: text.slice(0, 500) },
+          durationMs: Date.now() - sseStartedAt,
+          status: "error",
+        }),
+      );
+    }
     throw new Error(
       `SSE ${path} failed: HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ""}`,
     );
@@ -240,12 +353,43 @@ export async function postSseStream<TDone = unknown>(
     }
     if (eventName === "delta") {
       const text = (data as { text?: string } | null)?.text ?? "";
-      if (text) handlers.onDelta?.(text);
+      if (text) {
+        deltaChunks++;
+        deltaChars += text.length;
+        handlers.onDelta?.(text);
+      }
     } else if (eventName === "done") {
+      // Capture the FULL done payload — this is where chat reveals
+      // whether the backend returned `intents: [...]` or `intents: []`,
+      // and whether `pendingActionIds` were created.
+      if (DEV_LOG_ENABLED) {
+        withParent(sseStartLogId, () =>
+          emit({
+            type: "command",
+            actor: "frontend",
+            summary: `SSE POST ${path} done (${deltaChunks} deltas, ${deltaChars} chars)`,
+            details: { donePayload: data, deltaChunks, deltaChars },
+            durationMs: Date.now() - sseStartedAt,
+            status: "ok",
+          }),
+        );
+      }
       handlers.onDone?.(data as TDone);
     } else if (eventName === "error") {
       const message = (data as { error?: string } | null)?.error ?? "stream error";
       streamError = message;
+      if (DEV_LOG_ENABLED) {
+        withParent(sseStartLogId, () =>
+          emit({
+            type: "command",
+            actor: "frontend",
+            summary: `SSE POST ${path} ✗ ${message}`,
+            details: { error: message, deltaChunks, deltaChars },
+            durationMs: Date.now() - sseStartedAt,
+            status: "error",
+          }),
+        );
+      }
       handlers.onError?.(message);
     }
   };
