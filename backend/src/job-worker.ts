@@ -115,18 +115,36 @@ function getViewsForJobType(type: string): Array<import("@starward/core").QueryK
       // so the helper auto-creates rows in daily_tasks). Tasks page +
       // Calendar must invalidate for the user to see them; missing these
       // was the bug behind "I generated a plan but no tasks showed up
-      // in Today" — must stay in sync with views/_invalidation.ts:93-98.
+      // in Today". view:goal-breakdown was added after a chat-driven
+      // replan saved a new plan but the BreakdownTab kept showing stale
+      // data because nothing told the FE to refetch. Must stay in sync
+      // with views/_invalidation.ts.
       return [
         "view:goal-plan",
+        "view:goal-breakdown",
         "view:planning",
         "view:dashboard",
         "view:tasks",
         "view:calendar",
       ];
     case "adaptive-reschedule":
-      return ["view:goal-plan", "view:planning", "view:tasks", "view:dashboard", "view:calendar"];
+      return [
+        "view:goal-plan",
+        "view:goal-breakdown",
+        "view:planning",
+        "view:tasks",
+        "view:dashboard",
+        "view:calendar",
+      ];
     case "adjust-all-overloaded-plans":
-      return ["view:goal-plan", "view:planning", "view:tasks", "view:dashboard", "view:calendar"];
+      return [
+        "view:goal-plan",
+        "view:goal-breakdown",
+        "view:planning",
+        "view:tasks",
+        "view:dashboard",
+        "view:calendar",
+      ];
     default:
       return [];
   }

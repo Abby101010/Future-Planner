@@ -737,7 +737,13 @@ aiRouter.post(
         try {
           emitViewInvalidate(req.userId, {
             viewKinds: planReplaced
-              ? ["view:goal-plan", "view:tasks", "view:dashboard"]
+              ? [
+                  "view:goal-plan",
+                  "view:goal-breakdown",
+                  "view:tasks",
+                  "view:dashboard",
+                  "view:calendar",
+                ]
               : ["view:goal-plan"],
           });
         } catch (err) {
@@ -1131,7 +1137,13 @@ aiRouter.post(
         try {
           emitViewInvalidate(req.userId, {
             viewKinds: planReplaced
-              ? ["view:goal-plan", "view:tasks", "view:dashboard"]
+              ? [
+                  "view:goal-plan",
+                  "view:goal-breakdown",
+                  "view:tasks",
+                  "view:dashboard",
+                  "view:calendar",
+                ]
               : ["view:goal-plan"],
           });
         } catch (err) {
