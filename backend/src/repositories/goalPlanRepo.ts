@@ -494,7 +494,11 @@ export function normalizePlan(plan: GoalPlan, startDate?: string, endDate?: stri
             t.title = t.title ?? "";
             t.description = t.description ?? "";
             t.completed = Boolean(t.completed);
-            // Handle snake_case fields the AI might produce
+            // Handle snake_case fields the AI might produce. The
+            // GOAL_BREAKDOWN_SYSTEM prompt emits snake_case; the
+            // TypeScript type uses camelCase. Normalize here once so
+            // downstream readers (planMaterialization, daily_tasks
+            // inserts, FE consumers) only need to handle camelCase.
             const raw = t as unknown as Record<string, unknown>;
             if (!t.durationMinutes && raw.duration_minutes) {
               t.durationMinutes = raw.duration_minutes as number;
@@ -502,6 +506,31 @@ export function normalizePlan(plan: GoalPlan, startDate?: string, endDate?: stri
             t.durationMinutes = t.durationMinutes || 30;
             t.priority = t.priority ?? "should-do";
             t.category = t.category ?? "planning";
+            // Phase A — cognitive-load classification at goal-breakdown
+            // time. AI emits cognitive_load / cognitive_cost /
+            // energy_type per the updated GOAL_BREAKDOWN_SYSTEM prompt.
+            // Stored in payload as camelCase.
+            if (
+              !(t as unknown as Record<string, unknown>).cognitiveLoad &&
+              raw.cognitive_load
+            ) {
+              (t as unknown as Record<string, unknown>).cognitiveLoad =
+                raw.cognitive_load;
+            }
+            if (
+              !(t as unknown as Record<string, unknown>).cognitiveCost &&
+              raw.cognitive_cost
+            ) {
+              (t as unknown as Record<string, unknown>).cognitiveCost =
+                raw.cognitive_cost;
+            }
+            if (
+              !(t as unknown as Record<string, unknown>).energyType &&
+              raw.energy_type
+            ) {
+              (t as unknown as Record<string, unknown>).energyType =
+                raw.energy_type;
+            }
           }
         }
       }

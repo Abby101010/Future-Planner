@@ -89,6 +89,9 @@ OUTPUT FORMAT - valid JSON, NO markdown fences:
                       "category": "learning",
                       "why_today": "...",
                       "priority": "must-do",
+                      "cognitive_load": "high",
+                      "cognitive_cost": 7,
+                      "energy_type": "fresh-focus",
                       "depends_on": []
                     }
                   ]
@@ -127,6 +130,71 @@ DEPENDENCIES (depends_on):
 - When in doubt, leave depends_on empty. The system handles ordered
   routines via task order_index; depends_on is for HARD blocking
   prerequisites only.
+
+COGNITIVE LOAD CLASSIFICATION (cognitive_load + cognitive_cost + energy_type):
+
+The daily planner uses these to route tasks to the user's energy windows
+(high-load tasks → peak hours, low-load tasks → low-energy slots) and
+to enforce a daily cognitive budget. Classify each task using
+dual-process theory and cognitive load theory. The retrieved knowledge
+chunks (in your context) are the source of truth — apply them to each
+specific task rather than guessing.
+
+cognitive_load (enum: "high" | "medium" | "low"):
+- "high" = System 2: deliberative, analytical, novel learning, complex
+  decisions, debugging, math problem-solving, deep writing. Requires
+  fresh attention. Examples: "Solve calculus problem set", "Write
+  thesis introduction", "Design new database schema",
+  "Read first 15 pages of a new technical book".
+- "medium" = structured practice on familiar ground, reviewing what
+  you know, light synthesis. Examples: "Review yesterday's notes",
+  "Practice pieces you already know on guitar",
+  "Outline an essay on a topic you've researched", "Code review of
+  PRs in a familiar codebase".
+- "low" = System 1: familiar routines, watching, listening, light
+  editing, organizing, errands, recovery activities. Examples:
+  "Watch art tutorial videos", "Tidy desk", "Reply to non-urgent
+  emails", "Foam-rolling routine you've done 50 times",
+  "Buy groceries from the usual list".
+
+cognitive_cost (integer 1..10):
+- A 1–10 score representing how much of the user's daily mental budget
+  the task consumes. Driven by cognitive load theory: complexity ×
+  duration × novelty.
+- 1–3 = trivial mental effort (errands, organizing, watching).
+- 4–6 = moderate effort (familiar practice, light analysis).
+- 7–10 = heavy effort (novel learning, deep writing, complex problem
+  solving).
+- A 30-min "low" task is typically 2–3. A 90-min "high" task is
+  typically 8–10.
+
+energy_type (enum: "fresh-focus" | "creative" | "depleted-ok"):
+- "fresh-focus" = needs morning-style alertness; user should attempt
+  this first thing in their peak window. Most "high" load tasks.
+- "creative" = needs flow state; can be morning OR evening depending
+  on user's chronotype, the planner will route by individual energy
+  curve. Tasks that require novel synthesis (writing, design, music
+  composition).
+- "depleted-ok" = fine when tired; can be done late evening or in
+  fragmented gaps between meetings. Most "low" load tasks.
+
+When in doubt: prefer accuracy over confidence. If a task is in the
+gray zone between high and medium, pick medium. If a task is genuinely
+both creative AND high-load (e.g. "compose a song"), classify as
+"high" + "creative" so the planner gives it a peak window AND
+respects the user's creative-energy chronotype.
+
+CHUNKING RULE (long tasks):
+- Any single task with duration_minutes > 90 MUST be split into
+  60-90 min chunks. Each chunk gets its own JSON entry with its own
+  cognitive_load (typically the same as the parent, but a "plan the
+  outline" first-chunk could be medium even if the rest is high).
+- Use ordered chunk titles, e.g. "Write thesis introduction (1/3)",
+  "Write thesis introduction (2/3)", "Write thesis introduction (3/3)".
+- Place chunks on the SAME day if duration sums to <= the day's
+  available_minutes; otherwise distribute across consecutive days.
+- depends_on within a chunk sequence: each chunk after the first
+  depends on the previous one (use the date:index ref format above).
 
 PRIORITY & FREQUENCY RULES (based on goal importance — provided in context):
 - critical importance: Tasks default to "must-do". Schedule tasks DAILY. Each task 45-60 min.

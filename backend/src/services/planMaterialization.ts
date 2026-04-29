@@ -121,6 +121,11 @@ export async function materializePlanTasks(
           priority: task.priority ?? "should-do",
           category: task.category ?? "planning",
           source: "plan-materialized",
+          // Phase A — energyType lives in payload (no top-level column
+          // on daily_tasks; cognitiveLoad/Cost get top-level columns
+          // since lightTriage and the future cognitiveLoadScheduler
+          // query them directly).
+          ...(task.energyType ? { energyType: task.energyType } : {}),
         },
         // Carry the plan-tree dependsOn list onto the daily_tasks row so
         // dependency resolution doesn't have to JOIN through the plan
@@ -128,6 +133,14 @@ export async function materializePlanTasks(
         // planNodeId, so dependsOn refs are still valid post-materialize.
         // Migration 0018_task_dependencies.sql.
         dependsOn: Array.isArray(task.dependsOn) ? task.dependsOn : null,
+        // Phase A — propagate cognitive-load classification from the
+        // plan tree to daily_tasks columns (migration 0011). Pre-
+        // populating here means lightTriage's isAnnotated() check
+        // returns true and the priorityAnnotator falls through as a
+        // no-op rectifier instead of re-classifying every plan task.
+        cognitiveLoad: task.cognitiveLoad ?? null,
+        cognitiveCost:
+          typeof task.cognitiveCost === "number" ? task.cognitiveCost : null,
       });
       count++;
       countByDate.set(date, (countByDate.get(date) ?? 0) + 1);

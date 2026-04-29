@@ -836,6 +836,21 @@ export interface GoalPlanTask {
    *  `daily_tasks.depends_on` so the runtime resolver doesn't have
    *  to JOIN through the plan tree. */
   dependsOn?: string[];
+  /** Cognitive-load classification produced at goal-breakdown time
+   *  (Phase A). Dual-process theory: System 2 = high (analytical /
+   *  novel), System 1 = low (familiar / watching). Routes tasks to
+   *  the user's energy windows in services/cognitiveLoadScheduler.ts.
+   *  Materialized to `daily_tasks.cognitive_load` so the runtime
+   *  doesn't have to JOIN through the plan tree. */
+  cognitiveLoad?: "high" | "medium" | "low";
+  /** 1–10 score representing how much of the user's daily mental
+   *  budget the task consumes (cognitive load theory: complexity ×
+   *  duration × novelty). Sum across the day vs. effective budget. */
+  cognitiveCost?: number;
+  /** Time-of-day affinity. fresh-focus = peak window only.
+   *  creative = flow-state slot (varies by chronotype).
+   *  depleted-ok = fragmented gaps / late evening fine. */
+  energyType?: "fresh-focus" | "creative" | "depleted-ok";
 }
 
 /** A goal plan task projected onto a calendar date range. */

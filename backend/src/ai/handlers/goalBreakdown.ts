@@ -5,10 +5,33 @@ import { getScheduleContext, summarizeScheduleForAI } from "../../calendar";
 import { getModelForTask } from "@starward/core";
 import { GOAL_BREAKDOWN_SYSTEM } from "@starward/core";
 import { personalizeSystem } from "@starward/core";
-import type { GoalBreakdownPayload } from "@starward/core";
+import type { GoalBreakdownPayload, Goal } from "@starward/core";
 import { runStreamingHandler } from "../streaming";
 import { emitAgentProgress } from "../../ws";
 import { getCurrentUserId } from "../../middleware/requestContext";
+import { loadMemory, buildMemoryContext } from "../../memory";
+
+/** Build a retrieval query that pulls cognitive-load + dual-process
+ *  principles relevant to THIS goal's domain. The retrieved chunks
+ *  (top-4 from psychology-principles.md, via the existing pgvector
+ *  RAG infra) inform the per-task cognitive_load classification the
+ *  prompt asks for. Mirrors priorityAnnotator.ts:78-95 — same
+ *  segment-seeding pattern, scoped to goal-breakdown semantics.
+ *
+ *  Capped at 300 chars to avoid bloat (matches priorityAnnotator's
+ *  cap). Don't move classification to a post-pass: doing it at
+ *  decomposition time means the AI sees retrieved principles AND
+ *  goal context together, and the user's prior cognitive_calibration
+ *  facts (Phase D) flow in via memoryContext. */
+function buildCognitiveLoadRetrievalQuery(goal: Goal): string {
+  const title = (goal.title ?? "").slice(0, 80);
+  const goalType = (goal.goalType ?? "").slice(0, 40);
+  const seed =
+    "cognitive load dual-process System 1 System 2 task energy " +
+    "classification fresh-focus depleted-ok value tiering";
+  const q = `${seed} for: ${title}${goalType ? ` (${goalType})` : ""}`;
+  return q.slice(0, 300);
+}
 
 export async function handleGoalBreakdown(
   client: Anthropic,
@@ -45,13 +68,36 @@ export async function handleGoalBreakdown(
     message: "Breaking down goal",
   });
 
+  // Re-build memoryContext with a cognitive-load-targeted retrieval
+  // query so the goal-breakdown prompt sees the right
+  // psychology-principles chunks alongside the user's facts/prefs.
+  // Best-effort: a retrieval failure falls back to the
+  // router-supplied memoryContext (no RAG enrichment, but the prompt
+  // still works against the user's existing memory).
+  let enrichedMemoryContext = memoryContext;
+  try {
+    const retrievalQuery = buildCognitiveLoadRetrievalQuery(goal as Goal);
+    const memory = await loadMemory(userId);
+    enrichedMemoryContext = await buildMemoryContext(
+      memory,
+      "planning",
+      [],
+      retrievalQuery,
+    );
+  } catch (err) {
+    console.warn(
+      "[goalBreakdown] cognitive-load RAG retrieval failed; falling back to router memoryContext:",
+      err,
+    );
+  }
+
   const parsed = await runStreamingHandler<Record<string, unknown>>({
     handlerKind,
     client,
     createRequest: () => ({
       model: getModelForTask("goal-breakdown"),
       max_tokens: 16384,
-      system: personalizeSystem(GOAL_BREAKDOWN_SYSTEM, memoryContext),
+      system: personalizeSystem(GOAL_BREAKDOWN_SYSTEM, enrichedMemoryContext),
       messages: [
         {
           role: "user",
