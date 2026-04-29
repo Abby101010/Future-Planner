@@ -21,13 +21,25 @@
  * see "today's morning has two deep-focus tasks; my evening has
  * light tasks. That makes sense." */
 
+import { useState } from "react";
 import Icon from "../../components/primitives/Icon";
+import { useCommand } from "../../hooks/useCommand";
 import type { UITask } from "./tasksTypes";
 
 export interface CognitiveLoadPillProps {
   /** Accepts undefined (UITask shape) or null (BE DailyTask shape) —
    *  both render nothing. */
   load: UITask["cognitiveLoad"] | null;
+  /** Optional: when provided, renders ↓/↑ buttons that fire
+   *  command:override-cognitive-load (Phase D). Click "feels easier"
+   *  steps the load DOWN one level; "feels harder" steps it UP.
+   *  Reflection turns repeated overrides into a memory_fact future
+   *  classifications respect (per-category).
+   *  Pass `taskId={null}` (or omit) to render a read-only pill. */
+  taskId?: string | null;
+  /** Caller refetches view:tasks after a successful override so the
+   *  pill re-renders with the new classification. */
+  onOverridden?: () => void;
 }
 
 interface PillSpec {
@@ -66,13 +78,33 @@ const SPECS: Record<NonNullable<UITask["cognitiveLoad"]>, PillSpec> = {
   },
 };
 
-export default function CognitiveLoadPill({ load }: CognitiveLoadPillProps) {
+export default function CognitiveLoadPill({
+  load,
+  taskId,
+  onOverridden,
+}: CognitiveLoadPillProps) {
+  const { run, running } = useCommand();
+  const [hover, setHover] = useState(false);
   if (!load) return null;
   const spec = SPECS[load];
+  const interactive = Boolean(taskId);
+
+  async function override(perceived: "easier" | "harder") {
+    if (!taskId) return;
+    try {
+      await run("command:override-cognitive-load", { taskId, perceivedLoad: perceived });
+      onOverridden?.();
+    } catch (err) {
+      console.warn("[cognitive-load-pill] override failed:", err);
+    }
+  }
+
   return (
     <span
       data-testid={`cognitive-load-pill-${load}`}
       title={spec.tooltip}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -91,6 +123,56 @@ export default function CognitiveLoadPill({ load }: CognitiveLoadPillProps) {
     >
       <Icon name={spec.iconName} size={9} />
       <span>{spec.text}</span>
+      {interactive && hover && (
+        <span style={{ display: "inline-flex", gap: 2, marginLeft: 4 }}>
+          {/* "Feels easier" — step the load down */}
+          {load !== "low" && (
+            <button
+              data-testid={`cognitive-load-easier-${taskId}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void override("easier");
+              }}
+              disabled={running}
+              title="Feels easier — drop one level"
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "var(--fg-faint)",
+                cursor: "pointer",
+                padding: "0 2px",
+                fontSize: 10,
+                lineHeight: 1,
+              }}
+            >
+              ↓
+            </button>
+          )}
+          {/* "Feels harder" — step the load up */}
+          {load !== "high" && (
+            <button
+              data-testid={`cognitive-load-harder-${taskId}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void override("harder");
+              }}
+              disabled={running}
+              title="Feels harder — bump one level"
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "var(--fg-faint)",
+                cursor: "pointer",
+                padding: "0 2px",
+                fontSize: 10,
+                lineHeight: 1,
+              }}
+            >
+              ↑
+            </button>
+          )}
+        </span>
+      )}
     </span>
   );
 }

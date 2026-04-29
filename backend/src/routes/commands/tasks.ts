@@ -1080,6 +1080,76 @@ export async function cmdDismissReschedule(
   return { ok: true, taskId };
 }
 
+/**
+ * "Feels easier / Feels harder" — one-click cognitive-load override.
+ *
+ * The user's signal is the source of truth. We never auto-undo a
+ * user override; reflection (backend/src/reflection.ts) turns
+ * repeated overrides on the same goal/category into a
+ * `cognitive_calibration` memory_fact that future goal-breakdown +
+ * priorityAnnotator runs see via buildMemoryContext.
+ *
+ * The wire-up matches the existing wrong_priority signal path —
+ * recordPriorityFeedback writes to memory_signals; nightly
+ * reflection synthesizes the calibration fact. Phase D of the
+ * cognitive-load architecture.
+ */
+export async function cmdOverrideCognitiveLoad(
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const taskId = body.taskId as string | undefined;
+  const perceived = body.perceivedLoad as string | undefined;
+  if (!taskId) throw new Error("command:override-cognitive-load requires args.taskId");
+  if (perceived !== "easier" && perceived !== "harder") {
+    throw new Error(
+      "command:override-cognitive-load requires args.perceivedLoad ∈ {easier, harder}",
+    );
+  }
+
+  const task = await repos.dailyTasks.get(taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+
+  // Map the user's perception to the cognitive-load enum. Step DOWN
+  // one level on "easier", step UP on "harder". The original AI
+  // classification is preserved in payload.cognitiveLoadOriginal so
+  // we can audit drift without losing history.
+  const current = task.cognitiveLoad ?? "medium";
+  let next: "high" | "medium" | "low";
+  if (perceived === "easier") {
+    next = current === "high" ? "medium" : "low";
+  } else {
+    next = current === "low" ? "medium" : "high";
+  }
+
+  const pl = task.payload as Record<string, unknown>;
+  const original =
+    (pl.cognitiveLoadOriginal as string | undefined) ?? current;
+
+  await repos.dailyTasks.update(taskId, {
+    cognitiveLoad: next,
+    payload: {
+      cognitiveLoadUserOverride: perceived,
+      cognitiveLoadOriginal: original,
+      cognitiveLoadOverriddenAt: new Date().toISOString(),
+    },
+  });
+
+  // Feed the signal into the existing reflection synthesis pipeline
+  // so repeated overrides on category=health (etc.) flow into a
+  // memory_fact future runs respect.
+  const dayOfWeek = new Date(task.date + "T00:00:00").getDay();
+  void recordPriorityFeedback(task.title, "wrong_priority", {
+    category: (pl.category as string) ?? "planning",
+    tier: (task.tier as string | undefined) ?? undefined,
+    dayOfWeek,
+    reason: `load-override:${perceived}:from-${current}-to-${next}`,
+  }).catch(() => {
+    /* signal recording is best-effort */
+  });
+
+  return { ok: true, taskId, cognitiveLoad: next, perceived };
+}
+
 // ── Image → Todos (Phase 1) ──────────────────────────────────
 //
 // Server-side gateway for the vision pipeline. Accepts a one-shot base64

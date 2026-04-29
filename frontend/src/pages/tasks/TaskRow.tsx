@@ -173,7 +173,15 @@ export default function TaskRow({
           )}
           {task.weight && <Pill tone={WEIGHT_TONE[task.weight] ?? "base"}>{task.weight}</Pill>}
           {task.timeBlock && <Pill>{task.timeBlock}</Pill>}
-          <CognitiveLoadPill load={task.cognitiveLoad} />
+          <CognitiveLoadPill
+            load={task.cognitiveLoad}
+            taskId={task.id}
+            onOverridden={() => {
+              /* view invalidation fires via WS — no manual refetch
+                 needed. The pill re-renders automatically once the
+                 view query updates. */
+            }}
+          />
           {tag && <Pill tone="gold" icon="tag">{tag}</Pill>}
           <button
             onClick={() => setOpen((o) => !o)}

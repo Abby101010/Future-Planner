@@ -1285,7 +1285,7 @@ function DayBlock({ task, onChange }: { task: DailyTask; onChange: () => void })
           {fmtHM(task.scheduledStartIso)}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          <CognitiveLoadPill load={task.cognitiveLoad} />
+          <CognitiveLoadPill load={task.cognitiveLoad} taskId={task.id} />
           <span style={{ fontSize: 10, color: "var(--fg-faint)" }}>{durationMin}m</span>
         </div>
       </div>

@@ -189,6 +189,10 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:submit-priority-feedback": [
     "view:tasks",
   ],
+  "command:override-cognitive-load": [
+    "view:tasks",
+    "view:calendar",
+  ],
   "command:pause-goal": [
     "view:dashboard",
     "view:roadmap",

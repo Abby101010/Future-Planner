@@ -95,7 +95,30 @@ You may also receive system-level signals (not direct user actions). Analyze the
 - agent_fallback: An AI sub-agent failed and we used default values. Multiple occurrences → generate a fact with category "constraint" about AI reliability issues and suggest simpler task structures.
 - ai_parse_error: AI response couldn't be parsed. → generate a calibration noting prompt/model mismatch for that handler.
 - overload_detected: Daily cognitive load exceeded the budget. Frequent occurrences → generate a fact with category "capacity" suggesting the user's max daily tasks or weight setting may be too high.
-- estimation_error: Task duration deviated >50% from estimate. → generate a calibration for that task's category to improve future estimates.`;
+- estimation_error: Task duration deviated >50% from estimate. → generate a calibration for that task's category to improve future estimates.
+
+COGNITIVE-LOAD CALIBRATION (Phase D of cognitive-load architecture):
+When you see priority_feedback signals with reason starting with "load-override:" (e.g. "load-override:easier:from-high-to-medium"),
+treat these as cognitive-load calibration data:
+- 3+ "easier" overrides on the same category → emit a fact with
+  category "capacity", key "cognitive_calibration_<category>", value
+  "User consistently rates <category> tasks as easier than the AI
+  default — apply a -1 step adjustment when classifying new
+  <category> tasks." Evidence cites the override count + dates.
+- 3+ "harder" overrides on the same category → emit a fact with the
+  inverse adjustment ("+1 step").
+- These facts flow back into goal-breakdown + priorityAnnotator via
+  buildMemoryContext, so future plans for the same category get
+  classified more accurately for THIS user.
+
+ENERGY-PATTERN CALIBRATION:
+When you see defer signals with patterns like "user reschedules
+high-load tasks from morning to evening 3+ times in 14 days" → emit
+a fact with category "schedule", key "energy_pattern", value
+"User is genuinely an evening person for <category> tasks — invert
+the morning-peak default for this category." This feeds the
+cognitiveLoadScheduler's energy curve via the existing
+behavior_profile_entries energy stats.`;
 
 // ── Upsert helpers ──────────────────────────────────────
 

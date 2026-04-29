@@ -44,6 +44,7 @@ import {
   cmdDismissReschedule,
   cmdCantCompleteTask,
   cmdAddTaskToPlan,
+  cmdOverrideCognitiveLoad,
   cmdRegenerateGoalPlan,
   cmdReallocateGoalPlan,
   cmdConfirmDailyTasks,
@@ -284,6 +285,9 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:submit-priority-feedback":
         result = await cmdSubmitPriorityFeedback(body);
+        break;
+      case "command:override-cognitive-load":
+        result = await cmdOverrideCognitiveLoad(body);
         break;
       case "command:propose-gap-fillers":
         result = await cmdProposeGapFillers(body);

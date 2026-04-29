@@ -33,6 +33,7 @@ export {
   cmdCantCompleteTask,
   cmdAddTaskToPlan,
   cmdAnalyzeImage,
+  cmdOverrideCognitiveLoad,
   deferScore,
   tomorrowOf,
 } from "./tasks";

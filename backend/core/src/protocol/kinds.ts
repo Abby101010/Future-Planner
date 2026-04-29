@@ -78,7 +78,8 @@ export type CommandKind =
   | "command:propose-onboarding-goal"
   | "command:confirm-onboarding-goal"
   | "command:accept-onboarding-plan"
-  | "command:commit-first-task";
+  | "command:commit-first-task"
+  | "command:override-cognitive-load";
 
 export type EventKind =
   | "ai:stream-start"
