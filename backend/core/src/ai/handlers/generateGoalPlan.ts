@@ -78,9 +78,17 @@ Do NOT ignore this data. If research says something takes 6 months, don't plan f
   // Multi-month goals with year/month/week/day breakdown can output
   // 12K–25K tokens of JSON. The previous 16384 cap was being hit mid-
   // string for plans spanning ~5 months, producing "Unterminated string
-  // in JSON at position N" parse errors that surfaced to the user as
-  // a silent job:failed. Opus 4.6 supports 32K output natively.
-  const response = await client.messages.create({
+  // in JSON at position N" parse errors. Bumped to 32768 (Opus 4.6's
+  // native ceiling).
+  //
+  // Must use `messages.stream` rather than `messages.create`: the
+  // Anthropic SDK refuses non-streaming requests whose worst-case
+  // duration exceeds 10 minutes (the request gets rejected with
+  // "Streaming is required for operations that may take longer than
+  // 10 minutes"), which Opus + 32K max_tokens trips. `finalMessage()`
+  // resolves to the same shape as `create`'s return so the rest of
+  // the handler is unchanged.
+  const stream = client.messages.stream({
     model: getModelForTask("generate-goal-plan"),
     max_tokens: 32768,
     system: personalizeSystem(
@@ -97,6 +105,7 @@ Importance level: ${importance}${description ? `\nAdditional context: ${descript
       },
     ],
   });
+  const response = await stream.finalMessage();
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
