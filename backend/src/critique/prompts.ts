@@ -39,7 +39,14 @@ Look for concerns in these categories:
        dailyCognitiveBudget (provided in the payload when available), OR
    (b) zero tasks at tier "lifetime" OR "quarter" have appeared across the
        last three consecutive days (the user is drifting toward maintenance-
-       only work with no long-horizon progress).
+       only work with no long-horizon progress), OR
+   (c) cognitive-load / time-slot mismatch: any task with cognitiveLoad
+       "high" is scheduled in an hour where the user's historical
+       completionRate < 0.4 (Phase E of cognitive-load architecture).
+       This means the plan is putting deep work in a low-energy window
+       — flag as severity "warn" with a suggestion to move the task to
+       the user's peak window. Skip when the payload doesn't include
+       hourCompletionRates (e.g. new users with <14d of data).
    Flag only when the payload provides enough data to check — never invent
    budget violations without the budget in the payload.
 5. other — Logical errors, internally contradictory output, impossible
