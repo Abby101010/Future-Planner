@@ -75,9 +75,14 @@ Do NOT ignore this data. If research says something takes 6 months, don't plan f
       ? `\n\nMETHODOLOGY INPUTS (use these to back-solve the plan shape):\n${methodologyLines.join("\n")}`
       : "";
 
+  // Multi-month goals with year/month/week/day breakdown can output
+  // 12K–25K tokens of JSON. The previous 16384 cap was being hit mid-
+  // string for plans spanning ~5 months, producing "Unterminated string
+  // in JSON at position N" parse errors that surfaced to the user as
+  // a silent job:failed. Opus 4.6 supports 32K output natively.
   const response = await client.messages.create({
     model: getModelForTask("generate-goal-plan"),
-    max_tokens: 16384,
+    max_tokens: 32768,
     system: personalizeSystem(
       `${GENERATE_GOAL_PLAN_SYSTEM}\n\nGOAL CONTEXT:\n${goalContext}${researchBlock}${methodologyBlock}`,
       memoryContext,
@@ -99,5 +104,23 @@ Importance level: ${importance}${description ? `\nAdditional context: ${descript
     .replace(/```json\n?/g, "")
     .replace(/```\n?/g, "")
     .trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    // Detect truncation vs other parse failures so the job error message
+    // tells the user something actionable instead of leaking JS parser
+    // internals. stop_reason === "max_tokens" means the model ran out of
+    // headroom and the closing brackets/quotes never landed.
+    const stopReason = (response as unknown as { stop_reason?: string }).stop_reason;
+    const message = err instanceof Error ? err.message : String(err);
+    if (stopReason === "max_tokens") {
+      throw new Error(
+        `Goal-plan generation hit the model's output limit (${cleaned.length} chars produced). ` +
+        `Try a more focused goal or shorter timeframe.`,
+      );
+    }
+    throw new Error(
+      `Failed to parse goal-plan JSON: ${message}. Output length: ${cleaned.length} chars.`,
+    );
+  }
 }
