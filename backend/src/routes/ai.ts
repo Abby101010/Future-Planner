@@ -423,20 +423,42 @@ aiRouter.post(
       // intent goes to pending_actions and the SSE done payload omits
       // them so the FE has nothing to auto-dispatch. Emergency opt-out
       // via STARWARD_CHAT_AUTO_DISPATCH=1 — see services/pendingActions.
+      //
+      // EXCEPTION: goal intents bypass the gate. The renderer already
+      // has PendingGoalCard wired up to consume an inline `kind:"goal"`
+      // intent (frontend/src/utils/dispatchChatIntent.ts:95 +
+      // components/chrome/PendingGoalCard.tsx); routing them through
+      // pending_actions strips them from the SSE done payload and the
+      // user is left staring at "Creating the goal now…" with no card
+      // and no goal in Planning. Goal creation is non-destructive, so
+      // it's safe to keep the legacy inline path until the FE renders
+      // a generic Accept/Reject card for the pending_actions list.
       const { isAutoDispatchEnabled, intakeIntentsAsPendingActions } =
         await import("../services/pendingActions");
       let pendingActionIds: string[] = [];
       let intentsForResponse: typeof intents = intents;
       let intentForResponse: typeof intent = intent;
       if (!isAutoDispatchEnabled() && intents.length > 0) {
-        try {
-          const intake = await intakeIntentsAsPendingActions(intents, null);
-          pendingActionIds = intake.pendingActionIds;
-        } catch (err) {
-          console.warn("[ai/home-chat/stream] pending-action intake failed:", err);
+        const isGoalIntent = (
+          i: unknown,
+        ): boolean => {
+          if (!i || typeof i !== "object") return false;
+          const kind = (i as { kind?: unknown }).kind;
+          return kind === "goal" || kind === "create-goal" || kind === "pending-goal";
+        };
+        const goalIntents = intents.filter(isGoalIntent);
+        const otherIntents = intents.filter((i) => !isGoalIntent(i));
+        if (otherIntents.length > 0) {
+          try {
+            const intake = await intakeIntentsAsPendingActions(otherIntents, null);
+            pendingActionIds = intake.pendingActionIds;
+          } catch (err) {
+            console.warn("[ai/home-chat/stream] pending-action intake failed:", err);
+          }
         }
-        intentsForResponse = [];
-        intentForResponse = null;
+        intentsForResponse = goalIntents as typeof intents;
+        intentForResponse =
+          goalIntents.length > 0 ? (goalIntents[0] as typeof intent) : null;
       }
       send("done", {
         reply,
@@ -1119,6 +1141,12 @@ aiRouter.post(
       // SSE done payload returns intents:[] so the FE has nothing to
       // auto-dispatch. STARWARD_CHAT_AUTO_DISPATCH=1 is the emergency
       // opt-out.
+      //
+      // EXCEPTION: goal intents bypass the gate — same reasoning as
+      // /ai/home-chat/stream above. The renderer already has
+      // PendingGoalCard for inline `kind:"goal"` intents; routing them
+      // through pending_actions strips them from the SSE done payload
+      // and the user is left with no card to confirm.
       const { isAutoDispatchEnabled, intakeIntentsAsPendingActions } =
         await import("../services/pendingActions");
       let pendingActionIds: string[] = [];
@@ -1129,17 +1157,28 @@ aiRouter.post(
         Array.isArray(result.intents) &&
         result.intents.length > 0
       ) {
-        try {
-          const intake = await intakeIntentsAsPendingActions(
-            result.intents as unknown[],
-            null,
-          );
-          pendingActionIds = intake.pendingActionIds;
-        } catch (err) {
-          console.warn("[ai/chat/stream] pending-action intake failed:", err);
+        const isGoalIntent = (i: unknown): boolean => {
+          if (!i || typeof i !== "object") return false;
+          const kind = (i as { kind?: unknown }).kind;
+          return kind === "goal" || kind === "create-goal" || kind === "pending-goal";
+        };
+        const goalIntents = (result.intents as unknown[]).filter(isGoalIntent);
+        const otherIntents = (result.intents as unknown[]).filter(
+          (i) => !isGoalIntent(i),
+        );
+        if (otherIntents.length > 0) {
+          try {
+            const intake = await intakeIntentsAsPendingActions(otherIntents, null);
+            pendingActionIds = intake.pendingActionIds;
+          } catch (err) {
+            console.warn("[ai/chat/stream] pending-action intake failed:", err);
+          }
         }
-        intentsForResponse = [];
-        intentForResponse = null;
+        intentsForResponse = goalIntents as typeof result.intents;
+        intentForResponse =
+          goalIntents.length > 0
+            ? (goalIntents[0] as typeof result.intent)
+            : null;
       }
 
       send("done", {

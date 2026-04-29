@@ -1834,6 +1834,30 @@ export async function cmdAcceptPendingAction(
       dispatchResult = await tasksMod.cmdCreateTask(payload);
       break;
     }
+    case "goal":
+    case "create-goal":
+    case "pending-goal": {
+      // Home-chat / goal-plan-chat emit `{kind:"goal", entity: GoalShape}`;
+      // a future fully-fledged FE Accept/Reject card may emit `{kind:"create-goal", goal: ...}`
+      // directly. Accept either shape and forward to cmdCreateGoal,
+      // which expects `{ goal: GoalShape }`.
+      const goal =
+        ((payload as { entity?: unknown }).entity as
+          | Record<string, unknown>
+          | undefined) ??
+        ((payload as { goal?: unknown }).goal as
+          | Record<string, unknown>
+          | undefined) ??
+        (payload as Record<string, unknown>);
+      if (!goal || typeof goal !== "object" || !(goal as { id?: string }).id) {
+        throw new Error(
+          `goal intent payload missing entity/goal with id (kind="${action.intentKind}")`,
+        );
+      }
+      const goalsMod = await import("./goals");
+      dispatchResult = await goalsMod.cmdCreateGoal({ goal });
+      break;
+    }
     default:
       throw new Error(
         `cmdAcceptPendingAction: no dispatcher for intent kind "${action.intentKind}". Add a case here when introducing new intent vocabulary.`,

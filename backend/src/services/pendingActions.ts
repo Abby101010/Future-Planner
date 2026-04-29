@@ -61,9 +61,17 @@ function summarize(intent: RawIntent): string {
       const term = (intent.term as string | undefined) ?? "";
       return `${a} reminder${term ? `: "${term}"` : ""}`;
     }
+    case "goal":
     case "create-goal":
-    case "pending-goal":
-      return `Create goal: "${(intent.title as string | undefined) ?? "(unnamed)"}"`;
+    case "pending-goal": {
+      // The home-chat handler emits `{kind:"goal", entity:{title,...}}`;
+      // earlier shapes used `{kind:"create-goal", title:...}`. Read the
+      // title from either layout so the proactive nudge body and any
+      // FE card surface a sensible label.
+      const entity = intent.entity as { title?: string } | undefined;
+      const title = entity?.title ?? (intent.title as string | undefined) ?? "(unnamed)";
+      return `Create goal: "${title}"`;
+    }
     case "research":
       return `Research topic: "${(intent.topic as string | undefined) ?? ""}"`;
     default:
