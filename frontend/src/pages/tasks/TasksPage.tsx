@@ -410,6 +410,18 @@ export default function TasksPage() {
     .filter((t) => !isOffActiveList(t))
     .reduce((sum, t) => sum + (t.duration ?? t.estimatedDurationMinutes ?? 0), 0);
   const plannedLabel = `${Math.floor(plannedMin / 60)}h ${plannedMin % 60}m`;
+  // Phase F — daily cognitive-load metric. Sum cognitiveCost across
+  // active tasks vs. an effective ceiling derived from the cognitive
+  // budget (defaults to 24 = 2× MAX_DAILY_WEIGHT, providing headroom
+  // since cognitiveCost is 1-10 scale not 1-5). Renders only when at
+  // least one task has a cognitiveCost (Phase B columns populated).
+  const cognitiveLoadSum = tasks
+    .filter((t) => !isOffActiveList(t))
+    .reduce((sum, t) => sum + (t.cognitiveCost ?? 0), 0);
+  const cognitiveLoadCeiling = 24;
+  const showCognitiveLoad = tasks.some(
+    (t) => typeof t.cognitiveCost === "number" && t.cognitiveCost > 0,
+  );
 
   const paceBanner = dashQ.data?.paceBanner;
   const currentMonthContext = dashQ.data?.currentMonthContext ?? null;
@@ -692,6 +704,24 @@ export default function TasksPage() {
                 <span style={{ opacity: 0.4 }}>·</span>
                 <span className="tnum">{doneCount}</span>
                 <span>done</span>
+                {showCognitiveLoad && (
+                  <>
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span
+                      className="tnum"
+                      title={`Sum of per-task cognitive cost. Effective ceiling ${cognitiveLoadCeiling}.`}
+                      style={{
+                        color:
+                          cognitiveLoadSum > cognitiveLoadCeiling
+                            ? "var(--danger)"
+                            : "var(--fg-mute)",
+                      }}
+                    >
+                      {cognitiveLoadSum}/{cognitiveLoadCeiling}
+                    </span>
+                    <span>load</span>
+                  </>
+                )}
                 <span style={{ opacity: 0.4 }}>·</span>
                 <button
                   onClick={bonusTask}
