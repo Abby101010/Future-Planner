@@ -54,6 +54,10 @@ import { annotatePriorities } from "../agents/priorityAnnotator";
 import { getCurrentUserId } from "../middleware/requestContext";
 import { emitViewInvalidate } from "../ws/events";
 import type { DailyTaskRecord } from "../repositories/dailyTasksRepo";
+import {
+  matchTasksToHours,
+  applyMatcherResult,
+} from "./cognitiveLoadScheduler";
 
 const TIER_RANK: Record<string, number> = {
   lifetime: 0,
@@ -352,6 +356,50 @@ export async function lightTriage(
     }
   }
 
+  // Phase B — fill in scheduled_start_time for active tasks that
+  // don't have one yet, routing high-load to peak energy hours +
+  // low-load to lower-energy slots. Reads cognitive_load (Phase B
+  // columns from migration 0011, populated by goal-breakdown
+  // Phase A or by priorityAnnotator's fallback). Idempotent: tasks
+  // with an existing scheduledStartIso are skipped.
+  let timeAssigned = 0;
+  let timeDeferred = 0;
+  let curveSrc: "user" | "default" = "default";
+  try {
+    const refreshedActive = await repos.dailyTasks.listForDate(date);
+    const needsTime = refreshedActive.filter((t) => {
+      if (t.completed) return false;
+      const pl = t.payload as Record<string, unknown>;
+      if (pl.skipped) return false;
+      if (pl.priority === "bonus" || pl.isBonus) return false;
+      if (t.scheduledStartIso) return false; // already placed
+      return true;
+    });
+    if (needsTime.length > 0) {
+      // Build busy-hour set from already-placed tasks today.
+      const busy = new Set<number>();
+      for (const t of refreshedActive) {
+        if (!t.scheduledStartIso) continue;
+        try {
+          const s = new Date(t.scheduledStartIso);
+          const e = t.scheduledEndIso ? new Date(t.scheduledEndIso) : null;
+          for (let h = s.getHours(); h <= (e ? e.getHours() : s.getHours()); h++) {
+            busy.add(h);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      const result = await matchTasksToHours(date, needsTime, busy);
+      curveSrc = result.curveSource;
+      const applied = await applyMatcherResult(result);
+      timeAssigned = applied.updated;
+      timeDeferred = result.deferred.length;
+    }
+  } catch (err) {
+    console.warn("[triage] cognitive-load time assignment failed:", err);
+  }
+
   // Stamp the daily log so subsequent reads can debounce. Best-effort
   // — failure here just means the next read may run another pass.
   try {
@@ -363,11 +411,14 @@ export async function lightTriage(
     console.warn("[triage] lastTriagedAt stamp failed:", err);
   }
 
-  if (emitInvalidate && (annotatedCount > 0 || reordered || demoted > 0)) {
+  if (
+    emitInvalidate &&
+    (annotatedCount > 0 || reordered || demoted > 0 || timeAssigned > 0)
+  ) {
     try {
       const userId = getCurrentUserId();
       emitViewInvalidate(userId, {
-        viewKinds: ["view:tasks", "view:dashboard"],
+        viewKinds: ["view:tasks", "view:dashboard", "view:calendar"],
       });
     } catch (err) {
       console.warn("[triage] view-invalidate emit failed:", err);
@@ -375,7 +426,7 @@ export async function lightTriage(
   }
 
   console.log(
-    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted} undemoted=${undemoted} cap=${cap} source=${capSource}`,
+    `[triage] date=${date} annotated=${annotatedCount} reordered=${reordered} demoted=${demoted} undemoted=${undemoted} cap=${cap} source=${capSource} timeAssigned=${timeAssigned} timeDeferred=${timeDeferred} curve=${curveSrc}`,
   );
 
   return {
