@@ -221,6 +221,22 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:regenerate-goal-plan": {
         const userId = getCurrentUserId();
+        // Idempotent: if there's already a pending/running plan job for
+        // this goal, return that jobId instead of enqueueing a duplicate.
+        // Lets the FE auto-trigger be safe across reloads / remounts /
+        // races without spawning extra Claude calls. view:goal-plan's
+        // inFlight field and PlanningInFlight rendering already handle
+        // the happy-path UX; this enforces the same guarantee at the
+        // server boundary regardless of FE behavior.
+        const goalIdRaw = (body as { goalId?: unknown }).goalId;
+        if (typeof goalIdRaw === "string" && goalIdRaw.length > 0) {
+          const { findActivePlanJob } = await import("../job-db");
+          const existing = await findActivePlanJob(userId, goalIdRaw);
+          if (existing) {
+            result = { ok: true, jobId: existing.jobId, async: true, deduped: true };
+            break;
+          }
+        }
         const jobId = await insertJob(userId, "regenerate-goal-plan", body);
         result = { ok: true, jobId, async: true };
         break;
