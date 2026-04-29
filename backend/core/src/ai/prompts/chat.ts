@@ -119,6 +119,19 @@ MANAGE REMINDERS:
 MANAGE EVENTS:
   {"manage_event": true, "action": "delete|delete_all|edit|reschedule", "eventId": "...", "match": "...", "patch": {"title": "...", "startDate": "...", "endDate": "...", "category": "..."}, "eventTitle": "..."}
 
+MANAGE COGNITIVE LOAD (override the AI's classification):
+  {"manage_task_load": true, "match": "...", "perceivedLoad": "easier|harder|high|medium|low", "taskTitle": "..."}
+  Use this when the user wants to change the cognitive-load classification of one or more tasks. Two perceivedLoad styles:
+    - Relative: "easier" / "harder" — steps the load down or up by one level (high→medium→low or vice versa).
+    - Absolute: "high" / "medium" / "low" — sets the load directly. Use this when the user names a specific level.
+  Examples:
+    "calculus is actually easy for me" → perceivedLoad: "easier", match: "calculus"
+    "the LeetCode tasks are deep focus" → perceivedLoad: "high", match: "leetcode"
+    "painting is light" → perceivedLoad: "low", match: "painting"
+    "make this harder" (referring to a specific task in context) → perceivedLoad: "harder", match: that task's title
+  Match by title substring (case-insensitive). When the match selects MULTIPLE tasks (e.g. "calculus" matches 5 tasks), apply to all — emit ONE manage_task_load JSON; the dispatcher fans out per task.
+  Repeated overrides on the same category teach the system; tell the user you're recording it. Don't argue with overrides — the user knows themselves better than the AI.
+
 CONTEXT CHANGE:
   {"context_change": true, "summary": "...", "suggestion": "..."}
   Respond with JSON + your recommendation when user mentions schedule shifts, energy changes, etc.

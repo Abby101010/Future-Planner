@@ -59,7 +59,23 @@ export type HomeChatIntent =
       eventTitle?: string;
     }
   | { kind: "context-change"; suggestion: string }
-  | { kind: "research"; topic: string; relatedGoalId: string };
+  | { kind: "research"; topic: string; relatedGoalId: string }
+  | {
+      /** Per-task cognitive-load override. Maps to the existing
+       *  command:override-cognitive-load (Phase D of cognitive-load
+       *  architecture). The dispatcher resolves `match` to one or
+       *  more tasks and fires the command per matched task. */
+      kind: "manage-task-load";
+      /** "easier" / "harder" → step the load by one level relative
+       *  to the task's current value.
+       *  "high" / "medium" / "low" → set the load directly. */
+      perceivedLoad: "easier" | "harder" | "high" | "medium" | "low";
+      /** Title-substring selector. When match selects multiple tasks
+       *  the dispatcher fans out per task. */
+      match?: string;
+      /** Optional explicit task title for AI confirmation phrasing. */
+      taskTitle?: string;
+    };
 
 export interface HomeChatResult {
   reply: string;
@@ -633,6 +649,31 @@ function parseSingleIntent(
     };
   }
 
+  if (parsed.manage_task_load) {
+    // Validate perceivedLoad against the canonical enum. Anything
+    // unrecognized falls back to "easier" (the safer default —
+    // overriding harder is a stronger statement).
+    const rawLoad = asString(parsed.perceivedLoad, "easier");
+    const perceivedLoad: "easier" | "harder" | "high" | "medium" | "low" =
+      rawLoad === "harder"
+        ? "harder"
+        : rawLoad === "high"
+          ? "high"
+          : rawLoad === "medium"
+            ? "medium"
+            : rawLoad === "low"
+              ? "low"
+              : "easier";
+    return {
+      kind: "manage-task-load",
+      perceivedLoad,
+      ...(typeof parsed.match === "string" ? { match: parsed.match } : {}),
+      ...(typeof parsed.taskTitle === "string"
+        ? { taskTitle: parsed.taskTitle }
+        : {}),
+    };
+  }
+
   if (parsed.manage_reminder) {
     const rawAction = asString(parsed.action, "delete");
     const action: "delete" | "delete_all" | "edit" | "acknowledge" =
@@ -785,6 +826,16 @@ export function defaultReplyForIntent(intent: HomeChatIntent): string {
       return intent.suggestion || "Noted — update your monthly context in Planning.";
     case "research":
       return `Researching "${intent.topic}" for you — head to the Insights tab to see the results.`;
+    case "manage-task-load": {
+      const target = intent.taskTitle ?? intent.match ?? "those tasks";
+      const loadCopy =
+        intent.perceivedLoad === "easier" || intent.perceivedLoad === "low"
+          ? "lighter"
+          : intent.perceivedLoad === "harder" || intent.perceivedLoad === "high"
+            ? "heavier"
+            : "moderate";
+      return `Got it — I'll record "${target}" as ${loadCopy}. The system will learn from this.`;
+    }
   }
 }
 

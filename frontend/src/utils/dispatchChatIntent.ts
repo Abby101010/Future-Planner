@@ -218,6 +218,58 @@ export async function dispatchChatIntent(
       }
       break;
     }
+    case "manage-task-load": {
+      // Cognitive-load override via chat. Maps the AI's manage_task_load
+      // intent to the existing command:override-cognitive-load (Phase D
+      // of the cognitive-load architecture). Same write path as the
+      // hover-pill ↓/↑ buttons; reflection synthesizes repeated
+      // overrides into per-category memory_facts.
+      //
+      // Two perceivedLoad styles supported:
+      //   "easier"|"harder"  → relative; the BE handler walks one step
+      //                        from the task's current cognitiveLoad.
+      //   "high"|"medium"|"low" → absolute target. We synthesize the
+      //                        relative direction here based on the
+      //                        task's current load so we can reuse the
+      //                        single BE handler without proliferating
+      //                        an "absolute" mode it doesn't need.
+      const matchTerms = splitMatchTerms(i.match as string | undefined);
+      const perceived = i.perceivedLoad as
+        | "easier"
+        | "harder"
+        | "high"
+        | "medium"
+        | "low";
+      const targets = todayTasks.filter((t) => {
+        const title = (t.title ?? "").toLowerCase();
+        return matchTerms.some((term) => title.includes(term));
+      });
+      for (const t of targets) {
+        let direction: "easier" | "harder";
+        if (perceived === "easier" || perceived === "harder") {
+          direction = perceived;
+        } else {
+          // Translate absolute target into a relative step. We assume
+          // the task's current load is "medium" when missing, so a
+          // single "set to high" step lands on high. This is good
+          // enough for first-pass UX; user can call again if needed.
+          const current =
+            (t as unknown as { cognitiveLoad?: string }).cognitiveLoad ??
+            "medium";
+          const order = { low: 0, medium: 1, high: 2 } as const;
+          const targetIdx = order[perceived as "low" | "medium" | "high"];
+          const currentIdx =
+            order[(current as "low" | "medium" | "high") ?? "medium"] ?? 1;
+          if (targetIdx === currentIdx) continue; // already there
+          direction = targetIdx > currentIdx ? "harder" : "easier";
+        }
+        await run(cmd("command:override-cognitive-load"), {
+          taskId: t.id,
+          perceivedLoad: direction,
+        });
+      }
+      break;
+    }
   }
 
   ctx.refetch?.();
