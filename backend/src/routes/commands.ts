@@ -75,7 +75,6 @@ import {
   cmdSubmitPriorityFeedback,
   cmdPauseGoal,
   cmdResumeGoal,
-  cmdProposeGapFillers,
   cmdRequestEscalation,
   cmdPlanEditClassify,
   cmdAcceptPendingAction,
@@ -315,9 +314,6 @@ commandsRouter.post("/:kind", async (req, res) => {
         break;
       case "command:override-cognitive-load":
         result = await cmdOverrideCognitiveLoad(body);
-        break;
-      case "command:propose-gap-fillers":
-        result = await cmdProposeGapFillers(body);
         break;
       case "command:request-escalation":
         result = await cmdRequestEscalation(body);

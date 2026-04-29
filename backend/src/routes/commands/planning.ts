@@ -1981,35 +1981,3 @@ export async function cmdPlanEditClassify(
   };
 }
 
-// ── Gap fillers (B-4) ──────────────────────────────────────
-
-/**
- * B-4: detect today's calendar gaps, pick short plan tasks that fit, and
- * write them into `pending_tasks` with `status="ready"` so the existing
- * `command:accept-task-proposal` path can promote them into daily_tasks.
- *
- * Flag-gated — when `settings.gapFillersEnabled` is not true the command
- * returns `{ ok: true, skipped: true }` without reading gaps or writing
- * proposals. That keeps B-4 additive for pre-upgrade users.
- */
-export async function cmdProposeGapFillers(
-  body: Record<string, unknown>,
-): Promise<unknown> {
-  const date = (body.date as string) || getEffectiveDate();
-  const { proposeGapFillers } = await import("../../services/gapFiller");
-  const result = await proposeGapFillers(date);
-  if (result.skipped) {
-    return { ok: true, skipped: true, reason: result.reason ?? "skipped" };
-  }
-  return {
-    ok: true,
-    proposals: result.proposals.map((p) => ({
-      id: p.proposalId,
-      title: p.task.title,
-      goalId: p.task.goalId,
-      durationMinutes: p.task.durationMinutes,
-      proposedSlot: { startIso: p.gap.startIso, endIso: p.gap.endIso },
-    })),
-    gapsDetected: result.gaps.length,
-  };
-}

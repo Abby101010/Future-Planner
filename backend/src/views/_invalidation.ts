@@ -22,7 +22,6 @@ export const ALL_QUERY_KINDS: QueryKind[] = [
   "view:dashboard",
   "view:tasks",
   "view:calendar",
-  "view:roadmap",
   "view:planning",
   "view:settings",
   "view:news-feed",
@@ -35,21 +34,18 @@ export const ALL_QUERY_KINDS: QueryKind[] = [
 export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   "command:create-goal": [
     "view:dashboard",
-    "view:roadmap",
     "view:planning",
     "view:goal-plan",
     "view:goal-breakdown",
   ],
   "command:update-goal": [
     "view:dashboard",
-    "view:roadmap",
     "view:planning",
     "view:goal-plan",
     "view:goal-breakdown",
   ],
   "command:delete-goal": [
     "view:dashboard",
-    "view:roadmap",
     "view:planning",
     "view:goal-plan",
     "view:goal-breakdown",
@@ -200,19 +196,13 @@ export const commandToInvalidations: Record<CommandKind, QueryKind[]> = {
   ],
   "command:pause-goal": [
     "view:dashboard",
-    "view:roadmap",
     "view:planning",
     "view:goal-plan",
   ],
   "command:resume-goal": [
     "view:dashboard",
-    "view:roadmap",
     "view:planning",
     "view:goal-plan",
-  ],
-  "command:propose-gap-fillers": [
-    "view:dashboard",
-    "view:tasks",
   ],
   // Manual escalation can move daily tasks (L1), rewrite goal plan
   // weeks (L2), or do a full plan regen (L3). Invalidate everything

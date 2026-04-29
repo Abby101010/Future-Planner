@@ -27,7 +27,6 @@ import SettingsDialog from "./components/settings/SettingsDialog";
 import OnboardingPage from "./pages/onboarding/OnboardingPage";
 import CalendarPage from "./pages/calendar/CalendarPage";
 import GoalPlanPage from "./pages/goals/GoalPlanPage";
-import RoadmapPage from "./pages/roadmap/RoadmapPage";
 import SettingsPage from "./pages/settings/SettingsPage";
 import PlanningPage from "./pages/goals/PlanningPage";
 import TasksPage from "./pages/tasks/TasksPage";
@@ -113,7 +112,6 @@ function AppShell() {
             {currentView === "tasks" && <TasksPage />}
             {currentView === "calendar" && <CalendarPage />}
             {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
-            {currentView === "roadmap" && <RoadmapPage />}
             {currentView === "news-feed" && <NewsFeedPage />}
             {currentView === "settings" && <SettingsPage />}
           </ErrorBoundary>

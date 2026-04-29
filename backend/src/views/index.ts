@@ -21,7 +21,6 @@ import {
   type CalendarView,
   type CalendarViewArgs,
 } from "./calendarView";
-import { resolveRoadmapView, type RoadmapView } from "./roadmapView";
 import { resolvePlanningView, type PlanningView } from "./planningView";
 import { resolveSettingsView, type SettingsView } from "./settingsView";
 import { resolveNewsFeedView, type NewsFeedView } from "./newsFeedView";
@@ -49,7 +48,6 @@ export {
   resolveDashboardView,
   resolveTasksView,
   resolveCalendarView,
-  resolveRoadmapView,
   resolvePlanningView,
   resolveSettingsView,
   resolveNewsFeedView,
@@ -64,7 +62,6 @@ export type {
   TasksView,
   CalendarView,
   CalendarViewArgs,
-  RoadmapView,
   PlanningView,
   SettingsView,
   NewsFeedView,
@@ -88,7 +85,6 @@ export const viewResolvers: Record<
   "view:tasks": async () => resolveTasksView(),
   "view:calendar": async (args) =>
     resolveCalendarView(args as Partial<CalendarViewArgs> | undefined),
-  "view:roadmap": async () => resolveRoadmapView(),
   "view:planning": async () => resolvePlanningView(),
   "view:settings": async () => resolveSettingsView(),
   "view:news-feed": async () => resolveNewsFeedView(),

@@ -188,19 +188,6 @@ export default function TasksPage() {
     }
     setTimeout(() => setBonusNotice(null), 4000);
   });
-  const gapFillers = wrap(async () => {
-    await run("command:propose-gap-fillers", {});
-    refetchAll();
-  });
-  const estimateAll = wrap(async () => {
-    await run("command:estimate-task-durations", { taskIds: tasks.map((t) => t.id) });
-    refetchAll();
-  });
-  const deleteTasksForDate = wrap(async () => {
-    if (!window.confirm("Delete all of today's tasks?")) return;
-    await run("command:delete-tasks-for-date", {});
-    refetchAll();
-  });
 
   // Task CRUD
   const toggleTask = (id: string) =>
@@ -406,10 +393,6 @@ export default function TasksPage() {
   const visibleTasks = showDone ? tasks : tasks.filter((t) => !isOffActiveList(t));
   const doneCount = tasks.filter((t) => t.done ?? t.completed).length;
   const leftCount = tasks.filter((t) => !isOffActiveList(t)).length;
-  const plannedMin = tasks
-    .filter((t) => !isOffActiveList(t))
-    .reduce((sum, t) => sum + (t.duration ?? t.estimatedDurationMinutes ?? 0), 0);
-  const plannedLabel = `${Math.floor(plannedMin / 60)}h ${plannedMin % 60}m`;
   // Phase F — daily cognitive-load metric. Sum cognitiveCost across
   // active tasks vs. an effective ceiling derived from the cognitive
   // budget (defaults to 24 = 2× MAX_DAILY_WEIGHT, providing headroom
@@ -699,9 +682,6 @@ export default function TasksPage() {
                 </span>
                 <span>left</span>
                 <span style={{ opacity: 0.4 }}>·</span>
-                <span className="tnum">{plannedLabel}</span>
-                <span>planned</span>
-                <span style={{ opacity: 0.4 }}>·</span>
                 <span className="tnum">{doneCount}</span>
                 <span>done</span>
                 {showCognitiveLoad && (
@@ -753,36 +733,6 @@ export default function TasksPage() {
                   {showDone ? "Hide" : "Show"} {doneCount} done
                 </Button>
               )}
-              <Button
-                size="xs"
-                tone="ghost"
-                icon="sparkle"
-                onClick={gapFillers}
-                data-api="POST /commands/propose-gap-fillers"
-                data-testid="tasks-gap-fillers"
-              >
-                Gap fillers
-              </Button>
-              <Button
-                size="xs"
-                tone="ghost"
-                icon="bolt"
-                onClick={estimateAll}
-                data-api="POST /commands/estimate-task-durations"
-                data-testid="tasks-estimate-all"
-              >
-                Estimate all
-              </Button>
-              <Button
-                size="xs"
-                tone="ghost"
-                icon="trash"
-                onClick={deleteTasksForDate}
-                data-api="POST /commands/delete-tasks-for-date"
-                data-testid="tasks-clear-day"
-              >
-                Clear day
-              </Button>
             </div>
           </header>
 

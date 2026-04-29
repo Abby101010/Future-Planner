@@ -1,8 +1,7 @@
 /* AddTaskLine — minimalist single-line task composer.
  *
- * Three paths per contract:
+ * Two paths per contract:
  *   type + Enter / Add             → POST /commands/create-task
- *   click "Ask AI"                 → POST /commands/create-pending-task
  *   open "Image" + upload + Analyze → POST /commands/analyze-image →
  *     then per extracted todo: POST /commands/create-task
  */
@@ -41,18 +40,6 @@ export default function AddTaskLine({ onAdded }: AddTaskLineProps) {
     setError(null);
     try {
       await run("command:create-task", { title: draft.trim() });
-      setDraft("");
-      onAdded();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  async function createPending() {
-    if (!draft.trim()) return;
-    setError(null);
-    try {
-      await run("command:create-pending-task", { userInput: draft.trim() });
       setDraft("");
       onAdded();
     } catch (e) {
@@ -138,30 +125,6 @@ export default function AddTaskLine({ onAdded }: AddTaskLineProps) {
             fontFamily: "inherit",
           }}
         />
-        <button
-          data-testid="add-task-pending"
-          onClick={createPending}
-          title="Describe in plain words — AI will triage"
-          data-api="POST /commands/create-pending-task"
-          disabled={running || !draft.trim()}
-          style={{
-            border: 0,
-            background: "transparent",
-            cursor: running || !draft.trim() ? "not-allowed" : "pointer",
-            color: "var(--fg-faint)",
-            padding: 4,
-            borderRadius: 4,
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: 10,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            fontWeight: 600,
-          }}
-        >
-          <Icon name="sparkle" size={12} /> Ask AI
-        </button>
         <button
           data-testid="add-task-image-toggle"
           onClick={() => setImgOpen((o) => !o)}

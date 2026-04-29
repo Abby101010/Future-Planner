@@ -6,7 +6,6 @@
  *     Tasks
  *     Calendar
  *     Planning
- *     Roadmap
  *     News Feed (hidden when settings.enableNewsFeed === false)
  *   [collapse/expand toggle]
  *   ★ Starward (bottom logo)
@@ -67,7 +66,6 @@ export default function Sidebar() {
     { id: "tasks", label: "Tasks", icon: "tasks", view: "view:tasks" },
     { id: "calendar", label: "Calendar", icon: "calendar", view: "view:calendar" },
     { id: "planning", label: "Planning", icon: "planning", view: "view:planning" },
-    { id: "roadmap", label: "Roadmap", icon: "roadmap", view: "view:roadmap" },
     ...(enableNewsFeed
       ? [{ id: "news-feed" as AppView, label: "News Feed", icon: "news" as IconName, view: "view:news-feed" }]
       : []),

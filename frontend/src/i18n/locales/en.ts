@@ -31,7 +31,6 @@ const en = {
     today: "Today",
     tasks: "Tasks",
     calendar: "Calendar",
-    roadmap: "Roadmap",
     goalCoach: "Goal Coach",
     wellbeing: "Wellbeing",
     settings: "Settings",

@@ -536,7 +536,7 @@ export interface MonthlyContext {
 // Top-level routable views, per API_CONTRACT.md:
 //   login / welcome — gated flows (outside sidebar)
 //   onboarding — 7-step flow
-//   tasks / calendar / planning / roadmap / news-feed / settings — sidebar
+//   tasks / calendar / planning / news-feed / settings — sidebar
 //   goal-plan-${id} — per-goal sub-page from Planning (absorbs Breakdown + Dashboard tabs)
 // Recovery + milestone-celebration are legacy transient flows still referenced
 // by downstream services; they are not routed in the Starward shell but the
@@ -548,7 +548,6 @@ export type AppView =
   | "planning"
   | "tasks"
   | "calendar"
-  | "roadmap"
   | "settings"
   | "news-feed"
   | "recovery"

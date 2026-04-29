@@ -51,7 +51,6 @@ export {
   cmdAcceptTaskProposal,
   cmdHealAllGoalPlans,
   cmdSubmitPriorityFeedback,
-  cmdProposeGapFillers,
   cmdRequestEscalation,
   cmdPlanEditClassify,
   cmdAcceptPendingAction,
