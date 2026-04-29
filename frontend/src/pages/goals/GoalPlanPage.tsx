@@ -5,10 +5,11 @@
  * tabs lazy-load view:goal-breakdown and view:goal-dashboard as needed.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useStore from "../../store/useStore";
 import { useQuery } from "../../hooks/useQuery";
 import { useCommand } from "../../hooks/useCommand";
+import { startJob } from "../../components/chrome/JobStatusDock";
 import TopBar from "../../components/primitives/TopBar";
 import Button from "../../components/primitives/Button";
 import Tabs from "../../components/primitives/Tabs";
@@ -16,6 +17,12 @@ import PlanTab from "./PlanTab";
 import BreakdownTab from "./BreakdownTab";
 import DashboardTab from "./DashboardTab";
 import PlanningInFlight from "./PlanningInFlight";
+
+/** Goals we already auto-fired regenerate-goal-plan for in this session.
+ *  Module-scoped so quick navigation doesn't redispatch. Resets on app
+ *  reload, which is fine — backend dedup (findActivePlanJob) catches
+ *  any post-reload double-fire. */
+const AUTO_TRIGGERED_PLAN = new Set<string>();
 
 interface GoalPlanMilestone {
   id: string;
@@ -77,6 +84,35 @@ export default function GoalPlanPage({ goalId }: { goalId: string }) {
   //   otherwise                           → empty-state (existing milestone list empty)
   const inFlight = data?.inFlight ?? null;
   const isGeneratingFirstPlan = !!inFlight && !data?.plan && milestones.length === 0;
+
+  // Auto-trigger first-time generation. Critical guards:
+  //   - data.plan is the source of truth ("does this goal have a plan?").
+  //     A successfully generated plan can have an empty top-level
+  //     milestones array — checking milestones.length is wrong here and
+  //     was the previous bug that re-fired on every Cmd+R.
+  //   - Skip while a job is already running (PlanningInFlight handles UI).
+  //   - Skip while the view query is loading (avoid firing on stale empty).
+  //   - Dedupe per goal per session in case React re-renders.
+  useEffect(() => {
+    if (loading || error) return;
+    if (!data) return;
+    if (data.plan) return;
+    if (data.inFlight) return;
+    if (AUTO_TRIGGERED_PLAN.has(goalId)) return;
+    AUTO_TRIGGERED_PLAN.add(goalId);
+    void run<{ jobId?: string; async?: boolean }>(
+      "command:regenerate-goal-plan",
+      { goalId },
+    )
+      .then((r) => {
+        if (r?.jobId) startJob(r.jobId, `Regenerating plan for ${goalId}`);
+        refetch();
+      })
+      .catch(() => {
+        // Surfaced through the command's own error path; reload to retry.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, error, data?.plan, data?.inFlight, goalId]);
 
   async function onPause() {
     setCmdError(null);
