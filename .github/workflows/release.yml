@@ -45,13 +45,14 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --include=optional --no-audit --no-fund
-          # The binaries inside app-builder-bin lose their +x bit when
-          # extracted by npm in some environments, so spawn() fails
-          # with ENOENT (the kernel rejects non-executable files
-          # before the lookup even resolves). chmod is idempotent and
-          # cross-platform (no-op on Windows where .exe extension
-          # already drives execution).
-          chmod -R +x node_modules/app-builder-bin/ 2>/dev/null || true
+          # electron-builder v26 installs app-builder-bin under the
+          # per-workspace node_modules (frontend/node_modules/) rather
+          # than hoisting it to the repo root, so the chmod target
+          # changed. find handles both layouts (root + workspace) so
+          # the workflow keeps working if hoisting behavior shifts
+          # again. chmod is idempotent and cross-platform (no-op on
+          # Windows where .exe extension already drives execution).
+          find . -type f -path "*/node_modules/app-builder-bin/*" -name "app-builder*" -exec chmod +x {} \; 2>/dev/null || true
         shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
@@ -123,13 +124,14 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --include=optional --no-audit --no-fund
-          # The binaries inside app-builder-bin lose their +x bit when
-          # extracted by npm in some environments, so spawn() fails
-          # with ENOENT (the kernel rejects non-executable files
-          # before the lookup even resolves). chmod is idempotent and
-          # cross-platform (no-op on Windows where .exe extension
-          # already drives execution).
-          chmod -R +x node_modules/app-builder-bin/ 2>/dev/null || true
+          # electron-builder v26 installs app-builder-bin under the
+          # per-workspace node_modules (frontend/node_modules/) rather
+          # than hoisting it to the repo root, so the chmod target
+          # changed. find handles both layouts (root + workspace) so
+          # the workflow keeps working if hoisting behavior shifts
+          # again. chmod is idempotent and cross-platform (no-op on
+          # Windows where .exe extension already drives execution).
+          find . -type f -path "*/node_modules/app-builder-bin/*" -name "app-builder*" -exec chmod +x {} \; 2>/dev/null || true
         shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
@@ -193,13 +195,14 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --include=optional --no-audit --no-fund
-          # The binaries inside app-builder-bin lose their +x bit when
-          # extracted by npm in some environments, so spawn() fails
-          # with ENOENT (the kernel rejects non-executable files
-          # before the lookup even resolves). chmod is idempotent and
-          # cross-platform (no-op on Windows where .exe extension
-          # already drives execution).
-          chmod -R +x node_modules/app-builder-bin/ 2>/dev/null || true
+          # electron-builder v26 installs app-builder-bin under the
+          # per-workspace node_modules (frontend/node_modules/) rather
+          # than hoisting it to the repo root, so the chmod target
+          # changed. find handles both layouts (root + workspace) so
+          # the workflow keeps working if hoisting behavior shifts
+          # again. chmod is idempotent and cross-platform (no-op on
+          # Windows where .exe extension already drives execution).
+          find . -type f -path "*/node_modules/app-builder-bin/*" -name "app-builder*" -exec chmod +x {} \; 2>/dev/null || true
         shell: bash
 
       # Build the @starward/core workspace first. The frontend imports
