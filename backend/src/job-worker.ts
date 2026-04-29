@@ -110,11 +110,23 @@ async function pollOnce(): Promise<boolean> {
 function getViewsForJobType(type: string): Array<import("@starward/core").QueryKind> {
   switch (type) {
     case "regenerate-goal-plan":
-      return ["view:goal-plan", "view:planning", "view:dashboard"];
+      // Materializes daily_tasks via goalPlanRepo.replacePlan (see
+      // cmdRegenerateGoalPlan: it flips planConfirmed=true before replacePlan
+      // so the helper auto-creates rows in daily_tasks). Tasks page +
+      // Calendar must invalidate for the user to see them; missing these
+      // was the bug behind "I generated a plan but no tasks showed up
+      // in Today" — must stay in sync with views/_invalidation.ts:93-98.
+      return [
+        "view:goal-plan",
+        "view:planning",
+        "view:dashboard",
+        "view:tasks",
+        "view:calendar",
+      ];
     case "adaptive-reschedule":
-      return ["view:goal-plan", "view:planning", "view:tasks", "view:dashboard"];
+      return ["view:goal-plan", "view:planning", "view:tasks", "view:dashboard", "view:calendar"];
     case "adjust-all-overloaded-plans":
-      return ["view:goal-plan", "view:planning", "view:tasks", "view:dashboard"];
+      return ["view:goal-plan", "view:planning", "view:tasks", "view:dashboard", "view:calendar"];
     default:
       return [];
   }

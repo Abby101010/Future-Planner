@@ -592,7 +592,7 @@ export default function TasksPage() {
                 style={{
                   margin: 0,
                   fontSize: "var(--t-2xl)",
-                  color: "var(--fg)",
+                  color: "var(--accent)",
                   letterSpacing: "-0.01em",
                 }}
               >
