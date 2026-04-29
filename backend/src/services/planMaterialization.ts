@@ -39,12 +39,16 @@ export async function pruneOrphanedPlanTasks(goalId: string): Promise<number> {
  *  inserted.
  *
  *  ⚠ Cognitive budget cap: each calendar day gets at most
- *  `COGNITIVE_BUDGET.MAX_DAILY_TASKS` plan-derived rows. Plan tasks
- *  beyond that are LEFT UN-MATERIALIZED in the plan tree. They flow
- *  in via `rotateNextTask` (already budget-aware) when the user
- *  completes a task on that day, OR get materialized later when
- *  capacity frees up. This stops a multi-goal user from waking up to
- *  a 10-task day that exceeds the documented capacity ceiling. */
+ *  `COGNITIVE_BUDGET.MAX_DAILY_TASKS` *active* plan-derived rows.
+ *  Once a day hits that ceiling, additional plan tasks for that day
+ *  are inserted with `priority: "bonus"` (cognitiveWeight 1) so they
+ *  land in the bonus pool — visible on the Today page, but separate
+ *  from the active list and excluded from KPIs. This matches the
+ *  existing triage demote-to-bonus behavior in views/tasksView.ts and
+ *  preserves the "what changed?" signal for the user when they tweak
+ *  a goal mid-day: previously over-budget tasks were silently dropped
+ *  from materialization (left in the tree, invisible), so the user
+ *  thought their plan rewrite did nothing. */
 export async function materializePlanTasks(
   goalId: string,
   plan: GoalPlan | null,
@@ -95,12 +99,19 @@ export async function materializePlanTasks(
   let count = 0;
   for (const { date, task } of tasksToMaterialize) {
     if (existingPlanNodeIds.has(task.id)) continue;
-    if ((countByDate.get(date) ?? 0) >= MAX) {
-      // Day at capacity — leave this plan task in the tree. Rotation
-      // (or a future materialize after a completion frees a slot)
-      // will pick it up.
-      continue;
-    }
+    // Day at capacity → demote to bonus instead of dropping. The row
+    // still gets written; it just lands in the bonus pool with weight
+    // 1 so it doesn't push the active list past the cognitive ceiling.
+    const atCapacity = (countByDate.get(date) ?? 0) >= MAX;
+    const effectivePriority: GoalPlanTask["priority"] = atCapacity
+      ? "bonus"
+      : (task.priority ?? "should-do");
+    const effectiveWeight =
+      effectivePriority === "must-do"
+        ? 5
+        : effectivePriority === "bonus"
+          ? 1
+          : 3;
     const taskId = `plan-${goalId.slice(0, 8)}-${task.id}`;
     try {
       const existing = await repos.dailyTasks.listForDate(date);
@@ -116,9 +127,8 @@ export async function materializePlanTasks(
         payload: {
           description: task.description ?? "",
           durationMinutes: task.durationMinutes ?? 30,
-          cognitiveWeight:
-            task.priority === "must-do" ? 5 : task.priority === "bonus" ? 1 : 3,
-          priority: task.priority ?? "should-do",
+          cognitiveWeight: effectiveWeight,
+          priority: effectivePriority,
           category: task.category ?? "planning",
           source: "plan-materialized",
           // Phase A — energyType lives in payload (no top-level column
