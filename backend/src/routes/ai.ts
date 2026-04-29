@@ -24,7 +24,7 @@ import {
   parseUnifiedChatResult,
 } from "@starward/core/handlers";
 import type { AIPayloadMap, GoalPlan, GoalPlanMessage } from "@starward/core";
-import { applyPlanPatch } from "@starward/core";
+import { applyPlanPatch, diffPlans } from "@starward/core";
 import * as chatRepo from "../repositories/chatRepo";
 import * as repos from "../repositories";
 import { emitViewInvalidate } from "../ws/events";
@@ -674,35 +674,38 @@ aiRouter.post(
               planReplaced = true;
             } else if (result.planPatch && nextPlan) {
               // Sparse patch — merge by id into the existing plan tree.
-              console.log("[goal-plan-chat/stream] APPLYING PLAN PATCH");
-              console.log("[goal-plan-chat/stream] planPatch:", JSON.stringify(result.planPatch).slice(0, 2000));
-              console.log("[goal-plan-chat/stream] existing plan year IDs:", nextPlan.years?.map(y => y.id));
-              console.log("[goal-plan-chat/stream] existing plan structure:", nextPlan.years?.map(y => ({
-                id: y.id,
-                months: y.months?.map(m => ({
-                  id: m.id,
-                  weeks: m.weeks?.map(w => ({
-                    id: w.id,
-                    days: w.days?.map(d => ({
-                      id: d.id,
-                      label: d.label,
-                      taskCount: d.tasks?.length ?? 0,
-                    })),
-                  })),
-                })),
-              })));
               const patched = applyPlanPatch(nextPlan, result.planPatch);
-              // Log the result to confirm tasks were actually changed
-              const daysBefore = nextPlan.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days ?? []) ?? []) ?? []) ?? [];
-              const daysAfter = patched.years?.flatMap(y => y.months?.flatMap(m => m.weeks?.flatMap(w => w.days ?? []) ?? []) ?? []) ?? [];
-              const taskCountBefore = daysBefore.reduce((s, d) => s + (d.tasks?.length ?? 0), 0);
-              const taskCountAfter = daysAfter.reduce((s, d) => s + (d.tasks?.length ?? 0), 0);
-              console.log("[goal-plan-chat/stream] patch result: tasks before=%d, after=%d", taskCountBefore, taskCountAfter);
-              const gStart2 = goal.createdAt?.split("T")[0];
-              const gEnd2 = goal.targetDate;
-              await repos.goalPlan.replacePlan(goalId, patched, gStart2, gEnd2);
-              nextPlan = patched;
-              planReplaced = true;
+
+              // The AI sometimes emits a patch that re-states the existing
+              // tasks verbatim (identity patch) and then claims "Done".
+              // Without this check we'd mark planReplaced=true, broadcast
+              // a real-change invalidation, and skip the honesty-check —
+              // user sees "Done" with no actual change. Diff the trees
+              // and only treat it as a real change when something moved.
+              const diff = diffPlans(nextPlan, patched);
+              const hasChanges =
+                diff.totalTaskChanges > 0 ||
+                diff.milestones.added > 0 ||
+                diff.milestones.removed > 0 ||
+                diff.milestones.modified > 0;
+
+              if (hasChanges) {
+                const gStart2 = goal.createdAt?.split("T")[0];
+                const gEnd2 = goal.targetDate;
+                await repos.goalPlan.replacePlan(goalId, patched, gStart2, gEnd2);
+                nextPlan = patched;
+                planReplaced = true;
+              } else {
+                // Patch was a no-op. Leave nextPlan untouched and let the
+                // honesty check below append a clarifying note to the
+                // user-visible reply. view:invalidate still fires for
+                // view:goal-plan so the chat thread refetches the new
+                // assistant message; tasks/dashboard skip because nothing
+                // changed there.
+                console.log(
+                  "[goal-plan-chat/stream] identity patch — no change detected; skipping persist",
+                );
+              }
             } else {
               console.log("[goal-plan-chat/stream] NO PLAN CHANGE:", {
                 hasPlanPatch: !!result.planPatch,
