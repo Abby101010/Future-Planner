@@ -44,13 +44,10 @@ Future-Planner/
 ├── ARCHITECTURE_UPGRADES.md # Additive AI layers (RAG, critique, queue, scheduler, tools)
 ├── FLOW_DIAGRAMS.md         # End-to-end feature flows
 ├── SYSTEM_SPEC.md           # System behaviour spec
-├── REFACTORING_PLAN.md
 ├── README.md
 ├── fly.toml           # Fly.io deployment config
 └── package.json       # Workspaces + top-level typecheck script
 ```
-
-> The reorganization to a flat `packages/` layout (`packages/core`, `packages/server`, `packages/desktop`) is the target prescribed by `REFACTORING_PLAN.md` Phase 12 and is not yet applied. Paths below reflect the **current** layout.
 
 Root scripts (`package.json`):
 - `npm run typecheck` — build all three packages
@@ -345,6 +342,5 @@ Phase 2 = swap `auth.ts` for real JWT verification + login page. No schema migra
 - `ARCHITECTURE_UPGRADES.md` — additive AI/agent layers (RAG knowledge, critique agent, BullMQ queue, per-user scheduler, tool-use).
 - `FLOW_DIAGRAMS.md` — end-to-end feature flows (renderer → transport → server → AI → persistence → WS).
 - `SYSTEM_SPEC.md` — system behaviour spec.
-- `REFACTORING_PLAN.md` — in-flight refactor proposal.
 - `refactor/PHASE_1_REPORT.md`, `refactor/PHASE_2_DESIGN.md` — refactor progress.
 - Per-folder `README.md` files in `backend/**/src/**` and `frontend/src/**` — each states the one architectural rule for that folder.
