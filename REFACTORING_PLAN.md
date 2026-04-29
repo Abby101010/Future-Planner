@@ -1,5 +1,83 @@
 # Starward Refactoring Plan
 
+## Recent in-flight changes (2026-04-29)
+
+These landed as hot fixes / UX polish on top of the deployed Fly backend
+and the Electron renderer; they don't replace the larger refactor below
+but they re-shape Phase 5 priorities and surface a new hierarchical-
+generation phase.
+
+### Goal-plan generation: max_tokens raised + clearer parse errors
+
+`backend/core/src/ai/handlers/generateGoalPlan.ts` was capping output at
+`max_tokens: 16384`. Multi-month goals (e.g. a 5-month "Nightly Reading
++ Chinese subject study" plan) emit 13–25K output tokens for the full
+year/month/week/day JSON. The model was hitting the cap mid-string and
+the raw `JSON.parse(cleaned)` threw `Unterminated string in JSON at
+position N`. The job retried once, failed identically, and the user
+saw a silent empty Plan tab.
+
+Fix: bumped to `max_tokens: 32768` (Opus 4.6's native ceiling without
+extended-output flags) and wrapped the parse in a try/catch that reads
+`response.stop_reason` — when it's `"max_tokens"` the user-facing job
+error now reads "Goal-plan generation hit the model's output limit
+(N chars produced). Try a more focused goal or shorter timeframe."
+instead of leaking parser internals.
+
+This is a stopgap. The proper fix is hierarchical generation (below).
+
+### Manual regenerate buttons removed; auto-trigger on mount
+
+`PlanTab.tsx` and `BreakdownTab.tsx` previously required the user to
+click **Regenerate** / **Re-break down** when the breakdown was empty.
+That's an artefact of the failure-recovery path: `command:create-goal`
+already enqueues `command:regenerate-goal-plan` synchronously after a
+chat-driven goal creation (FloatingChat.tsx:497–522), so the happy path
+never needs the button — it's only there for failure recovery.
+
+Both buttons are now gone. Each tab auto-fires the generation on mount
+when its data is empty, gated by a module-scoped `Set<goalId>` so
+unmount/remount doesn't redispatch the AI job. Failure surfaces a clear
+inline message ("Plan generation failed: <err>. Reload to retry, or
+amend via chat.") — reload is the explicit manual-retry escape hatch.
+
+### Future-work: chat-driven Accept/Reject card UI
+
+The `pendingActions` service stores AI-proposed intents that aren't
+auto-dispatched (everything except `kind:"goal"` after the 2026-04-29
+chat fix). There's no FE UI yet to list them — only proactive nudges
+in NotifStack with the body "Confirm via the chat panel or the Tasks
+page." A proper Accept/Reject card surface for `view:pending-actions`
+would close the loop. Currently scoped as part of Phase 5 polish.
+
+## Phase 0.5 (new): hierarchical goal-plan generation
+
+Sized as a focused phase between the current Phase 1 (extract core)
+and Phase 2 (delete embedded server). The current single-shot
+generation that produces every year/month/week/day in one Claude call
+will not scale: even with `max_tokens: 32768`, a 12-month plan with
+detailed daily tasks crowds the ceiling. The architecture should be:
+
+1. **Skeleton call** (single Claude call, ~2K output): year-level
+   themes, month-level objectives, week-level focus, no daily tasks.
+   Persists to `goal_plans` like today.
+2. **Week expansion** (called on demand, lazy): when the user
+   navigates to a specific week, dispatch `command:expand-plan-week`
+   for that one week. Returns ~1K-2K of daily tasks for that week
+   only. Already wired in commands.ts and the AddTaskToPlan UI in
+   PlanTab — needs to become the default surface, not a hidden
+   `<details>` widget.
+3. **Eager prefetch**: expand the next 2–3 weeks in the background so
+   the user never sees an empty week when they navigate forward.
+
+This eliminates the truncation class of failure entirely and reduces
+LLM cost per goal by ~5–10× since we don't pre-generate weeks the
+user will never look at.
+
+Open question: how to migrate existing goals already created with the
+single-shot full-detail plan. Probably a one-time "trim to skeleton +
+flag for re-expansion" job, run idempotently against `goal_plans`.
+
 ## Prompt for Claude Code
 
 Copy everything below the line into Claude Code as a single prompt.

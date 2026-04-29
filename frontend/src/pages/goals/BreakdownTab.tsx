@@ -5,13 +5,17 @@
  * previously pages/goals/GoalBreakdownPage.tsx.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "../../hooks/useQuery";
-import { useCommand } from "../../hooks/useCommand";
 import { postJson } from "../../services/transport";
-import Button from "../../components/primitives/Button";
 import Icon from "../../components/primitives/Icon";
 import Pill from "../../components/primitives/Pill";
+
+/** Goal IDs we already auto-triggered breakdown generation for in this
+ *  session. Module-scoped so unmount/remount of BreakdownTab doesn't
+ *  re-fire the AI call. Resets on app reload, which is the desired
+ *  manual-recovery escape hatch. */
+const AUTO_TRIGGERED = new Set<string>();
 
 interface BreakdownTask {
   id: string;
@@ -64,10 +68,10 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
   const { data, loading, error, refetch } = useQuery<GoalBreakdownView>("view:goal-breakdown", {
     goalId,
   });
-  const { run: _run, running } = useCommand();
-  void _run;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [regenError, setRegenError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const regeneratingRef = useRef(false);
 
   const breakdown = data?.breakdown ?? data?.goalBreakdown;
   const years = breakdown?.yearlyBreakdown ?? [];
@@ -82,14 +86,35 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
   };
 
   async function regenerate() {
+    if (regeneratingRef.current) return;
+    regeneratingRef.current = true;
+    setRegenerating(true);
     setRegenError(null);
     try {
       await postJson("/ai/goal-breakdown", { goalId });
       refetch();
     } catch (e) {
       setRegenError((e as Error).message);
+    } finally {
+      regeneratingRef.current = false;
+      setRegenerating(false);
     }
   }
+
+  // Auto-trigger generation when the breakdown is empty. Runs at most
+  // once per goal per session — if it fails, the failure surfaces in
+  // regenError and the user sees a clear "generation failed" state.
+  // Reloading the app resets the dedupe set if a manual retry is needed.
+  useEffect(() => {
+    if (loading) return;
+    if (years.length > 0) return;
+    if (AUTO_TRIGGERED.has(goalId)) return;
+    AUTO_TRIGGERED.add(goalId);
+    void regenerate();
+    // regenerate is stable enough for this effect's purpose; we
+    // intentionally exclude it to avoid a refire loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, years.length, goalId]);
 
   const totalTasks = useMemo(() => {
     let n = 0;
@@ -107,34 +132,14 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          marginBottom: 12,
-        }}
-      >
-        <div>
-          <h3 className="h-headline" style={{ margin: 0, fontSize: "var(--t-xl)" }}>
-            Goal breakdown
-          </h3>
-          <div style={{ fontSize: "var(--t-sm)", color: "var(--fg-mute)", marginTop: 2 }}>
-            Drill from the goal into years → months → weeks → days → tasks.{" "}
-            {breakdown?.goalSummary && <span>{breakdown.goalSummary}</span>}
-          </div>
+      <div style={{ marginBottom: 12 }}>
+        <h3 className="h-headline" style={{ margin: 0, fontSize: "var(--t-xl)" }}>
+          Goal breakdown
+        </h3>
+        <div style={{ fontSize: "var(--t-sm)", color: "var(--fg-mute)", marginTop: 2 }}>
+          Drill from the goal into years → months → weeks → days → tasks.{" "}
+          {breakdown?.goalSummary && <span>{breakdown.goalSummary}</span>}
         </div>
-        <Button
-          size="sm"
-          tone="primary"
-          icon="sparkle"
-          onClick={regenerate}
-          data-api="POST /ai/goal-breakdown"
-          data-testid="breakdown-regenerate"
-          disabled={running}
-        >
-          Re-break down
-        </Button>
       </div>
 
       {loading && !data && (
@@ -204,7 +209,11 @@ export default function BreakdownTab({ goalId, goalTitle }: BreakdownTabProps) {
               data-testid="breakdown-empty"
               style={{ padding: 20, textAlign: "center", color: "var(--fg-faint)" }}
             >
-              No breakdown yet. Click <strong>Re-break down</strong> to generate one.
+              {regenerating
+                ? "Generating breakdown… this can take 30–60 seconds."
+                : regenError
+                  ? `Generation failed: ${regenError}. Reload the app to retry, or amend the goal via chat.`
+                  : "Generation in progress…"}
             </div>
           )}
 

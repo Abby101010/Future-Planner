@@ -13,7 +13,7 @@
  * Opens FloatingChat scoped to this goal via Zustand store.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useStore from "../../store/useStore";
 import { useCommand } from "../../hooks/useCommand";
 import Button from "../../components/primitives/Button";
@@ -21,6 +21,11 @@ import Card from "../../components/primitives/Card";
 import Icon from "../../components/primitives/Icon";
 import Pill from "../../components/primitives/Pill";
 import { startJob } from "../../components/chrome/JobStatusDock";
+
+/** Goal IDs we already auto-fired regenerate-goal-plan for in this session.
+ *  Module-scoped so unmount/remount of PlanTab doesn't redispatch the job.
+ *  Reset on app reload (the manual-recovery escape hatch). */
+const AUTO_TRIGGERED = new Set<string>();
 
 interface Milestone {
   id: string;
@@ -72,6 +77,19 @@ export default function PlanTab({
       setError((e as Error).message);
     }
   }
+
+  // Auto-fire regenerate when this goal lands here without milestones.
+  // Once per goal per session — failure surfaces in `error` and the user
+  // can reload the app or amend the goal via chat to retry. The initial
+  // create-goal flow already enqueues a regenerate-goal-plan job, so
+  // this primarily covers recovery from prior failed jobs.
+  useEffect(() => {
+    if (milestones.length > 0) return;
+    if (AUTO_TRIGGERED.has(goalId)) return;
+    AUTO_TRIGGERED.add(goalId);
+    void regenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goalId, milestones.length]);
 
   async function adaptive() {
     setError(null);
@@ -212,17 +230,6 @@ export default function PlanTab({
             >
               Confirm
             </Button>
-            <Button
-              size="sm"
-              tone="primary"
-              icon="refresh"
-              onClick={regenerate}
-              data-api="POST /commands/regenerate-goal-plan"
-              data-testid="plan-regenerate"
-              disabled={running}
-            >
-              Regenerate
-            </Button>
           </div>
         </section>
 
@@ -265,7 +272,11 @@ export default function PlanTab({
           >
             {milestones.length === 0 && (
               <div style={{ padding: 20, textAlign: "center", color: "var(--fg-faint)" }}>
-                No milestones yet. Click <strong>Regenerate</strong> to build a plan.
+                {running || AUTO_TRIGGERED.has(goalId)
+                  ? "Generating plan… this can take 30–60 seconds."
+                  : error
+                    ? `Plan generation failed: ${error}. Reload to retry, or amend via chat.`
+                    : "Generation in progress…"}
               </div>
             )}
             {milestones.map((m, idx) => {
