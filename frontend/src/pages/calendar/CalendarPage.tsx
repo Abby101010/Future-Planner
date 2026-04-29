@@ -16,6 +16,7 @@ import TopBar from "../../components/primitives/TopBar";
 import Button from "../../components/primitives/Button";
 import Icon from "../../components/primitives/Icon";
 import Pill from "../../components/primitives/Pill";
+import CognitiveLoadPill from "../tasks/CognitiveLoadPill";
 
 type CalendarViewMode = "month" | "week" | "day" | "project";
 
@@ -1283,7 +1284,10 @@ function DayBlock({ task, onChange }: { task: DailyTask; onChange: () => void })
         >
           {fmtHM(task.scheduledStartIso)}
         </span>
-        <span style={{ fontSize: 10, color: "var(--fg-faint)" }}>{durationMin}m</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <CognitiveLoadPill load={task.cognitiveLoad} />
+          <span style={{ fontSize: 10, color: "var(--fg-faint)" }}>{durationMin}m</span>
+        </div>
       </div>
       <div
         style={{

@@ -7,6 +7,7 @@ import { useState } from "react";
 import Button from "../../components/primitives/Button";
 import Icon, { type IconName } from "../../components/primitives/Icon";
 import Pill, { type PillTone } from "../../components/primitives/Pill";
+import CognitiveLoadPill from "./CognitiveLoadPill";
 import type { UITask } from "./tasksTypes";
 
 function RowAct({
@@ -172,6 +173,7 @@ export default function TaskRow({
           )}
           {task.weight && <Pill tone={WEIGHT_TONE[task.weight] ?? "base"}>{task.weight}</Pill>}
           {task.timeBlock && <Pill>{task.timeBlock}</Pill>}
+          <CognitiveLoadPill load={task.cognitiveLoad} />
           {tag && <Pill tone="gold" icon="tag">{tag}</Pill>}
           <button
             onClick={() => setOpen((o) => !o)}

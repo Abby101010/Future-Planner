@@ -9,6 +9,19 @@ export interface UITask {
   goalTitle?: string;
   duration?: number;
   estimatedDurationMinutes?: number;
+  /** Cognitive-load classification — drives the warm-voice pill on
+   *  TaskRow / DayBlock and the energy-window routing in
+   *  services/cognitiveLoadScheduler.ts. Sourced from
+   *  daily_tasks.cognitive_load (Phase B columns, migration 0011).
+   *  Optional because pre-Phase-B rows + manually-added tasks may
+   *  not be classified yet. */
+  cognitiveLoad?: "high" | "medium" | "low";
+  /** 1–10 score; daily aggregate vs. user's effective cognitive
+   *  budget. */
+  cognitiveCost?: number;
+  /** Time-of-day affinity. fresh-focus = peak window only.
+   *  creative = flow-state. depleted-ok = late evening fine. */
+  energyType?: "fresh-focus" | "creative" | "depleted-ok";
   scheduled?: string;
   scheduledStartIso?: string;
   done?: boolean;
