@@ -12,6 +12,7 @@ import { I18nProvider } from "./i18n";
 import { AuthProvider } from "./contexts/AuthContext";
 import AuthGuard from "./components/AuthGuard";
 import { useQuery } from "./hooks/useQuery";
+import { useDayRollover } from "./hooks/useDayRollover";
 import Sidebar from "./components/Sidebar";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -73,6 +74,12 @@ function AppShell() {
       wsClient.disconnect();
     };
   }, []);
+
+  // Auto-refresh date-sensitive views (tasks, dashboard, calendar, goal
+  // pages) when the user wakes the laptop in the morning or otherwise
+  // returns to the app after the local date has flipped. See
+  // hooks/useDayRollover.ts for the trigger conditions.
+  useDayRollover();
 
   // Gated flows render full-screen with NO sidebar, NO floating chrome. The
   // sidebar is irrelevant before the user has completed onboarding, and the

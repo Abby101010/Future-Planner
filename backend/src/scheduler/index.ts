@@ -159,6 +159,7 @@ async function fireMidnightRollover(userId: string, tz: string): Promise<boolean
   return runWithUserId(userId, async () => {
     try {
       const { runL0DayScope } = await import("../services/planAdjustmentL0");
+      const { emitViewInvalidate } = await import("../ws/events");
       const { hour: _h, date } = localHourAndDate(tz);
       const result = await runL0DayScope({ date, force: true });
       if (
@@ -171,6 +172,20 @@ async function fireMidnightRollover(userId: string, tz: string): Promise<boolean
           `[scheduler] rollover ${userId} ${date}: swept=${result.counts.sweptAgedOut} moved=${result.counts.movedTasks} pending=${result.counts.leftAsPending} validationFailed=${result.counts.validationFailures}`,
         );
       }
+      // Push view:invalidate to any client connected at the moment
+      // midnight passes. The client-side useDayRollover hook is the
+      // belt; this is the suspenders — together they cover both the
+      // "laptop awake all night" case (this) and the "laptop asleep,
+      // user reopens in the morning" case (hook).
+      emitViewInvalidate(userId, {
+        viewKinds: [
+          "view:dashboard",
+          "view:tasks",
+          "view:calendar",
+          "view:goal-plan",
+        ],
+        scope: { date },
+      });
       return true;
     } catch (err) {
       console.error(`[scheduler] rollover for ${userId} failed:`, err);

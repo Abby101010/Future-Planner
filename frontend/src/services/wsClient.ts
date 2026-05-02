@@ -272,6 +272,24 @@ class WsClient {
     this.connect();
   }
 
+  /** Dispatch a synthetic event to listeners as if it had arrived from
+   *  the server. Used by client-side day-rollover detection
+   *  (useDayRollover) to trigger view refetches when the local date
+   *  changes — a server-driven `view:invalidate` would also work but
+   *  requires the WS to be alive at the moment midnight passes, which
+   *  isn't guaranteed when the laptop is sleeping. */
+  emitLocal<K extends EventKind>(kind: K, data: EventPayloads[K]): void {
+    const set = this.listeners.get(kind);
+    if (!set || set.size === 0) return;
+    for (const listener of set) {
+      try {
+        listener(data);
+      } catch (err) {
+        log.error("synthetic dispatch listener threw", (err as Error).message);
+      }
+    }
+  }
+
   /** Send an envelope upstream. Returns true when the frame was handed
    *  off to the socket, false when the socket isn't open (caller may
    *  buffer and retry). Used today for `dev:action` log shipping; the
