@@ -210,6 +210,133 @@ input, textarea, select { font: inherit; color: inherit; }
 }
 .app-main > * { flex-shrink: 0; }
 
+/* In split mode the SplitWorkspace fills app-main exactly; we want each
+ * pane to handle its own scroll, not app-main. */
+.app-main--split {
+  overflow: hidden;
+}
+.app-main--split > * { flex-shrink: 1; }
+
+/* Split workspace: two panes side-by-side with a draggable divider. The
+ * grid columns are set inline (e.g., "0.5fr 6px 0.5fr") so the ratio can
+ * track the pointer while dragging. */
+.split-workspace {
+  display: grid;
+  grid-template-rows: 1fr;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.pane-frame {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  background: var(--bg);
+  animation: ns-pane-fade-in 200ms ease;
+}
+@keyframes ns-pane-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.pane-frame--active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 5;
+}
+.pane-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.pane-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 10;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: var(--bg-elev);
+  color: var(--fg-mute);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.55;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.pane-close:hover {
+  opacity: 1;
+  background: var(--bg-soft);
+  color: var(--fg);
+}
+.divider-handle {
+  background: var(--border);
+  cursor: col-resize;
+  position: relative;
+  transition: background 120ms ease;
+  touch-action: none;
+}
+.divider-handle:hover,
+.divider-handle:active {
+  background: var(--accent);
+}
+
+/* Drop-zone overlay — shown only while a sidebar entry is being dragged.
+ * Sits on top of app-main content and splits the area into left/right
+ * targets. Each half highlights on dragover. */
+.drop-zone-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  pointer-events: auto;
+}
+.drop-zone-overlay__half {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.025);
+  border: 2px dashed transparent;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.drop-zone-overlay__half + .drop-zone-overlay__half {
+  border-left: 1px dashed var(--border);
+}
+.drop-zone-overlay__half--active {
+  background: var(--navy-tint);
+  border-color: var(--accent);
+}
+.drop-zone-overlay__label {
+  font-size: var(--t-md);
+  color: var(--fg-mute);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: var(--bg-elev);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  pointer-events: none;
+  opacity: 0.8;
+}
+
 /* Responsive: collapse calendar two-column into single column on narrow */
 @media (max-width: 900px) {
   .ns-cal-two-col { grid-template-columns: minmax(0, 1fr) !important; }

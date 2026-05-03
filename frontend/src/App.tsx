@@ -15,6 +15,7 @@ import { useQuery } from "./hooks/useQuery";
 import { useDayRollover } from "./hooks/useDayRollover";
 import Sidebar from "./components/Sidebar";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { useViewportWidth, SPLIT_MIN_WIDTH } from "./hooks/useViewportWidth";
 
 // Floating chrome
 import FloatingChat from "./components/chrome/FloatingChat";
@@ -26,12 +27,9 @@ import SettingsDialog from "./components/settings/SettingsDialog";
 
 // Pages
 import OnboardingPage from "./pages/onboarding/OnboardingPage";
-import CalendarPage from "./pages/calendar/CalendarPage";
-import GoalPlanPage from "./pages/goals/GoalPlanPage";
-import SettingsPage from "./pages/settings/SettingsPage";
-import PlanningPage from "./pages/goals/PlanningPage";
-import TasksPage from "./pages/tasks/TasksPage";
-import NewsFeedPage from "./pages/news/NewsFeedPage";
+import { renderView } from "./views/registry";
+import SplitWorkspace from "./components/SplitWorkspace";
+import DropZoneOverlay from "./components/DropZoneOverlay";
 
 interface OnboardingBootView {
   user: {
@@ -53,9 +51,22 @@ function App() {
 
 function AppShell() {
   const currentView = useStore((s) => s.currentView);
+  const rightPaneView = useStore((s) => s.rightPaneView);
+  const activePane = useStore((s) => s.activePane);
   const setView = useStore((s) => s.setView);
+  const closePane = useStore((s) => s.closePane);
   const language = useStore((s) => s.language);
   const setLanguage = useStore((s) => s.setLanguage);
+  const viewportWidth = useViewportWidth();
+  // Split mode collapses below 1024px without mutating the persisted layout
+  // — the user's split returns when the window grows back. We render the
+  // active pane's view in single-pane mode while collapsed.
+  const splitAllowed = viewportWidth >= SPLIT_MIN_WIDTH;
+  const renderSplit = splitAllowed && rightPaneView !== null;
+  const collapsedView =
+    !splitAllowed && rightPaneView !== null && activePane === "right"
+      ? rightPaneView
+      : currentView;
 
   const { data: boot } = useQuery<OnboardingBootView>("view:onboarding");
   useEffect(() => {
@@ -64,6 +75,14 @@ function AppShell() {
     if (lang && lang !== language) setLanguage(lang);
     if (currentView === "welcome") {
       setView(boot.onboardingComplete ? "tasks" : "onboarding");
+      return;
+    }
+    // Defensive: if a persisted split layout would let an incomplete user
+    // bypass onboarding (e.g., user A logged out, user B logs in mid-
+    // onboarding), force back to onboarding and collapse the split.
+    if (boot.onboardingComplete === false && currentView !== "onboarding") {
+      if (rightPaneView !== null) closePane("right");
+      setView("onboarding");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boot]);
@@ -105,23 +124,18 @@ function AppShell() {
     );
   }
 
-  const goalPlanId = currentView.startsWith("goal-plan-")
-    ? currentView.replace("goal-plan-", "")
-    : null;
-
   return (
     <I18nProvider language={language}>
       <div className="app-shell" data-testid="app-shell">
         <Sidebar />
-        <main className="app-main" data-testid="app-main">
+        <main
+          className={`app-main${renderSplit ? " app-main--split" : ""}`}
+          data-testid="app-main"
+        >
           <ErrorBoundary>
-            {currentView === "planning" && <PlanningPage />}
-            {currentView === "tasks" && <TasksPage />}
-            {currentView === "calendar" && <CalendarPage />}
-            {goalPlanId && <GoalPlanPage goalId={goalPlanId} />}
-            {currentView === "news-feed" && <NewsFeedPage />}
-            {currentView === "settings" && <SettingsPage />}
+            {renderSplit ? <SplitWorkspace /> : renderView(collapsedView)}
           </ErrorBoundary>
+          {splitAllowed && <DropZoneOverlay />}
         </main>
 
         {/* Global floating chrome — only in the main app, never in gated flows. */}

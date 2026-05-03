@@ -32,6 +32,7 @@
 import { useState } from "react";
 import useStore from "../store/useStore";
 import { useQuery } from "../hooks/useQuery";
+import { useViewportWidth, SPLIT_MIN_WIDTH } from "../hooks/useViewportWidth";
 import type { AppView } from "@starward/core";
 import Icon, { type IconName } from "./primitives/Icon";
 
@@ -48,10 +49,14 @@ interface NavItem {
 
 export default function Sidebar() {
   const currentView = useStore((s) => s.currentView);
+  const rightPaneView = useStore((s) => s.rightPaneView);
   const setView = useStore((s) => s.setView);
+  const startSidebarDrag = useStore((s) => s.startSidebarDrag);
+  const endSidebarDrag = useStore((s) => s.endSidebarDrag);
   const pinned = !useStore((s) => s.isSidebarCollapsed);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const splitAllowed = useViewportWidth() >= SPLIT_MIN_WIDTH;
 
   // Local hover peek: when the user has NOT pinned the sidebar open,
   // entering with the cursor expands it; leaving collapses it back.
@@ -244,12 +249,22 @@ export default function Sidebar() {
 
       {items.map((it) => {
         const active = activeId === it.id;
+        const alreadyOpen = it.id === currentView || it.id === rightPaneView;
+        const canDrag = splitAllowed && !alreadyOpen;
         return (
           <button
             key={it.id}
             data-testid={`sidebar-${it.id}`}
             data-active={active ? "true" : "false"}
             onClick={() => setView(it.id)}
+            draggable={canDrag}
+            onDragStart={(e) => {
+              if (!canDrag) return;
+              e.dataTransfer.setData("text/x-northstar-view", it.id);
+              e.dataTransfer.effectAllowed = "move";
+              startSidebarDrag(it.id);
+            }}
+            onDragEnd={() => endSidebarDrag()}
             title={collapsed ? it.label : undefined}
             style={{
               display: "flex",
